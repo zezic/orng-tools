@@ -50,8 +50,6 @@ impl std::fmt::Display for ItemRef {
 pub enum Problem {
     /// The manifest claims an author that is not the directory it sits in.
     AuthorMismatch { item: ItemRef, declared: AuthorId },
-    /// The document's extension and the directory disagree about kind.
-    KindMismatch { item: ItemRef },
     /// Two items claim the same identity. One of them has to change.
     DuplicateIdentity { uuid: Uuid, items: Vec<ItemRef> },
     /// Two items would appear under one name in Bitwig's flat browser.
@@ -85,7 +83,6 @@ impl Problem {
     pub fn item(&self) -> Option<&ItemRef> {
         match self {
             Problem::AuthorMismatch { item, .. }
-            | Problem::KindMismatch { item }
             | Problem::UnknownSupersedes { item, .. }
             | Problem::SelfSupersedes { item }
             | Problem::IdentityChanged { item, .. }
@@ -102,9 +99,6 @@ impl std::fmt::Display for Problem {
         match self {
             Problem::AuthorMismatch { item, declared } => {
                 write!(f, "{item}: manifest says author {declared}, directory says {}", item.author)
-            }
-            Problem::KindMismatch { item } => {
-                write!(f, "{item}: the document is not the kind its extension claims")
             }
             Problem::DuplicateIdentity { uuid, items } => {
                 write!(f, "{uuid} is claimed by {}", join(items))

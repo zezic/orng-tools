@@ -41,7 +41,13 @@ pub enum Error {
 pub type Result<T> = std::result::Result<T, Error>;
 
 /// Directory holding every contributed item, relative to the repository root.
-pub const CONTENT_DIR: &str = "devices";
+///
+/// One root for all three kinds, grouped by author rather than by kind. A
+/// document already states its own kind and the index republishes it, so a path
+/// that stated it too would be a third copy to keep in step. Grouping by author
+/// is also what per-directory ownership is checked against, and an author owns
+/// one prefix rather than three.
+pub const CONTENT_DIR: &str = "content";
 
 /// File each item carries beside its document.
 pub const MANIFEST_FILE: &str = "orange.toml";

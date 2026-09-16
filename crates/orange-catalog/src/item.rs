@@ -4,8 +4,8 @@
 //! One contributed item, and how the repository tree maps onto it.
 //!
 //! ```text
-//! devices/<author>/<slug>/<name>.bwdevice
-//! devices/<author>/<slug>/orange.toml
+//! content/<author>/<slug>/<name>.bwdevice
+//! content/<author>/<slug>/orange.toml
 //! ```
 //!
 //! Author-first grouping is what makes per-directory ownership expressible:

@@ -349,16 +349,21 @@ follows from that.
 
 ```
 orange-catalog/
-  devices/
+  content/
     <author>/
       <slug>/
-        <name>.bwdevice        the document
+        <name>.bwdevice        the document; any of the three kinds
         orange.toml            what the document cannot say
         README.md              optional
   owners.toml                  author -> GitHub account
   index.json                   generated, never hand-edited
   .github/workflows/
 ```
+
+**One content root, grouped by author, not one root per kind.** A document states its own
+kind and the index republishes it; a path that stated it too would be a third copy to keep
+in step, against decision 6.7. Ownership is also per author, so an author owns one prefix
+rather than three, and their items stay together for whoever reviews them.
 
 `orange.toml` carries only what is not already inside the document - version, author,
 licence, minimum Bitwig version, homepage, superseded identities. Identity, name, kind,
@@ -396,6 +401,14 @@ and can require review, nothing more. So per-directory ownership is enforced in 
 - Nobody has write access. Everything arrives as a fork pull request.
 - A required check compares the changed paths against `owners.toml` **as it exists on the
   base branch**, and fails if a pull request touches a directory its author does not own.
+  Reading the pull request's own copy would let a contributor add themselves as owner of
+  someone else's directory in the commit that modifies it.
+- The author id in a path is a lookup key, never a credential. It resolves through
+  `owners.toml` to a GitHub account, and the check compares that against the account
+  GitHub authenticated on the pull request. The **numeric account id** is what is compared:
+  a login can be changed by its holder and the old one can then be claimed by someone else,
+  while the id is immutable and never reused. The login is stored beside it so a human
+  reading the file knows who it is.
 - Auto-merge lands owner updates once checks pass, so an author maintains their own content
   without a human in the loop.
 - A new directory can never be auto-approved, which is also when a first-time contributor's

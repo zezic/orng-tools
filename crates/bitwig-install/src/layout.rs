@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Sergey Ukolov
+// SPDX-License-Identifier: MIT OR Apache-2.0
+
 use std::path::{Path, PathBuf};
 
 use crate::{ENV_APP, ENV_JAR, ENV_RESOURCES, Error, Result, env_path, home, probe};

@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Sergey Ukolov
+// SPDX-License-Identifier: GPL-3.0-only
+
 //! Resolving Bitwig's internals without knowing a single obfuscated name.
 //!
 //! Every anchor here is a user-facing string, an unobfuscated enum constant, a

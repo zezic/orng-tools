@@ -33,6 +33,19 @@ here without it. If `bitwig-classfile` ever grew its own class writer, the whole
 workspace could go permissive; until then, that boundary is where the licence
 changes.
 
+## How a file states its licence
+
+Every source file carries two SPDX lines, and the crate roots of the copyleft
+crates carry the full GNU notice as well:
+
+```rust
+// SPDX-FileCopyrightText: 2026 Sergey Ukolov
+// SPDX-License-Identifier: GPL-3.0-only
+```
+
+The identifier on a file is the licence of the crate it belongs to. Moving a
+file between crates changes its licence, so the header moves with it.
+
 ## Contributions
 
 A contribution to a permissive crate is taken under MIT OR Apache-2.0, and one

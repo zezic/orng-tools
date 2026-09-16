@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Sergey Ukolov
+// SPDX-License-Identifier: MIT OR Apache-2.0
+
 //! The rules that keep identities stable.
 //!
 //! Orange Catalog's only real job is to guarantee that a UUID means one thing,

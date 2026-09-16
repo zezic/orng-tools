@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Sergey Ukolov
+// SPDX-License-Identifier: MIT OR Apache-2.0
+
 use std::path::Path;
 
 /// The three kinds of content Bitwig keeps identities for.

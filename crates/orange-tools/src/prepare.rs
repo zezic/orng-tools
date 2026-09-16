@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Sergey Ukolov
+// SPDX-License-Identifier: GPL-3.0-only
+
 //! Preparing an installation: the one operation that modifies it.
 //!
 //! The edit itself is fixed and does not vary with what is registered, so this

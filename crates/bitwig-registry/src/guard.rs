@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Sergey Ukolov
+// SPDX-License-Identifier: GPL-3.0-only
+
 //! Bitwig's tamper guard.
 //!
 //! Bitwig verifies its own archive at runtime. Any modification breaks that

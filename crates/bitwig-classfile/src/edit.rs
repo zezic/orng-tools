@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Sergey Ukolov
+// SPDX-License-Identifier: GPL-3.0-only
+
 //! Structural class editing, backed by krakatau2.
 //!
 //! Writing a class back goes through disassemble/assemble rather than a direct

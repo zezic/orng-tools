@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Sergey Ukolov
+// SPDX-License-Identifier: GPL-3.0-only
+
 //! Constant pool access without a full class parse.
 //!
 //! Anchor resolution sweeps every class in a 30k-entry archive, and almost all

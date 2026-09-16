@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Sergey Ukolov
+// SPDX-License-Identifier: MIT OR Apache-2.0
+
 //! Rules exercised against a real repository tree built from real documents.
 //!
 //! Each test breaks exactly one promise and asserts that the corresponding rule

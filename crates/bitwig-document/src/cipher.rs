@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Sergey Ukolov
+// SPDX-License-Identifier: MIT OR Apache-2.0
+
 //! The Dag stream cipher guarding document sections.
 //!
 //! Symmetric XOR: encrypting and decrypting are the same operation, and a

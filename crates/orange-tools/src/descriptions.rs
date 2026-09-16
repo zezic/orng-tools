@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Sergey Ukolov
+// SPDX-License-Identifier: GPL-3.0-only
+
 //! Browser descriptions and search keywords.
 //!
 //! These are not in `bitwig.jar`. Bitwig reads them from properties bundles in

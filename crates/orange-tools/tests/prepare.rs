@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Sergey Ukolov
+// SPDX-License-Identifier: GPL-3.0-only
+
 //! Preparation, end to end, against a throwaway copy of a real installation.
 //!
 //! The copy is what makes these worth running: the archive is the real one, the

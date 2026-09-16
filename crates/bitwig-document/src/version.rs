@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Sergey Ukolov
+// SPDX-License-Identifier: MIT OR Apache-2.0
+
 //! Bitwig release numbers.
 //!
 //! A document is version-sensitive: a release older than the one that wrote

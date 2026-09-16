@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Sergey Ukolov
+// SPDX-License-Identifier: GPL-3.0-only
+
 //! Reading what a build already has registered.
 //!
 //! The registry's class initialiser runs in two phases: it parses every UUID

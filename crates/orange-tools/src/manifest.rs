@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Sergey Ukolov
+// SPDX-License-Identifier: GPL-3.0-only
+
 //! The entry list: this app's durable state, and the prepared installation's
 //! input at startup.
 //!

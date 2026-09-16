@@ -1,0 +1,8 @@
+[package]
+name = "orange-registry"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+orange-tools.workspace = true

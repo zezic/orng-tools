@@ -1,0 +1,12 @@
+[package]
+name = "bitwig-classfile"
+description = "Class-file and JAR surgery primitives: pooled string scanning, bytecode editing, archive rewriting"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+thiserror.workspace = true
+krakatau2.workspace = true
+zip.workspace = true

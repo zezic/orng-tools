@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://unpkg.com/@phosphor-icons/web@2.1.1/src/duotone/style.css" />
+<link rel="stylesheet" href="https://unpkg.com/@phosphor-icons/web@2.1.1/src/light/style.css" />
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;display=swap" />
+<style>
+@font-face{font-family:'Iosevka Extended';src:url('uploads/Iosevka-Extended.ttf') format('truetype');font-weight:400;font-style:normal;font-display:swap}
+@font-face{font-family:'Iosevka Extended';src:url('uploads/Iosevka-ExtendedBold.ttf') format('truetype');font-weight:700;font-style:normal;font-display:swap}
+html,body{margin:0;padding:0;background:#000}
+a{color:#ff5a1f;text-decoration:none}
+a:hover{color:#ff7a45}
+:root{--page:#000000;--bg:#0a0a0a;--panel:#161616;--panel-2:#1e1e1e;--row:#0a0a0a;--row-alt:#1e1e1e;--row-hover:#262626;--zebra:rgba(255,255,255,.05);--line:#242424;--line-soft:#1a1a1a;--ink:#f2f2f2;--ink-2:#bcbcbc;--ink-3:#949494;--ink-2-warm:#c6b6aa;--ink-3-warm:#9e9089;--ink-2-err:#c9b4b1;--ink-3-err:#9d8c8a;--accent:#ff5a1f;--accent-text:#ff7a45;--accent-ink:#0a0a0a;--accent-soft:rgba(255,90,31,.10);--k-device:#a9a9a9;--k-device-bg:transparent;--k-mod:#a9a9a9;--k-mod-bg:transparent;--k-module:#a9a9a9;--k-module-bg:transparent;--ok:#f2f2f2;--ok-bg:rgba(242,242,242,.07);--warn:#ff5a1f;--warn-bg:rgba(255,90,31,.10);--err:#ff4036;--err-text:#ff6259;--err-bg:rgba(255,64,54,.10);--info:#a9a9a9;--info-bg:rgba(169,169,169,.08);--field:#000000;--btn:#282828;--btn-hover:#333333;--scrim:rgba(0,0,0,.74);--shadow:0 30px 80px rgba(0,0,0,.8)}
+</style>
+</helmet>
+<div style="position:relative; display:flex; align-items:center; gap:8px; flex:none; height:42px; min-width:0; padding:0 12px; background:var(--bg); font-family:Inter,'Helvetica Neue',Helvetica,sans-serif; overflow:hidden">
+  <div style="display:flex; align-items:center; gap:7px; flex:1 1 auto; min-width:64px; max-width:200px; height:26px; padding:0 8px; background:var(--field); border-radius:3px">
+    <i class="ph-duotone ph-magnifying-glass" style="font-size:16px; flex:none; color:var(--ink-3)"></i>
+    <span style="min-width:0; font-size:11.5px; color:{{ queryColor }}; white-space:nowrap; overflow:hidden; text-overflow:ellipsis">{{ queryText }}</span>
+  </div>
+  <div style="display:flex; align-items:center; gap:2px; flex:none">
+    <div title="Devices" style="{{ devStyle }}">
+      <span>Devices</span>
+      <span style="{{ countStyle }}">{{ devices }}</span>
+    </div>
+    <div title="Modulators" style="{{ modStyle }}">
+      <span>Modulators</span>
+      <span style="{{ countStyle }}">{{ modulators }}</span>
+    </div>
+    <div title="Modules" style="{{ grdStyle }}">
+      <span>Modules</span>
+      <span style="{{ countStyle }}">{{ modules }}</span>
+    </div>
+  </div>
+  <div style="flex:1 1 0; min-width:8px"></div>
+  <div onClick="{{ toggleFactory }}" title="Show factory entries" style="display:flex; align-items:center; gap:7px; flex:none; font-size:11px; color:{{ factoryTextColor }}; cursor:pointer; white-space:nowrap" style-hover="color:var(--ink-2)">
+    <i class="{{ factoryIcon }}" style="font-size:16px; color:{{ factoryIconColor }}"></i>
+    <sc-if value="{{ showLabels }}" hint-placeholder-val="{{ true }}"><span>Factory</span></sc-if>
+  </div>
+  <div title="Add files" style="display:flex; align-items:center; gap:6px; flex:none; padding:5px 10px; border-radius:3px; background:var(--btn); color:var(--ink); font-size:11px; font-weight:500; cursor:pointer; white-space:nowrap" style-hover="background:var(--btn-hover); border-color:var(--ink-3)">
+    <i class="ph-duotone ph-file-plus" style="font-size:16px; color:var(--ink-2)"></i>
+    <sc-if value="{{ showLabels }}" hint-placeholder-val="{{ true }}"><span>Add files&hellip;</span></sc-if>
+  </div>
+</div>
+
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:820,&quot;height&quot;:42},&quot;query&quot;:{&quot;editor&quot;:&quot;text&quot;,&quot;default&quot;:&quot;&quot;,&quot;tsType&quot;:&quot;string&quot;},&quot;devices&quot;:{&quot;editor&quot;:&quot;int&quot;,&quot;default&quot;:5,&quot;tsType&quot;:&quot;number&quot;},&quot;modulators&quot;:{&quot;editor&quot;:&quot;int&quot;,&quot;default&quot;:2,&quot;tsType&quot;:&quot;number&quot;},&quot;modules&quot;:{&quot;editor&quot;:&quot;int&quot;,&quot;default&quot;:2,&quot;tsType&quot;:&quot;number&quot;},&quot;factory&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:false,&quot;tsType&quot;:&quot;boolean&quot;},&quot;narrow&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:false,&quot;tsType&quot;:&quot;boolean&quot;,&quot;section&quot;:&quot;Layout&quot;}}">
+class Component extends DCLogic {
+  state = { factory: null, off: {} };
+  componentDidUpdate(prev) {
+    if (!!prev.factory !== !!this.props.factory) this.setState({ factory: null });
+  }
+  chip(on, narrow) {
+    return [
+      "display:flex", "align-items:center", "gap:6px", "height:26px",
+      "padding:0 " + (narrow ? "7px" : "9px"),
+      "border-radius:3px", "cursor:pointer", "white-space:nowrap",
+      "font-size:11px",
+      "background:" + (on ? "var(--btn)" : "transparent"),
+      "color:" + (on ? "var(--ink)" : "var(--ink-3)")
+    ].join(";");
+  }
+  renderVals() {
+    const p = this.props;
+    const q = p.query ?? "";
+    const narrow = !!p.narrow;
+    const factory = this.state.factory === null ? !!p.factory : this.state.factory;
+    const off = this.state.off;
+    const on = k => off[k] !== true;
+    return {
+      narrow, showLabels: !narrow,
+      queryText: q || (narrow ? "Search" : "Search name or UUID"),
+      queryColor: q ? "var(--ink)" : "var(--ink-3)",
+      devices: p.devices ?? 5,
+      modulators: p.modulators ?? 2,
+      modules: p.modules ?? 2,
+      devStyle: this.chip(on("d"), narrow),
+      modStyle: this.chip(on("m"), narrow),
+      grdStyle: this.chip(on("g"), narrow),
+      countStyle: "font-family:'Iosevka Extended',Iosevka,monospace; letter-spacing:-0.05em; font-size:10px; color:var(--ink-3)",
+      factoryTextColor: factory ? "var(--ink-2)" : "var(--ink-3)",
+      factoryIcon: factory ? "ph-duotone ph-check-square" : "ph-duotone ph-square",
+      factoryIconColor: factory ? "var(--accent)" : "var(--ink-3)",
+      toggleFactory: () => this.setState({ factory: !factory })
+    };
+  }
+}
+
+</script>
+</body>
+</html>

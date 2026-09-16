@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://unpkg.com/@phosphor-icons/web@2.1.1/src/duotone/style.css" />
+<link rel="stylesheet" href="https://unpkg.com/@phosphor-icons/web@2.1.1/src/light/style.css" />
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;display=swap" />
+<style>
+@font-face{font-family:'Iosevka Extended';src:url('uploads/Iosevka-Extended.ttf') format('truetype');font-weight:400;font-style:normal;font-display:swap}
+@font-face{font-family:'Iosevka Extended';src:url('uploads/Iosevka-ExtendedBold.ttf') format('truetype');font-weight:700;font-style:normal;font-display:swap}
+html,body{margin:0;padding:0;background:#000}
+a{color:#ff5a1f;text-decoration:none}
+a:hover{color:#ff7a45}
+:root{--page:#000000;--bg:#0a0a0a;--panel:#161616;--panel-2:#1e1e1e;--row:#0a0a0a;--row-alt:#1e1e1e;--row-hover:#262626;--zebra:rgba(255,255,255,.05);--line:#242424;--line-soft:#1a1a1a;--ink:#f2f2f2;--ink-2:#bcbcbc;--ink-3:#949494;--ink-2-warm:#c6b6aa;--ink-3-warm:#9e9089;--ink-2-err:#c9b4b1;--ink-3-err:#9d8c8a;--accent:#ff5a1f;--accent-text:#ff7a45;--accent-ink:#0a0a0a;--accent-soft:rgba(255,90,31,.10);--k-device:#a9a9a9;--k-device-bg:transparent;--k-mod:#a9a9a9;--k-mod-bg:transparent;--k-module:#a9a9a9;--k-module-bg:transparent;--ok:#f2f2f2;--ok-bg:rgba(242,242,242,.07);--warn:#ff5a1f;--warn-bg:rgba(255,90,31,.10);--err:#ff4036;--err-text:#ff6259;--err-bg:rgba(255,64,54,.10);--info:#a9a9a9;--info-bg:rgba(169,169,169,.08);--field:#000000;--btn:#282828;--btn-hover:#333333;--scrim:rgba(0,0,0,.74);--shadow:0 30px 80px rgba(0,0,0,.8)}
+</style>
+</helmet>
+<div style="display:flex; flex-direction:column; width:272px; height:100%; flex:none; background:var(--panel-2); font-family:Inter,'Helvetica Neue',Helvetica,sans-serif; box-shadow:-18px 0 40px rgba(0,0,0,.5)">
+  <div style="display:flex; align-items:center; gap:8px; flex:none; height:40px; padding:0 12px; background:var(--panel)">
+    <div style="display:flex; align-items:center; flex:none; width:fit-content; border-radius:2px; background:transparent; color:var(--ink-3)">
+      <span style="font-size:11px">{{ kindLabel }}</span>
+    </div>
+    <span style="flex:1; min-width:0; font-size:12.5px; font-weight:700; color:var(--ink); white-space:nowrap; overflow:hidden; text-overflow:ellipsis">{{ name }}</span>
+    <div onClick="{{ onClose }}" title="Close" style="display:flex; align-items:center; justify-content:center; width:24px; height:24px; border-radius:4px; color:var(--ink-3); cursor:pointer" style-hover="background:var(--btn-hover); color:var(--ink)"><i class="ph-duotone ph-x" style="font-size:16px"></i></div>
+  </div>
+
+  <div style="display:flex; flex-direction:column; gap:14px; flex:1; overflow:auto; padding:13px 12px">
+    <div style="display:flex; flex-direction:column; gap:5px">
+      <span style="font-size:10.5px; font-weight:600; color:var(--ink-2)">Display name</span>
+      <div style="display:flex; align-items:center; height:27px; padding:0 8px; background:var(--field); border-radius:4px; font-size:12px; color:var(--ink)">{{ name }}</div>
+    </div>
+
+    <div style="display:flex; flex-direction:column; gap:5px">
+      <span style="font-size:10.5px; font-weight:600; color:var(--ink-2)">Description</span>
+      <div style="min-height:44px; padding:6px 8px; background:var(--field); border-radius:4px; font-size:11.5px; line-height:1.45; color:var(--ink)">{{ description }}</div>
+      <span style="font-size:10px; color:var(--ink-3); line-height:1.4">Shown under the device in Bitwig's browser.</span>
+    </div>
+
+    <div style="display:flex; flex-direction:column; gap:5px">
+      <span style="font-size:10.5px; font-weight:600; color:var(--ink-2)">Search keywords</span>
+      <div style="display:flex; flex-wrap:wrap; gap:4px; min-height:27px; padding:5px 6px; background:var(--field); border-radius:4px">
+        <sc-for list="{{ keywords }}" as="kw" hint-placeholder-count="4">
+          <span style="display:flex; align-items:center; gap:4px; padding:2px 5px 2px 6px; border-radius:3px; background:var(--accent); color:var(--accent-ink); font-size:10.5px">{{ kw }}<span style="font-size:11px; opacity:.75">&times;</span></span>
+        </sc-for>
+        <span style="font-size:10.5px; color:var(--ink-3); padding:2px 4px">add&hellip;</span>
+      </div>
+      <span style="font-size:10px; color:var(--ink-3); line-height:1.4">Proposed from the name.</span>
+    </div>
+
+    <div style="height:1px; background:var(--line)"></div>
+
+    <div style="display:flex; flex-direction:column; gap:7px">
+      <div style="display:flex; flex-direction:column; gap:3px">
+        <span style="font-size:10.5px; font-weight:600; color:var(--ink-2)">UUID</span>
+        <div style="display:flex; align-items:center; gap:6px">
+          <span style="flex:1; min-width:0; font-family:'Iosevka Extended',Iosevka,'SF Mono',Menlo,monospace; letter-spacing:-0.05em; font-size:10.5px; color:var(--ink-2); word-break:break-all; line-height:1.4">{{ uuid }}</span>
+          <i class="ph-duotone ph-copy" style="font-size:16px; color:var(--ink-3); cursor:pointer"></i>
+        </div>
+      </div>
+      <div style="display:flex; flex-direction:column; gap:3px">
+        <span style="font-size:10.5px; font-weight:600; color:var(--ink-2)">Registered library path</span>
+        <span style="font-family:'Iosevka Extended',Iosevka,'SF Mono',Menlo,monospace; letter-spacing:-0.05em; font-size:10.5px; color:var(--ink-2); word-break:break-all; line-height:1.4">{{ libpath }}</span>
+      </div>
+      <div style="display:flex; align-items:center; gap:6px; margin-top:1px">
+        <span style="font-size:10.5px; font-weight:600; color:var(--ink-2)">Placement</span>
+        <span style="display:flex; align-items:center; gap:4px; padding:1.5px 6px; border-radius:3px; background:{{ placeBg }}; color:{{ placeFg }}; font-size:10px; font-weight:400">
+          <i class="{{ placeIcon }}" style="font-size:16px"></i>{{ placement }}
+        </span>
+      </div>
+    </div>
+
+    <div style="height:1px; background:var(--line)"></div>
+
+    <div style="display:flex; flex-direction:column; gap:4px">
+      <div onClick="{{ onReveal }}" style="display:flex; align-items:center; gap:7px; padding:5px 7px; margin:0 -7px; border-radius:4px; font-size:11.5px; color:var(--ink-2); cursor:pointer" style-hover="background:var(--btn-hover); color:var(--ink)"><i class="ph-duotone ph-folder-open" style="font-size:16px"></i><span>Reveal file</span></div>
+      <div style="display:flex; align-items:center; gap:7px; padding:5px 7px; margin:0 -7px; border-radius:4px; font-size:11.5px; color:var(--ink-2); cursor:pointer" style-hover="background:var(--btn-hover); color:var(--ink)"><i class="ph-duotone ph-fingerprint" style="font-size:16px"></i><span>Assign new UUID&hellip;</span></div>
+      <div style="display:flex; align-items:center; gap:7px; padding:5px 7px; margin:0 -7px; border-radius:4px; font-size:11.5px; color:var(--err); cursor:pointer" style-hover="background:var(--err-bg)"><i class="ph-duotone ph-trash" style="font-size:16px"></i><span>Remove entry</span></div>
+    </div>
+  </div>
+</div>
+
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:272,&quot;height&quot;:520},&quot;kind&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;DEVICE&quot;,&quot;MODULATOR&quot;,&quot;MODULE&quot;],&quot;default&quot;:&quot;DEVICE&quot;,&quot;tsType&quot;:&quot;string&quot;},&quot;name&quot;:{&quot;editor&quot;:&quot;text&quot;,&quot;default&quot;:&quot;DISPERSER&quot;,&quot;tsType&quot;:&quot;string&quot;},&quot;description&quot;:{&quot;editor&quot;:&quot;text&quot;,&quot;default&quot;:&quot;Allpass diffusion network for smearing transients.&quot;,&quot;tsType&quot;:&quot;string&quot;},&quot;keywords&quot;:{&quot;editor&quot;:&quot;text&quot;,&quot;default&quot;:&quot;disperser diffusion reverb smear allpass&quot;,&quot;tsType&quot;:&quot;string&quot;},&quot;uuid&quot;:{&quot;editor&quot;:&quot;text&quot;,&quot;default&quot;:&quot;21882ab0-7c41-4d0b-9a10-ff3e5d2e77a1&quot;,&quot;tsType&quot;:&quot;string&quot;},&quot;libpath&quot;:{&quot;editor&quot;:&quot;text&quot;,&quot;default&quot;:&quot;devices/My Devices/DISPERSER.bwdevice&quot;,&quot;tsType&quot;:&quot;string&quot;},&quot;placement&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;linked&quot;,&quot;copied&quot;,&quot;unresolved&quot;],&quot;default&quot;:&quot;linked&quot;,&quot;tsType&quot;:&quot;string&quot;},&quot;onClose&quot;:{&quot;editor&quot;:null,&quot;tsType&quot;:&quot;() =&gt; void&quot;},&quot;onReveal&quot;:{&quot;editor&quot;:null,&quot;tsType&quot;:&quot;() =&gt; void&quot;}}">
+const KIND = {
+  DEVICE: ["var(--k-device)", "var(--k-device-bg)", "ph-duotone ph-sliders"],
+  MODULATOR: ["var(--k-mod)", "var(--k-mod-bg)", "ph-duotone ph-wave-sine"],
+  MODULE: ["var(--k-module)", "var(--k-module-bg)", "ph-duotone ph-grid-nine"]
+};
+const PLACE = {
+  linked: ["var(--ok)", "var(--ok-bg)", "ph-duotone ph-link"],
+  copied: ["var(--info)", "var(--info-bg)", "ph-duotone ph-copy-simple"],
+  unresolved: ["var(--err)", "var(--err-bg)", "ph-duotone ph-link-break"]
+};
+class Component extends DCLogic {
+  renderVals() {
+    const p = this.props;
+    const kind = p.kind ?? "DEVICE";
+    const name = p.name ?? "DISPERSER";
+    const placement = p.placement ?? "linked";
+    const [kindFg, kindBg, kindIcon] = KIND[kind] || KIND.DEVICE;
+    const [placeFg, placeBg, placeIcon] = PLACE[placement] || PLACE.linked;
+    const kw = p.keywords ?? "disperser diffusion reverb smear allpass";
+    return {
+      kind, name, kindFg, kindBg, kindIcon,
+      kindLabel: { DEVICE: "Device", MODULATOR: "Modulator", MODULE: "Module" }[kind] || kind,
+      description: p.description ?? "Allpass diffusion network for smearing transients.",
+      keywords: kw.split(/\s+/).filter(Boolean),
+      uuid: p.uuid ?? "21882ab0-7c41-4d0b-9a10-ff3e5d2e77a1",
+      libpath: p.libpath ?? ("devices/My Devices/" + name + ".bwdevice"),
+      placement, placeFg, placeBg, placeIcon,
+      onClose: () => p.onClose && p.onClose(),
+      onReveal: () => p.onReveal && p.onReveal()
+    };
+  }
+}
+
+</script>
+</body>
+</html>

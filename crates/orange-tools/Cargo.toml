@@ -1,0 +1,13 @@
+[package]
+name = "orange-tools"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+bitwig-install.workspace = true
+bitwig-document.workspace = true
+bitwig-classfile.workspace = true
+bitwig-registry.workspace = true
+thiserror.workspace = true
+uuid.workspace = true

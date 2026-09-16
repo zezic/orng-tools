@@ -114,7 +114,7 @@ mod tests {
 
     const SAMPLE: &str = r#"
         version = "1.2.0"
-        author = "caviio"
+        author = "example"
         license = "CC-BY-4.0"
         min_bitwig = "6.1"
     "#;
@@ -123,7 +123,7 @@ mod tests {
     fn reads_what_the_document_cannot_say() {
         let manifest: Manifest = toml::from_str(SAMPLE).unwrap();
         assert_eq!(manifest.version.to_string(), "1.2.0");
-        assert_eq!(manifest.author.as_str(), "caviio");
+        assert_eq!(manifest.author.as_str(), "example");
         assert_eq!(manifest.min_bitwig.to_string(), "6.1");
         assert!(manifest.supersedes.is_empty());
     }

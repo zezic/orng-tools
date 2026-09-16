@@ -13,12 +13,14 @@ mod cipher;
 mod kind;
 pub mod ramona;
 mod text;
+mod version;
 
 use std::path::Path;
 
 use uuid::Uuid;
 
 pub use kind::{Kind, descriptions_key};
+pub use version::BitwigVersion;
 use ramona::{FieldKey, Fields as BinaryFields, Scanner, Value};
 
 /// Bytes between the metadata and body sections of a binary document: 5000

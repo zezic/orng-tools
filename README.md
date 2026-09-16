@@ -58,6 +58,7 @@ No Bitwig content is redistributed here, and none ever will be.
 | [`docs/ui-spec.md`](docs/ui-spec.md) | What the application's interface must do |
 | [`docs/ui-spec-catalog.md`](docs/ui-spec-catalog.md) | The community catalog, as a UI feature |
 | [`docs/design-review.md`](docs/design-review.md) | Validation of the visual design against both |
+| [`LICENSING.md`](LICENSING.md) | Which crate is under which licence, and why |
 
 ## Scope
 
@@ -75,4 +76,12 @@ local law. Never redistribute a modified installation or a backup.
 
 ## Licence
 
-GPL-3.0.
+Per crate, because one dependency forces copyleft on part of the workspace and
+there is no reason to spread it further.
+
+- `bitwig-install`, `bitwig-document`, `orange-catalog`: **MIT OR Apache-2.0**
+- `bitwig-classfile`, `bitwig-registry`, `orange-tools`, `orange-registry`:
+  **GPL-3.0-only**, because they link [Krakatau](https://github.com/Storyyeller/Krakatau)
+
+So reading Bitwig documents or working with the catalog format needs nothing
+copyleft; editing bytecode does. See [LICENSING.md](LICENSING.md).

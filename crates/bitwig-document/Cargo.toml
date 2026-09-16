@@ -3,7 +3,7 @@ name = "bitwig-document"
 description = "Reading the identity of Bitwig .bwdevice, .bwmodulator and .bwmodule documents"
 version.workspace = true
 edition.workspace = true
-license.workspace = true
+license = "MIT OR Apache-2.0"
 repository.workspace = true
 
 [dependencies]

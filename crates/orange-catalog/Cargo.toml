@@ -3,12 +3,11 @@ name = "orange-catalog"
 description = "The Orange Catalog repository format: manifests, index, and the rules that keep identities stable"
 version.workspace = true
 edition.workspace = true
-license.workspace = true
+license = "MIT OR Apache-2.0"
 repository.workspace = true
 
 [dependencies]
 bitwig-document.workspace = true
-bitwig-registry.workspace = true
 thiserror.workspace = true
 uuid = { workspace = true, features = ["serde"] }
 serde = { version = "1", features = ["derive"] }

@@ -407,4 +407,9 @@ modifying and redistributing its products; users are responsible for their own l
 local law. Nothing produced by this project may ship Bitwig code or assets, and a modified
 archive or a backup must never be redistributed.
 
+The workspace is licensed per crate. The crates that only read documents or
+locate an installation carry no copyleft dependency and are permissive, so they
+are useful to anyone; the crates that edit bytecode link Krakatau and are
+GPL-3.0 because they must be. `LICENSING.md` records which is which.
+
 Not affiliated with or endorsed by Bitwig GmbH.

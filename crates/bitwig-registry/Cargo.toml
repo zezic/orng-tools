@@ -3,7 +3,7 @@ name = "bitwig-registry"
 description = "Resolving and reading Bitwig's internal content registry"
 version.workspace = true
 edition.workspace = true
-license.workspace = true
+license = "GPL-3.0-only"
 repository.workspace = true
 
 [dependencies]

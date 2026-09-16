@@ -430,7 +430,6 @@ name = "orange-catalog"
 version = "0.1.0"
 dependencies = [
  "bitwig-document",
- "bitwig-registry",
  "serde",
  "serde_json",
  "sha2",

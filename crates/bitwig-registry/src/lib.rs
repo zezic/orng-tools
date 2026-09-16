@@ -11,7 +11,8 @@ pub mod anchors;
 pub mod entries;
 pub mod guard;
 
-pub use anchors::{Binding, BitwigVersion, BuildId, EntitlementBinding, RegistryBinding};
+pub use anchors::{Binding, BuildId, EntitlementBinding, RegistryBinding};
+pub use bitwig_document::BitwigVersion;
 pub use entries::{Entry, read_entries};
 pub use guard::GuardState;
 

@@ -3,7 +3,7 @@ name = "bitwig-classfile"
 description = "Class-file and JAR surgery primitives: pooled string scanning, bytecode editing, archive rewriting"
 version.workspace = true
 edition.workspace = true
-license.workspace = true
+license = "GPL-3.0-only"
 repository.workspace = true
 
 [dependencies]

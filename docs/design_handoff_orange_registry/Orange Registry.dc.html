@@ -28,7 +28,7 @@ a:hover{color:#ff7a45}
     <div style="display:flex; align-items:flex-end; gap:16px; flex-wrap:wrap">
       <div style="display:flex; flex-direction:column; gap:5px; flex:1; min-width:240px">
         <span style="font-size:21px; font-weight:600; color:var(--ink); letter-spacing:-0.025em">Orange Registry</span>
-        <span style="font-family:'Iosevka Extended',Iosevka,monospace; letter-spacing:-0.05em; font-size:11px; color:var(--ink-3)">Desktop UI &middot; 820&times;560 &middot; 19 states</span>
+        <span style="font-family:'Iosevka Extended',Iosevka,monospace; letter-spacing:-0.05em; font-size:11px; color:var(--ink-3)">Desktop UI &middot; 820&times;560 &middot; 30 states</span>
       </div>
       <div style="display:flex; gap:2px; padding:3px; background:var(--panel); border-radius:4px">
         <div onClick="{{ setDark }}" style="{{ darkBtn }}">Dark</div>
@@ -66,23 +66,27 @@ a:hover{color:#ff7a45}
         </div>
 
         <sc-if value="{{ isSettings }}" hint-placeholder-val="{{ false }}">
-          <div style="display:grid; grid-template-rows:minmax(0,1fr); grid-template-columns:minmax(0,1fr); flex:1; min-height:0"><dc-import name="SettingsScreen" onBack="{{ goMain }}" onAbout="{{ goAbout }}" onTheme="{{ setTheme }}" hint-size="100%,100%"></dc-import></div>
+          <div style="display:grid; grid-template-rows:minmax(0,1fr); grid-template-columns:minmax(0,1fr); flex:1; min-height:0"><dc-import name="SettingsScreen" guard="{{ guard }}" backup="{{ backup }}" resolved="{{ resolved }}" entryCount="{{ entryCount }}" onBack="{{ goMain }}" onAbout="{{ goAbout }}" onRestore="{{ goRestore }}" onTheme="{{ setTheme }}" hint-size="100%,100%"></dc-import></div>
         </sc-if>
         <sc-if value="{{ isRestore }}" hint-placeholder-val="{{ false }}">
-          <div style="display:grid; grid-template-rows:minmax(0,1fr); grid-template-columns:minmax(0,1fr); flex:1; min-height:0"><dc-import name="RestoreScreen" onBack="{{ goMain }}" hint-size="100%,100%"></dc-import></div>
+          <div style="display:grid; grid-template-rows:minmax(0,1fr); grid-template-columns:minmax(0,1fr); flex:1; min-height:0"><dc-import name="RestoreScreen" backup="{{ backup }}" onBack="{{ goMain }}" hint-size="100%,100%"></dc-import></div>
         </sc-if>
         <sc-if value="{{ isAbout }}" hint-placeholder-val="{{ false }}">
-          <div style="display:grid; grid-template-rows:minmax(0,1fr); grid-template-columns:minmax(0,1fr); flex:1; min-height:0"><dc-import name="AboutScreen" onBack="{{ goMain }}" hint-size="100%,100%"></dc-import></div>
+          <div style="display:grid; grid-template-rows:minmax(0,1fr); grid-template-columns:minmax(0,1fr); flex:1; min-height:0"><dc-import name="AboutScreen" resolved="{{ resolved }}" version="{{ aboutVersion }}" build="{{ installBuild }}" onBack="{{ goMain }}" hint-size="100%,100%"></dc-import></div>
         </sc-if>
 
         <sc-if value="{{ isApp }}" hint-placeholder-val="{{ true }}">
           <div style="display:flex; flex-direction:column; flex:1; min-height:0">
 
             <sc-if value="{{ hasInstall }}" hint-placeholder-val="{{ true }}">
-              <dc-import name="InstallBar" state="{{ installState }}" count="{{ count }}" guard="{{ guard }}" backup="{{ backup }}" menuOpen="{{ menuOpen }}" onToggleMenu="{{ toggleMenu }}" onSettings="{{ goSettings }}" onRestore="{{ goRestore }}" onAbout="{{ goAbout }}" hint-size="100%,70px"></dc-import>
+              <dc-import name="InstallBar" view="{{ view }}" freshness="{{ freshness }}" stale="{{ stale }}" onLocal="{{ goEntries }}" onCatalog="{{ goCatalog }}" state="{{ installState }}" title="{{ installTitle }}" build="{{ installBuild }}" menuOpen="{{ menuOpen }}" onToggleMenu="{{ toggleMenu }}" onSettings="{{ goSettings }}" onRestore="{{ goRestore }}" onAbout="{{ goAbout }}" hint-size="100%,70px"></dc-import>
             </sc-if>
             <sc-if value="{{ noInstall }}" hint-placeholder-val="{{ false }}">
               <div style="position:relative; display:flex; align-items:center; gap:12px; flex:none; padding:13px 12px; background:var(--panel)">
+                <div style="display:flex; align-items:center; gap:2px; flex:none">
+                  <div onClick="{{ goEntries }}" style="{{ localTab }}">Local</div>
+                  <div onClick="{{ goCatalog }}" style="{{ catalogTab }}">Catalog</div>
+                </div>
                 <span style="flex:1; font-size:13.5px; font-weight:600; letter-spacing:-0.015em; color:var(--ink-3)">No installation selected</span>
                 <div style="display:flex; align-items:center; gap:6px; padding:4px 9px; border-radius:3px; background:var(--btn); color:var(--ink-2); font-size:11px; cursor:pointer" style-hover="background:var(--btn-hover); color:var(--ink)"><i class="ph-duotone ph-folder-open" style="font-size:16px"></i><span>Change install</span></div>
                 <div onClick="{{ toggleMenu }}" style="display:flex; align-items:center; justify-content:center; width:26px; height:24px; border-radius:3px; color:var(--ink-2); cursor:pointer" style-hover="background:var(--btn-hover)"><i class="ph-duotone ph-dots-three-outline-vertical" style="font-size:16px"></i></div>
@@ -93,11 +97,21 @@ a:hover{color:#ff7a45}
             <div style="display:flex; flex:1; min-height:0">
               <div style="display:flex; flex-direction:column; flex:1; min-width:0">
 
+                <sc-if value="{{ showCatalog }}" hint-placeholder-val="{{ false }}">
+                  <dc-import name="CatalogToolbar" narrow="{{ detailOpen }}" query="{{ query }}" filter="{{ catalogFilter }}" kinds="{{ kinds }}" onFilter="{{ onCatalogFilter }}" onToggleKind="{{ onToggleKind }}" devices="{{ catDevices }}" modulators="{{ catModulators }}" modules="{{ catModules }}" hint-size="100%,42px"></dc-import>
+                  <div style="flex:1; min-height:0; overflow:auto; background:var(--row)">
+                    <sc-for list="{{ items }}" as="it" hint-placeholder-count="6">
+                      <dc-import name="CatalogRow" kind="{{ it.kind }}" item-name="{{ it.name }}" description="{{ it.description }}" author="{{ it.author }}" version="{{ it.version }}" status="{{ it.status }}" requires="{{ it.requires }}" selected="{{ it.selected }}" forceHover="{{ it.forceHover }}" narrow="{{ detailOpen }}" onOpen="{{ openDetail }}" onAction="{{ catalogAction }}" hint-size="100%,48px"></dc-import>
+                    </sc-for>
+                  </div>
+                </sc-if>
+
+
                 <sc-if value="{{ showList }}" hint-placeholder-val="{{ true }}">
-                  <dc-import name="ListToolbar" narrow="{{ inspectorOpen }}" factory="{{ factoryOn }}" query="{{ query }}" devices="{{ devices }}" modulators="{{ modulators }}" modules="{{ modules }}" hint-size="100%,42px"></dc-import>
+                  <dc-import name="ListToolbar" narrow="{{ inspectorOpen }}" factory="{{ factoryOn }}" kinds="{{ kinds }}" onToggleKind="{{ onToggleKind }}" onToggleFactory="{{ onToggleFactory }}" query="{{ query }}" devices="{{ devices }}" modulators="{{ modulators }}" modules="{{ modules }}" hint-size="100%,42px"></dc-import>
                   <div style="flex:1; min-height:0; overflow:auto; background:var(--row)">
                     <sc-if value="{{ hasStaged }}" hint-placeholder-val="{{ true }}">
-                      <div style="display:flex; align-items:center; gap:9px; height:26px; padding:0 12px; background:var(--row-alt); position:sticky; top:0; z-index:2">
+                      <div style="display:flex; align-items:center; gap:9px; height:26px; padding:0 12px; background:var(--row-alt); position:sticky; top:0; z-index:1">
                         <span style="font-size:11px; font-weight:500; color:var(--accent-text)">Pending</span>
                         <div style="flex:1"></div>
                         <span style="font-family:'Iosevka Extended',Iosevka,monospace; letter-spacing:-0.05em; font-size:10.5px; color:var(--ink-3)">{{ stagedCount }}</span>
@@ -106,31 +120,48 @@ a:hover{color:#ff7a45}
                         <dc-import name="EntryRow" kind="{{ r.kind }}" entry-name="{{ r.name }}" uuid="{{ r.uuid }}" status="{{ r.status }}" reason="{{ r.reason }}" narrow="{{ inspectorOpen }}" forceActions="{{ r.forceActions }}" onOpen="{{ openInspector }}" hint-size="100%,36px"></dc-import>
                       </sc-for>
                     </sc-if>
-                    <div style="display:flex; align-items:center; gap:9px; height:26px; padding:0 12px; background:var(--row-alt); position:sticky; top:0; z-index:1">
+                    <div style="display:flex; align-items:center; gap:9px; height:26px; padding:0 12px; background:var(--row-alt); position:sticky; top:0; z-index:2">
                       <span style="font-size:11px; font-weight:500; color:var(--ink-2)">Registered</span>
                       <div style="flex:1"></div>
                       <span style="font-family:'Iosevka Extended',Iosevka,monospace; letter-spacing:-0.05em; font-size:10.5px; color:var(--ink-3)">{{ countPad }}</span>
                     </div>
-                    <sc-for list="{{ rows }}" as="r" hint-placeholder-count="7">
-                      <dc-import name="EntryRow" kind="{{ r.kind }}" entry-name="{{ r.name }}" uuid="{{ r.uuid }}" status="{{ r.status }}" reason="{{ r.reason }}" selected="{{ r.selected }}" narrow="{{ inspectorOpen }}" factory="{{ r.factory }}" forceActions="{{ r.forceActions }}" onOpen="{{ openInspector }}" hint-size="100%,36px"></dc-import>
+                    <sc-for list="{{ userRows }}" as="r" hint-placeholder-count="7">
+                      <dc-import name="EntryRow" kind="{{ r.kind }}" entry-name="{{ r.name }}" uuid="{{ r.uuid }}" status="{{ r.status }}" reason="{{ r.reason }}" source="{{ r.source }}" selected="{{ r.selected }}" narrow="{{ inspectorOpen }}" factory="{{ r.factory }}" forceActions="{{ r.forceActions }}" onOpen="{{ openInspector }}" hint-size="100%,36px"></dc-import>
                     </sc-for>
+                    <sc-if value="{{ hasFactory }}" hint-placeholder-val="{{ false }}">
+                      <div style="display:flex; align-items:center; gap:9px; height:26px; padding:0 12px; background:var(--row-alt); position:sticky; top:0; z-index:3">
+                        <span style="font-size:11px; font-weight:500; color:var(--ink-3)">Factory</span>
+                        <div style="flex:1"></div>
+                        <span style="font-family:'Iosevka Extended',Iosevka,monospace; letter-spacing:-0.05em; font-size:10.5px; color:var(--ink-3)">{{ factoryCount }}</span>
+                      </div>
+                      <sc-for list="{{ factoryRows }}" as="r" hint-placeholder-count="2">
+                        <dc-import name="EntryRow" kind="{{ r.kind }}" entry-name="{{ r.name }}" uuid="{{ r.uuid }}" status="{{ r.status }}" narrow="{{ inspectorOpen }}" factory="{{ r.factory }}" hint-size="100%,36px"></dc-import>
+                      </sc-for>
+                    </sc-if>
                   </div>
                 </sc-if>
 
+                <sc-if value="{{ showCatalogToolbarOnly }}" hint-placeholder-val="{{ false }}">
+                  <dc-import name="CatalogToolbar" narrow="{{ detailOpen }}" query="{{ query }}" filter="{{ catalogFilter }}" kinds="{{ kinds }}" onFilter="{{ onCatalogFilter }}" onToggleKind="{{ onToggleKind }}" devices="{{ catDevices }}" modulators="{{ catModulators }}" modules="{{ catModules }}" hint-size="100%,42px"></dc-import>
+                </sc-if>
+
                 <sc-if value="{{ showToolbarOnly }}" hint-placeholder-val="{{ false }}">
-                  <dc-import name="ListToolbar" narrow="{{ inspectorOpen }}" factory="{{ factoryOn }}" query="{{ query }}" devices="{{ devices }}" modulators="{{ modulators }}" modules="{{ modules }}" hint-size="100%,42px"></dc-import>
+                  <dc-import name="ListToolbar" narrow="{{ inspectorOpen }}" factory="{{ factoryOn }}" kinds="{{ kinds }}" onToggleKind="{{ onToggleKind }}" onToggleFactory="{{ onToggleFactory }}" query="{{ query }}" devices="{{ devices }}" modulators="{{ modulators }}" modules="{{ modules }}" hint-size="100%,42px"></dc-import>
                 </sc-if>
 
                 <sc-if value="{{ showEmpty }}" hint-placeholder-val="{{ false }}">
                   <div style="display:grid; grid-template-rows:minmax(0,1fr); grid-template-columns:minmax(0,1fr); flex:1; min-height:0; background:var(--bg)">
-                    <dc-import name="EmptyState" variant="{{ emptyVariant }}" hint-size="100%,100%"></dc-import>
+                    <dc-import name="EmptyState" variant="{{ emptyVariant }}" onAction="{{ emptyAction }}" onAlt="{{ emptyAlt }}" hint-size="100%,100%"></dc-import>
                   </div>
                 </sc-if>
 
               </div>
 
               <sc-if value="{{ inspectorOpen }}" hint-placeholder-val="{{ false }}">
-                <dc-import name="Inspector" onClose="{{ closeInspector }}" hint-size="272px,100%"></dc-import>
+                <dc-import name="Inspector" kind="{{ inspKind }}" registered="{{ inspRegistered }}" entry-name="{{ inspName }}" status="{{ inspStatus }}" uuid="{{ inspUuid }}" description="{{ inspDescription }}" keywords="{{ inspKeywords }}" libpath="{{ inspLibpath }}" placement="{{ inspPlacement }}" source="{{ inspSource }}" sourceVersion="{{ inspSourceVersion }}" provenance="{{ inspProvenance }}" onClose="{{ closeInspector }}" hint-size="272px,100%"></dc-import>
+              </sc-if>
+              <sc-if value="{{ detailOpen }}" hint-placeholder-val="{{ false }}">
+                <dc-import name="CatalogDetail" item-name="{{ detailName }}" kind="{{ detailKind }}" status="{{ detailStatus }}" author="{{ detailAuthor }}" version="{{ detailVersion }}" description="{{ detailDescription }}" keywords="{{ detailKeywords }}" licence="{{ detailLicence }}" provenance="{{ detailProvenance }}" homepage="{{ detailHomepage }}" uuid="{{ detailUuid }}" requires="{{ detailRequires }}" compatible="{{ detailCompatible }}" replacementName="{{ detailReplacement }}" onClose="{{ closeDetail }}" onPrimary="{{ detailPrimary }}" onReplacement="{{ openReplacement }}" hint-size="272px,100%"></dc-import>
               </sc-if>
             </div>
 
@@ -207,13 +238,6 @@ a:hover{color:#ff7a45}
                     </div>
                   </sc-for>
                 </div>
-                <div style="display:flex; align-items:center; gap:9px; padding:9px 10px; background:var(--bg); border-radius:4px">
-                  <i class="ph-duotone ph-square" style="font-size:16px; flex:none; color:var(--ink-3)"></i>
-                  <div style="display:flex; flex-direction:column; gap:2px">
-                    <span style="font-size:11px; color:var(--ink)">Also delete the document file of removed entries</span>
-                    <span style="font-size:10.5px; color:var(--ink-3)">Off keeps OLD REVERB.bwdevice in your library.</span>
-                  </div>
-                </div>
                 <span style="font-size:10.5px; line-height:1.5; color:var(--ink-3); text-wrap:pretty">A Bitwig update resets the installation. Prepare it again afterwards. Your registered devices are kept.</span>
               </div>
               <div style="position:relative; display:flex; align-items:center; gap:8px; flex:none; padding:12px 14px; background:var(--bg)">
@@ -268,6 +292,29 @@ a:hover{color:#ff7a45}
           </div>
         </sc-if>
 
+        <sc-if value="{{ isUpdateConfirm }}" hint-placeholder-val="{{ false }}">
+          <div style="position:absolute; inset:0; z-index:70; display:flex; align-items:center; justify-content:center; padding:26px; background:var(--scrim)">
+            <div style="display:flex; flex-direction:column; width:428px; overflow:hidden; background:var(--panel-2); border-radius:8px; box-shadow:var(--shadow)">
+              <div style="display:flex; align-items:center; gap:10px; flex:none; padding:14px 14px 12px; background:var(--bg)">
+                <span style="flex:1; font-size:14px; font-weight:600; letter-spacing:-0.02em; color:var(--ink)">{{ updateTitle }}</span>
+              </div>
+              <div style="display:flex; flex-direction:column; gap:10px; flex:1; padding:13px 14px 14px">
+                <span style="font-size:11.5px; line-height:1.55; color:var(--ink); text-wrap:pretty">Projects that already use this device will use the new version.</span>
+                <span style="font-family:'Iosevka Extended',Iosevka,monospace; letter-spacing:-0.05em; font-size:10.5px; color:var(--ink-3)">{{ updateVersions }}</span>
+                <span style="font-size:10.5px; line-height:1.5; color:var(--ink-3); text-wrap:pretty">Bitwig finds a device by identity, not by content, so an update reaches back into projects you have already saved. The catalog only allows updates that keep the parameter set, so those projects will still load and sound as saved — but they will play the new version.</span>
+                <span style="font-size:10.5px; line-height:1.5; color:var(--ink-3); text-wrap:pretty">A change that alters the parameter set is published as a separate device instead, and never arrives this way.</span>
+              </div>
+              <div style="display:flex; align-items:center; gap:8px; flex:none; padding:12px 14px; background:var(--bg)">
+                <div style="flex:1"></div>
+                <div onClick="{{ goCatalog }}" style="display:flex; align-items:center; height:30px; padding:0 13px; border-radius:3px; background:var(--btn); color:var(--ink-2); font-size:11.5px; cursor:pointer" style-hover="color:var(--ink)">Cancel</div>
+                <div onClick="{{ goCatalog }}" style="display:flex; align-items:center; gap:8px; height:32px; padding:0 14px; border-radius:3px; background:var(--accent); color:var(--accent-ink); font-size:12px; font-weight:600; letter-spacing:-0.01em; cursor:pointer">
+                  <span>Update</span><i class="ph-duotone ph-arrow-right" style="font-size:16px"></i>
+                </div>
+              </div>
+            </div>
+          </div>
+        </sc-if>
+
       </div>
 
       <div style="display:flex; align-items:flex-start; gap:10px; width:820px; max-width:100%">
@@ -285,10 +332,25 @@ const REGISTERED = [
   { kind: "DEVICE", name: "CURVECOMP", uuid: "7c41d0b2-9a10-4ff3-8e5d-2e77a1c0de44", status: "Registered" },
   { kind: "DEVICE", name: "TAPE DRIVE", uuid: "3e90b1c4-5d2e-4771-a1c0-de4419e11c93", status: "Pending restart", reason: "Bitwig is open" },
   { kind: "MODULATOR", name: "SHAPER", uuid: "c0de4419-e11c-4930-9f88-b4a20188b4a2", status: "Missing file", reason: "Not found in the user library" },
-  { kind: "MODULATOR", name: "BREATH FOLLOWER", uuid: "5d2e77a1-c0de-4441-9e11-c930f88b4a20", status: "Registered" },
+  { kind: "MODULATOR", name: "BREATH FOLLOWER", uuid: "5d2e77a1-c0de-4441-9e11-c930f88b4a20", status: "Update available", reason: "Catalog has 2.1.0" },
   { kind: "MODULE", name: "FOLD BACK", uuid: "e11c930f-88b4-4a20-9188-b4a201e11c93", status: "Changed", reason: "File on disk differs" },
   { kind: "DEVICE", name: "OLD REVERB", uuid: "88b4a201-e11c-4930-9f88-b4a2015d2e77", status: "Pending removal" }
 ];
+const DETAIL = {
+  "DISPERSER": { description: "Allpass diffusion network for smearing transients.", keywords: "disperser diffusion smear allpass", placement: "linked" },
+  "CURVECOMP": { description: "Feed-forward compressor with an editable transfer curve.", keywords: "curvecomp compressor transfer curve dynamics", placement: "linked" },
+  "TAPE DRIVE": { description: "Saturation and wow modelled on a reel-to-reel path.", keywords: "tape drive saturation wow flutter", placement: "copied" },
+  "SHAPER": { description: "Waveshaping modulator driven by an envelope follower.", keywords: "shaper waveshape envelope", placement: "unresolved" },
+  "BREATH FOLLOWER": { description: "Envelope follower tuned for wind controllers.", keywords: "breath follower envelope wind expression", placement: "linked" },
+  "FOLD BACK": { description: "Wavefolder with an adjustable fold threshold.", keywords: "fold back wavefolder distortion", placement: "linked" },
+  "OLD REVERB": { description: "Early plate reverb sketch, superseded by DISPERSER.", keywords: "old reverb plate", placement: "linked" },
+  "WAVESHAPER ALPHA": { description: "Asymmetric waveshaper with a drive stage.", keywords: "waveshaper alpha drive asymmetric", placement: "linked" },
+  "SLEW LIMITER": { description: "Rate-limits a signal, asymmetric rise and fall.", keywords: "slew limiter slope glide", placement: "linked" },
+  "notes.txt": { description: "Not a Bitwig document.", keywords: "", placement: "unresolved" },
+  "Polysynth": { description: "Bitwig factory device.", keywords: "polysynth factory", placement: "linked" },
+  "LFO": { description: "Bitwig factory modulator.", keywords: "lfo factory", placement: "linked" }
+};
+
 const STAGED = [
   { kind: "DEVICE", name: "WAVESHAPER ALPHA", uuid: "9a10ff3e-5d2e-4771-a1c0-de4419e11c93", status: "Staged" },
   { kind: "MODULE", name: "SLEW LIMITER", uuid: "4b71c8d9-21f0-4ab3-8c77-1e9b0d4a6f22", status: "Conflict", reason: "UUID already used by a factory module" },
@@ -298,19 +360,31 @@ const FACTORY = [
   { kind: "DEVICE", name: "Polysynth", uuid: "8c4b1e2a-0000-4000-8000-000000000001", status: "Factory", factory: true },
   { kind: "MODULATOR", name: "LFO", uuid: "8c4b1e2a-0000-4000-8000-000000000002", status: "Factory", factory: true }
 ];
+const CATALOG = [
+  { kind: "DEVICE", name: "DISPERSER", description: "Allpass diffusion network for smearing transients into a wash.", long: "Four cascaded allpass stages with per-stage feedback and a tilt filter in the loop. Smears transients into a wash without the tail of a reverb.", author: "kirkwood", version: "1.2.0", status: "Installed", uuid: "21882ab0-7c41-4d0b-9a10-ff3e5d2e77a1", keywords: "disperser diffusion smear allpass", licence: "MIT", provenance: "orange-catalog #412", homepage: "github.com/kirkwood/disperser" },
+  { kind: "DEVICE", name: "TILT SHELF", description: "Two-band tilt EQ with a single control and a fixed pivot.", long: "One knob tilts the spectrum around a fixed 700 Hz pivot. Intended as a mix-bus tone control rather than a corrective EQ.", author: "mono.lab", version: "1.0.4", status: "Available", uuid: "b4102f77-9e21-4c08-8a5f-31d7c0ea4419", keywords: "tilt shelf eq tone bus", licence: "MIT", provenance: "orange-catalog #518", homepage: "mono-lab.dev/tilt" },
+  { kind: "MODULATOR", name: "BREATH FOLLOWER", description: "Envelope follower tuned for wind controllers and breath input.", long: "Tracks breath pressure with an asymmetric attack and release, so held notes do not pump. Built for EWI and TEC breath controllers.", author: "hsu", version: "2.1.0", installed: "2.0.3", status: "Update available", uuid: "5d2e77a1-c0de-4441-9e11-c930f88b4a20", keywords: "breath follower envelope wind expression", licence: "Apache-2.0", provenance: "orange-catalog #604", homepage: "" },
+  { kind: "MODULE", name: "SLEW LIMITER", description: "Rate-limits a signal, asymmetric rise and fall.", long: "Limits how fast a signal may change, with independent rise and fall rates. Useful for taming stepped modulation or building portamento.", author: "grid.works", version: "1.1.0", status: "Available", uuid: "4b71c8d9-21f0-4ab3-8c77-1e9b0d4a6f22", keywords: "slew limiter slope portamento glide", licence: "CC0", provenance: "orange-catalog #377", homepage: "grid.works/slew" },
+  { kind: "DEVICE", name: "CURVECOMP", description: "Feed-forward compressor with an editable transfer curve.", long: "Draw the input-to-output curve directly instead of setting threshold and ratio. Feed-forward detection with programme-dependent release.", author: "kirkwood", version: "0.9.0", status: "Superseded", uuid: "7c41d0b2-9a10-4ff3-8e5d-2e77a1c0de44", keywords: "curvecomp compressor transfer curve dynamics", licence: "MIT", provenance: "orange-catalog #203", homepage: "github.com/kirkwood/curvecomp", replacement: "CURVECOMP II" },
+  { kind: "DEVICE", name: "CURVECOMP II", description: "Transfer-curve compressor, rebuilt with a wider parameter set.", long: "The same drawn-curve approach as CURVECOMP, with per-band detection and a sidechain input. The parameter set changed, so it carries a new identity and installs alongside the original rather than replacing it.", author: "kirkwood", version: "2.0.0", status: "Available", uuid: "f2a7c418-6b03-4d91-9e52-7ac41d0b2e88", keywords: "curvecomp compressor transfer curve sidechain multiband", licence: "MIT", provenance: "orange-catalog #731", homepage: "github.com/kirkwood/curvecomp" },
+  { kind: "MODULE", name: "CHAOS SOURCE", description: "Deterministic chaotic oscillator for modulation.", long: "A Rossler attractor read as three correlated modulation outputs. Deterministic from a seed, so a project recalls the same trajectory.", author: "vf", version: "1.0.0", status: "Incompatible", requires: "6.2", uuid: "e11c930f-88b4-4a20-9188-b4a201e11c93", keywords: "chaos attractor random modulation seed", licence: "GPL-3.0", provenance: "orange-catalog #711", homepage: "" },
+  { kind: "DEVICE", name: "GRAIN CLOUD", description: "Granular texture generator with spray and pitch scatter.", long: "Reads a captured buffer as overlapping grains with position spray, pitch scatter and density control. Freezes into a sustained texture.", author: "atelier", version: "1.4.2", status: "Available", uuid: "9a10ff3e-5d2e-4771-a1c0-de4419e11c93", keywords: "grain cloud granular texture freeze", licence: "MIT", provenance: "orange-catalog #689", homepage: "atelier-audio.net/grain" },
+  { kind: "MODULATOR", name: "STEP SEQ 16", description: "Sixteen-step modulation sequencer with per-step glide.", long: "Sixteen steps with per-step glide time and a swing control, clocked from the transport or a free-running rate.", author: "mono.lab", version: "1.2.1", status: "Available", uuid: "3e90b1c4-5d2e-4771-a1c0-de4419e11c93", keywords: "step sequencer modulation glide swing", licence: "MIT", provenance: "orange-catalog #455", homepage: "mono-lab.dev/stepseq" }
+];
+
 const STEP_LABELS = [
-  ["Back up the installation", "238 MB"],
+  ["Back up the jar and description bundles", "35 MB"],
   ["Read the Core Registry", "428 entries"],
   ["Prepare the installation", ""],
   ["Neutralise the tamper guard", ""],
   ["Place documents", "6 files"],
-  ["Link library folders", ""],
+  ["Link library folders", "", true],
   ["Write descriptions and search keywords", ""],
   ["Verify", ""],
   ["Activate", ""]
 ];
 const PLAN = [
-  { color: "var(--ink-3)", text: "A backup is written first to ~/Library/Application Support/OrangeRegistry/backups." },
+  { color: "var(--ink-3)", text: "The jar and description bundles are backed up first to ~/Library/Application Support/OrangeRegistry/backups." },
   { color: "var(--accent-text)", text: "The installation at /Applications/Bitwig Studio.app is modified so it loads your entry list at startup." },
   { color: "var(--ink-3)", text: "2 entries registered: WAVESHAPER ALPHA, SLEW LIMITER." },
   { color: "var(--ink-3)", text: "1 entry removed: OLD REVERB." },
@@ -348,6 +422,63 @@ const SCREENS = {
     caption: ["No install found", "The list region is given over entirely to locating an installation. Diagnostics stay reachable while the app is not in a working state."],
     empty: "noinstall", noInstall: true,
     action: { summary: "No installation selected", tone: "warn", primary: "Prepare installation", mode: "prepare", disabled: true, disabledReason: "No installation selected" }
+  },
+  unknownbuild: {
+    caption: ["Unknown build", "The state a user reaches the morning after a Bitwig release. It is nobody's fault, so the copy does not read like an error \u2014 diagnostics are the primary action, because that is what resolves it."],
+    empty: "unknownbuild", installState: "Unknown build", count: 0, guard: "Unknown", backup: "No backup yet", title: "Bitwig Studio", build: "",
+    action: { summary: "Installation not recognised", tone: "warn", primary: "Prepare installation", mode: "prepare", disabled: true, disabledReason: "This installation could not be read" }
+  },
+  catalog: {
+    caption: ["Catalog browse", "The second primary view. A catalog row leads with what the item is and who made it \u2014 the author is the trust signal, since an item is DSP that Bitwig will run. No UUID here: it identifies a thing you already have, it does not help you choose one."],
+    view: "catalog", list: true,
+    action: { summary: "Catalog \u00b7 9 items", note: "Installing is Update entries work \u00b7 no backup, Bitwig may stay open", primary: "Apply changes", mode: "update", disabled: true, disabledReason: "Nothing to apply" }
+  },
+  catalogupdate: {
+    caption: ["Update available", "Installed, and the catalog has a newer version of the same identity. The only accent in the row, because this is the one status that asks for a decision."],
+    view: "catalog", list: true, catalogFilter: "Updatable", hoverItem: 2,
+    action: { summary: "Catalog \u00b7 1 update available", note: "An update changes the device in projects that already use it", primary: "Apply changes", mode: "update", disabled: true, disabledReason: "Nothing to apply" }
+  },
+  catalogsuperseded: {
+    caption: ["Replacement available", "Not an update and not a debt. A newer version exists as a separate device with its own identity, so installing it leaves projects alone and both can coexist. The row stays quiet \u2014 no accent, no badge \u2014 and the panel carries the explanation."],
+    view: "catalog", list: true, detail: "CURVECOMP",
+    action: { summary: "Catalog \u00b7 9 items", primary: "Apply changes", mode: "update", disabled: true, disabledReason: "Nothing to apply" }
+  },
+  catalogdetail: {
+    caption: ["Item detail", "The same 272px panel the Local view uses. Author, version, required Bitwig version, licence and the keywords that will become search terms \u2014 plus provenance: a link to the merged change, which is what makes review the trust boundary rather than a claim about one."],
+    view: "catalog", list: true, detail: "TILT SHELF",
+    action: { summary: "Catalog \u00b7 9 items", primary: "Apply changes", mode: "update", disabled: true, disabledReason: "Nothing to apply" }
+  },
+  catalogincompatible: {
+    caption: ["Incompatible item", "States the Bitwig version it needs rather than hiding the item or failing at install time. No action, because there is nothing the user can do here except update Bitwig."],
+    view: "catalog", list: true, detail: "CHAOS SOURCE",
+    action: { summary: "Catalog \u00b7 9 items", primary: "Apply changes", mode: "update", disabled: true, disabledReason: "Nothing to apply" }
+  },
+  catalogupdateconfirm: {
+    caption: ["Update confirmation", "The one catalog action that confirms. An install adds something new; an update reaches backwards into projects already saved, so it is stated plainly before the action and in one sentence."],
+    view: "catalog", list: true, updateConfirm: true, detail: "BREATH FOLLOWER", catalogFilter: "Updatable",
+    action: { summary: "Catalog \u00b7 1 update available", primary: "Apply changes", mode: "update", disabled: true, disabledReason: "Nothing to apply" }
+  },
+  catalogstale: {
+    caption: ["Offline with a cached catalog", "A degraded state, not an error, so it gets no banner. The cached index still browses and its age is stated plainly next to the switch, where it becomes accent-coloured and grows a Refresh control once stale."],
+    view: "catalog", list: true, freshness: "Catalog from 12 days ago", stale: true,
+    action: { summary: "Catalog \u00b7 9 items \u00b7 cached", note: "Offline \u00b7 installing a cached item still works", primary: "Apply changes", mode: "update", disabled: true, disabledReason: "Nothing to apply" }
+  },
+  catalognever: {
+    caption: ["Catalog never fetched", "First run with no connection. Explains what the catalog is and that it caches, so the user knows this is a one-time cost rather than a permanent requirement."],
+    view: "catalog", empty: "nocatalog", freshness: "Never fetched", stale: true,
+    action: { summary: "Catalog unavailable", tone: "warn", primary: "Apply changes", mode: "update", disabled: true, disabledReason: "Catalog unavailable" }
+  },
+  catalogverify: {
+    caption: ["Verification failed", "Two failures that must not look alike, shown together. SLEW LIMITER simply did not arrive \u2014 ordinary, Retry. GRAIN CLOUD arrived and did not match the hash the catalog states, which is a trust event, not a network one: the file does not match the hash the catalog states, which means it is not what the repository says it is. The install is refused, the row holds the failure, and the banner offers the details rather than a retry."],
+    view: "catalog", list: true,
+    itemStatus: { "GRAIN CLOUD": "Verification failed", "SLEW LIMITER": "Download failed" },
+    banner: { tone: "err", title: "GRAIN CLOUD was not installed \u2014 the download does not match the catalog.", body: "The file that arrived is not the file the catalog describes. That is not a network problem, so retrying is not offered here. Nothing was written to your library or your installation.", btn: "Copy details", dismiss: true },
+    action: { summary: "Install refused", tone: "err", primary: "Apply changes", mode: "update", disabled: true, disabledReason: "Nothing to apply" }
+  },
+  catalognomatch: {
+    caption: ["Catalog search matches nothing", "Browsing deserves a way onward, not just a way back \u2014 so Clear filters is joined by Browse all."],
+    view: "catalog", empty: "nocatalogmatch", toolbar: true, query: "granular",
+    action: { summary: "Catalog \u00b7 9 items", note: "No item matches the current search and filters", primary: "Apply changes", mode: "update", disabled: true, disabledReason: "Nothing to apply" }
   },
   nomatch: {
     caption: ["Filter matches nothing", "Minor state. The toolbar stays put and offers a way out."],
@@ -402,31 +533,36 @@ const SCREENS = {
     caption: ["Failure", "Which step failed, what the app did about it, and a technical report to attach to a bug report. Never a raw error as the primary message."],
     list: true, staged: true, installState: "Stock", count: 0, guard: "Armed", backup: "Backup: 15 Sep 2026",
     banner: { tone: "err", title: "Verification failed. The Core Registry did not match what was written.", body: "Your installation was restored from backup. Nothing was changed.", btn: "Copy details", dismiss: true },
-    action: { summary: "2 to add, 1 to remove", tone: "err", note: "Prepare install \u00b7 failed at step 8 of 9", primary: "Try again", mode: "prepare" }
+    action: { summary: "2 to add, 1 to remove", tone: "err", note: "Prepare install \u00b7 failed at the verify step", primary: "Try again", mode: "prepare" }
   }
 };
 
 const GROUPS = [
   { label: "List", keys: ["main", "hover", "inspector", "factory", "nomatch"] },
-  { label: "First run", keys: ["onboarding", "noinstall", "drag"] },
+  { label: "First run", keys: ["onboarding", "noinstall", "unknownbuild", "drag"] },
   { label: "Apply", keys: ["confirm", "progress", "auth", "success", "restart", "failure", "running"] },
+  { label: "Catalog", keys: ["catalog", "catalogdetail", "catalogupdate", "catalogupdateconfirm", "catalogsuperseded", "catalogincompatible"] },
+  { label: "Catalog \u00b7 network", keys: ["catalogstale", "catalognever", "catalogverify", "catalognomatch"] },
   { label: "Screens", keys: ["reapply", "settings", "restore", "about"] }
 ];
 const CHIP = {
   main: "Entry list", hover: "Row hover", inspector: "Inspector", factory: "Factory shown", nomatch: "No match",
-  onboarding: "Nothing registered", noinstall: "No install", drag: "Drag over",
+  onboarding: "Nothing registered", noinstall: "No install", unknownbuild: "Unknown build", drag: "Drag over",
   confirm: "Confirm plan", progress: "Progress", auth: "Authorisation", success: "Success",
   restart: "Restart needed", failure: "Failure", running: "Bitwig running",
+  catalog: "Browse", catalogdetail: "Item detail", catalogupdate: "Update available",
+  catalogupdateconfirm: "Update confirm", catalogsuperseded: "Replacement", catalogincompatible: "Incompatible",
+  catalogstale: "Cached / offline", catalognever: "Never fetched", catalogverify: "Verification failed", catalognomatch: "No results",
   reapply: "Needs re-apply", settings: "Settings", restore: "Restore backup", about: "About"
 };
 const FULL = {
   settings: ["Settings", "One screen, no tabs. Diagnostics live here because that is what a user sends when a new Bitwig build is not recognised."],
   restore: ["Restore backup", "Deliberate, behind the overflow control, and explicit about the cost: projects stop recalling custom devices afterwards."],
-  about: ["About", "Version, the builds it was verified against, and the disclaimer."]
+  about: ["About", "Detected version, build and whether resolution succeeded, plus the disclaimer. Deliberately no list of supported builds \u2014 the app resolves by structure, so such a list would be stale on release day."]
 };
 
 class Component extends DCLogic {
-  state = { theme: "dark", screen: "main", menuOpen: false };
+  state = { theme: "dark", screen: "main", from: "main", menuOpen: false, detailItem: null, inspectorItem: null, catalogFilter: null, factoryOn: null, kinds: null };
 
   chipStyle(on) {
     return [
@@ -435,6 +571,13 @@ class Component extends DCLogic {
       "font-size:11px",
       on ? "background:var(--accent); color:var(--accent-ink)"
          : "background:var(--btn); color:var(--ink-3)"
+    ].join(";");
+  }
+  tab(on) {
+    return [
+      "display:flex", "align-items:center", "height:24px", "padding:0 11px", "border-radius:3px",
+      "font-size:11.5px", "cursor:pointer", "white-space:nowrap",
+      on ? "background:var(--btn); color:var(--ink); font-weight:500" : "color:var(--ink-3)"
     ].join(";");
   }
   themeBtn(on) {
@@ -449,36 +592,84 @@ class Component extends DCLogic {
     const screen = this.state.screen;
     const full = FULL[screen];
     const s = SCREENS[screen] || SCREENS.main;
-    const go = k => () => this.setState({ screen: k, menuOpen: false });
+    const facts = full ? (SCREENS[this.state.from] || SCREENS.main) : s;
+    const go = k => () => this.setState({
+      screen: k,
+      from: FULL[k] ? (FULL[screen] ? this.state.from : screen) : k,
+      menuOpen: false, detailItem: null, inspectorItem: null, catalogFilter: null, factoryOn: null, kinds: null
+    });
 
     const tone = s.banner ? s.banner.tone : "neutral";
     const bannerColor = { warn: "var(--accent-text)", err: "var(--err-text)", ok: "var(--ink)", info: "var(--ink-2)" }[tone] || "var(--ink-2)";
     const bannerBg = { warn: "var(--warn-bg)", err: "var(--err-bg)", ok: "var(--ok-bg)", info: "var(--info-bg)" }[tone] || "transparent";
 
     const progress = s.progress;
-    const steps = STEP_LABELS.map(([label, meta], i) => {
+    const placementCopy = !!s.placementCopy;
+    let n = 0;
+    const steps = STEP_LABELS.map(([label, meta, skippable], i) => {
+      const skipped = !!skippable && placementCopy;
       const done = progress !== undefined && i < progress;
       const active = progress !== undefined && i === progress;
+      if (!skipped) n += 1;
       return {
-        label, num: i + 1,
-        meta: done ? (meta || "done") : "",
-        dot: done ? "var(--ink-2)" : active ? "var(--accent)" : "transparent",
+        label, num: skipped ? "\u2014" : n,
+        meta: skipped ? "not run" : done ? (meta || "done") : "",
+        dot: skipped ? "transparent" : done ? "var(--ink-2)" : active ? "var(--accent)" : "transparent",
         color: active ? "var(--accent-text)" : "var(--ink-3)",
-        textColor: done ? "var(--ink-2)" : active ? "var(--ink)" : "var(--ink-3)",
+        textColor: skipped ? "var(--ink-3)" : done ? "var(--ink-2)" : active ? "var(--ink)" : "var(--ink-3)",
         weight: active ? "600" : "400"
       };
     });
 
+    const stepTotal = STEP_LABELS.filter(([, , sk]) => !(sk && placementCopy)).length;
+    const openName = this.state.detailItem ?? s.detail ?? null;
+    const catalogFilter = this.state.catalogFilter ?? s.catalogFilter ?? "All";
+    const kinds = this.state.kinds ?? "DEVICE|MODULATOR|MODULE";
+    const factoryOn = this.state.factoryOn ?? !!s.factoryOn;
+    const kindOn = k => kinds.includes(k);
+    const LIB = {
+      DEVICE: ["devices/My Devices/", ".bwdevice"],
+      MODULATOR: ["modulators/My Modulators/", ".bwmodulator"],
+      MODULE: ["modules/My Modules/", ".bwmodule"]
+    };
+    const libpathOf = e => { const [dir, ext] = LIB[e.kind] || LIB.DEVICE; return dir + e.name + ext; };
+    const INSTALLED_STATES = ["Installed", "Superseded", "Update available"];
+    const catalogSource = name => CATALOG.find(i => i.name === name && INSTALLED_STATES.includes(i.status)) || null;
+    const openEntry = this.state.inspectorItem ?? s.selected ?? null;
+    const entry = STAGED.concat(REGISTERED).concat(FACTORY).find(x => x.name === openEntry) || REGISTERED[0];
+    const stagedRows = STAGED.filter(x => kindOn(x.kind)).map(x => ({ ...x, forceActions: false }));
     const rows = [];
-    REGISTERED.forEach((r, i) => rows.push({
+    REGISTERED.filter(x => kindOn(x.kind)).forEach((r, i) => rows.push({
       ...r,
-      selected: s.selected === r.name,
+      source: catalogSource(r.name) ? "catalog" : "local",
+      sourceVersion: (catalogSource(r.name) || {}).installed ?? (catalogSource(r.name) || {}).version ?? "",
+      selected: openEntry === r.name,
       forceActions: s.hoverRow === i,
       factory: false
     }));
-    if (s.factoryOn) FACTORY.forEach(r => rows.push({ ...r, selected: false, forceActions: false }));
+    if (factoryOn) FACTORY.filter(x => kindOn(x.kind)).forEach(r => rows.push({ ...r, selected: false, forceActions: false }));
 
     const a = s.action || {};
+    const view = s.view === "catalog" ? "catalog" : "entries";
+    const INSTALLED = ["Installed", "Superseded", "Update available"];
+    const catalogItems = CATALOG
+      .map((it, idx) => ({ ...it, status: (s.itemStatus || {})[it.name] ?? it.status, requires: it.requires ?? "6.0", selected: openName === it.name, forceHover: s.hoverItem === idx }))
+      .filter(it => kindOn(it.kind))
+      .filter(it => catalogFilter === "All" ? true : catalogFilter === "Installed" ? INSTALLED.includes(it.status) : it.status === "Update available");
+    const liveEmpty = !!s.list && (s.view === "catalog" ? catalogItems.length === 0 : rows.length + stagedRows.length === 0);
+    const filtering = this.state.kinds !== null || this.state.catalogFilter !== null;
+    const installFiltered = CATALOG
+      .map(it => ({ ...it, status: (s.itemStatus || {})[it.name] ?? it.status }))
+      .filter(it => catalogFilter === "All" ? true : catalogFilter === "Installed" ? INSTALLED.includes(it.status) : it.status === "Update available");
+    const facet = k => installFiltered.filter(i => i.kind === k).length;
+    const entryPool = (s.staged === false ? [] : STAGED).concat(REGISTERED).concat(factoryOn ? FACTORY : []);
+    const entryFacet = k => entryPool.filter(i => i.kind === k).length;
+    const emptyVariant = liveEmpty ? (s.view === "catalog" ? "nocatalogmatch" : "nomatch") : (s.empty ?? "onboarding");
+    const filteredSummary = s.view === "catalog"
+      ? "Catalog \u00b7 " + catalogItems.length + " of " + CATALOG.length + " items shown"
+      : (stagedRows.length + rows.length) + " of " + (STAGED.length + REGISTERED.length) + " entries shown";
+    const item = CATALOG.find(i => i.name === openName) || CATALOG[0];
+    const isCatalog = view === "catalog";
     const listWithStaged = !!s.list && s.staged !== false;
     const count = s.count ?? 6;
 
@@ -503,28 +694,100 @@ class Component extends DCLogic {
       hasInstall: !full && !s.noInstall,
       noInstall: !!s.noInstall,
       installState: s.installState ?? "Registered",
-      count, countPad: count,
-      guard: s.guard ?? "Disarmed",
-      backup: s.backup ?? "Backup: 14 Sep 2026",
+      installTitle: s.title ?? "Bitwig Studio 6.1",
+      installBuild: facts.build ?? "94a90411",
+      aboutVersion: ((facts.title ?? "Bitwig Studio 6.1").match(/Bitwig Studio\s+(\S.*)$/) || [, "\u2014"])[1],
+      countPad: rows.filter(x => !x.factory).length,
+      resolved: (facts.installState ?? "Registered") !== "Unknown build",
+      entryCount: facts.count ?? 6,
+      guard: facts.guard ?? "Disarmed",
+      backup: facts.backup ?? "Backup: 14 Sep 2026",
       menuOpen: this.state.menuOpen,
       toggleMenu: () => this.setState({ menuOpen: !this.state.menuOpen }),
 
-      showList: !!s.list,
-      showToolbarOnly: !s.list && !!s.toolbar,
-      showEmpty: !s.list && !!s.empty,
-      emptyVariant: s.empty ?? "onboarding",
+      view,
+      localTab: this.tab(!isCatalog),
+      catalogTab: this.tab(isCatalog),
+      freshness: s.freshness ?? "Catalog updated 20 minutes ago",
+      stale: !!s.stale,
+      goEntries: go("main"),
+      goCatalog: go("catalog"),
+      showCatalog: isCatalog && !!s.list && !liveEmpty,
+      catalogFilter,
+      catDevices: facet("DEVICE"),
+      catModulators: facet("MODULATOR"),
+      catModules: facet("MODULE"),
+      items: catalogItems,
+      detailOpen: !!openName,
+      detailName: openName ?? "",
+      detailKind: item.kind,
+      detailStatus: item.status,
+      detailAuthor: item.author,
+      detailVersion: item.version,
+      detailDescription: item.long ?? item.description,
+      detailKeywords: item.keywords,
+      detailLicence: item.licence,
+      detailProvenance: item.provenance,
+      detailHomepage: item.homepage,
+      detailUuid: item.uuid,
+      detailRequires: item.requires ?? "6.0",
+      detailCompatible: item.status !== "Incompatible",
+      detailReplacement: item.replacement ?? "",
+      openDetail: name => this.setState({ screen: "catalogdetail", detailItem: name }),
+      closeDetail: go("catalog"),
+      detailPrimary: a => { if (/Update/.test(a)) this.setState({ screen: "catalogupdateconfirm" }); },
+      openReplacement: () => { if (item.replacement) this.setState({ screen: "catalogdetail", detailItem: item.replacement }); },
+      catalogAction: (a, name) => {
+        if (a === "Update") this.setState({ screen: "catalogupdateconfirm", detailItem: name ?? null });
+        else if (a === "See replacement") this.setState({ screen: "catalogsuperseded", detailItem: name ?? null });
+      },
+      isUpdateConfirm: !!s.updateConfirm,
+      updateTitle: "Update " + item.name + " to " + item.version + "?",
+      updateVersions: "installed " + (item.installed ?? "\u2014") + "  \u2192  catalog " + item.version,
+      showList: !isCatalog && !!s.list && !liveEmpty,
+      showCatalogToolbarOnly: isCatalog && (liveEmpty || (!s.list && !!s.toolbar)),
+      showToolbarOnly: !isCatalog && (liveEmpty || (!s.list && !!s.toolbar)),
+      showEmpty: liveEmpty || (!s.list && !!s.empty),
+      emptyVariant,
+      emptyAction: () => {
+        if (emptyVariant === "onboarding") this.setState({ screen: "catalog", detailItem: null, catalogFilter: null, kinds: null });
+        else if (emptyVariant === "nomatch" || emptyVariant === "nocatalogmatch") this.setState({ kinds: null, catalogFilter: null });
+      },
+      emptyAlt: () => {
+        if (emptyVariant === "nocatalogmatch") this.setState({ kinds: null, catalogFilter: "All" });
+      },
       query: s.query ?? "",
-      devices: s.factoryOn ? 157 : 5,
-      modulators: s.factoryOn ? 45 : 2,
-      modules: s.factoryOn ? 234 : 2,
+      devices: entryFacet("DEVICE"),
+      modulators: entryFacet("MODULATOR"),
+      modules: entryFacet("MODULE"),
+      userRows: rows.filter(x => !x.factory),
+      factoryRows: rows.filter(x => x.factory),
+      hasFactory: factoryOn && rows.some(x => x.factory),
+      factoryCount: rows.filter(x => x.factory).length,
+      kinds, factoryOn,
+      onToggleKind: k => this.setState({ kinds: kinds.includes(k) ? kinds.split("|").filter(x => x !== k).join("|") : kinds + "|" + k }),
+      onToggleFactory: () => this.setState({ factoryOn: !factoryOn }),
+      onCatalogFilter: v => this.setState({ catalogFilter: v }),
 
       hasStaged: listWithStaged,
-      staged: STAGED.map(r => ({ ...r, forceActions: false })),
-      stagedCount: STAGED.length,
+      staged: stagedRows,
+      stagedCount: stagedRows.length,
       rows,
 
       inspectorOpen: !!s.inspector,
-      openInspector: () => this.setState({ screen: "inspector" }),
+      inspKind: entry.kind,
+      inspName: entry.name,
+      inspStatus: entry.status,
+      inspUuid: entry.uuid,
+      inspDescription: (DETAIL[entry.name] || {}).description ?? "",
+      inspKeywords: (DETAIL[entry.name] || {}).keywords ?? "",
+      inspPlacement: (DETAIL[entry.name] || {}).placement ?? "linked",
+      inspLibpath: libpathOf(entry),
+      inspRegistered: entry.status !== "Rejected",
+      inspSource: catalogSource(entry.name) ? "catalog" : "local",
+      inspSourceVersion: (catalogSource(entry.name) || {}).installed ?? (catalogSource(entry.name) || {}).version ?? "",
+      inspProvenance: (catalogSource(entry.name) || {}).provenance ?? "",
+      openInspector: name => this.setState({ screen: "inspector", inspectorItem: name }),
       closeInspector: () => this.setState({ screen: "main" }),
 
       hasBanner: !!s.banner,
@@ -540,7 +803,7 @@ class Component extends DCLogic {
       bannerBtn: s.banner ? s.banner.btn : "",
       bannerDismiss: !!(s.banner && s.banner.dismiss),
 
-      summary: a.summary ?? "Nothing pending",
+      summary: filtering ? filteredSummary : (a.summary ?? "Nothing pending"),
       note: a.note ?? "",
       tone: a.tone ?? "neutral",
       primaryLabel: a.primary ?? "Apply changes",
@@ -554,9 +817,9 @@ class Component extends DCLogic {
       isConfirm: !!s.confirm,
       isProgress: progress !== undefined,
       isAuth: !!s.auth,
-      progressStep: progress !== undefined ? "Step " + (progress + 1) + " of 9 \u00b7 " + STEP_LABELS[progress][0] : "",
-      progressPct: progress !== undefined ? Math.round((progress / 9) * 100) + "%" : "0%",
-      steps,
+      progressStep: progress !== undefined ? "Step " + (progress + 1) + " of " + stepTotal + " \u00b7 " + STEP_LABELS[progress][0] : "",
+      progressPct: progress !== undefined ? Math.round((progress / stepTotal) * 100) + "%" : "0%",
+      steps, stepTotal,
       planLines: PLAN.map((p, i) => ({ ...p, num: i + 1 })),
 
       goMain: go("main"),

@@ -40,6 +40,10 @@ a:hover{color:#ff7a45}
     </div>
   </sc-if>
 
+  <sc-if value="{{ hasAside }}" hint-placeholder-val="{{ false }}">
+    <span style="max-width:410px; margin-top:16px; font-size:11px; line-height:1.55; color:var(--ink-3); text-wrap:pretty">{{ aside }}</span>
+  </sc-if>
+
   <sc-if value="{{ hasAction }}" hint-placeholder-val="{{ true }}">
     <div style="display:flex; align-items:center; gap:8px; margin-top:18px">
       <div onClick="{{ onAction }}" style="{{ actionStyle }}"><span>{{ action }}</span></div>
@@ -61,7 +65,8 @@ const V = {
     icon: "ph-light ph-tray-arrow-down", iconSize: "54px", iconColor: "var(--accent)", marks: true,
     title: "Drop a device here to register it",
     body: "Orange Registry reads the document's identity and makes this installation recognise it. Bitwig Studio must be closed the first time, while the installation is prepared.",
-    exts: true, action: "Add files\u2026", primary: true,
+    aside: "Nothing of your own yet? The catalog has devices, modulators and Grid modules you can install in one click.",
+    exts: true, action: "Browse the catalog", primary: true, alt: "Add files\u2026",
     foot: "A backup is written before anything is changed"
   },
   noinstall: {
@@ -71,10 +76,30 @@ const V = {
     action: "Locate Bitwig Studio\u2026", primary: true, alt: "Copy diagnostics",
     foot: "The installation root contains bitwig.jar"
   },
+  unknownbuild: {
+    icon: "ph-light ph-question", iconSize: "54px", iconColor: "var(--ink-3)", marks: true,
+    title: "This Bitwig installation could not be read",
+    body: "Orange Registry finds what it needs by structure rather than by version number, and this installation is arranged in a way it does not recognise. That usually means a new Bitwig release. Nothing has been changed.",
+    action: "Copy diagnostics", primary: true, alt: "Change install\u2026",
+    foot: "The diagnostics report names what was looked for and what was found"
+  },
+  nocatalog: {
+    icon: "ph-light ph-cloud-slash", iconSize: "54px", iconColor: "var(--ink-3)", marks: true,
+    title: "The catalog has not been fetched yet",
+    body: "Orange Registry could not reach the catalog. It is a single small file over HTTPS, and once fetched it is cached, so browsing works offline afterwards.",
+    action: "Try again", primary: true,
+    foot: "Everything already registered keeps working offline"
+  },
+  nocatalogmatch: {
+    icon: "ph-light ph-funnel-x", iconSize: "36px", iconColor: "var(--ink-3)",
+    title: "Nothing in the catalog matches", titleSize: "13px", bodyWidth: "360px",
+    body: "No item matches the current search, kind and install filters.",
+    action: "Clear filters", primary: false, alt: "Browse all"
+  },
   nomatch: {
     icon: "ph-light ph-funnel-x", iconSize: "36px", iconColor: "var(--ink-3)",
     title: "No entries match", titleSize: "13px", bodyWidth: "340px",
-    body: "Nothing here matches \u201cwavesh\u201d with the current kind filters.",
+    body: "Nothing here matches the current search and kind filters.",
     action: "Clear filters", primary: false
   }
 };
@@ -87,6 +112,7 @@ class Component extends DCLogic {
       title: v.title, titleSize: v.titleSize ?? "16.5px",
       body: v.body, bodyWidth: v.bodyWidth ?? "430px",
       hasExts: !!v.exts,
+      hasAside: !!v.aside, aside: v.aside,
       hasAction: !!v.action, action: v.action,
       hasAlt: !!v.alt, alt: v.alt,
       hasFoot: !!v.foot, foot: v.foot,

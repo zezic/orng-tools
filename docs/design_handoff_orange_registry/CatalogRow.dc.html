@@ -1,0 +1,111 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://unpkg.com/@phosphor-icons/web@2.1.1/src/duotone/style.css" />
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;display=swap" />
+<style>
+@font-face{font-family:'Iosevka Extended';src:url('uploads/Iosevka-Extended.ttf') format('truetype');font-weight:400;font-style:normal;font-display:swap}
+html,body{margin:0;padding:0;background:#000}
+a{color:#ff5a1f;text-decoration:none}
+a:hover{color:#ff7a45}
+:root{--page:#000000;--bg:#0a0a0a;--panel:#161616;--panel-2:#1e1e1e;--row:#0a0a0a;--row-alt:#1e1e1e;--row-hover:#262626;--line:#242424;--line-soft:#1a1a1a;--ink:#f2f2f2;--ink-2:#bcbcbc;--ink-3:#949494;--ink-3-warm:#9e9089;--accent:#ff5a1f;--accent-text:#ff7a45;--accent-ink:#0a0a0a;--accent-soft:rgba(255,90,31,.10);--err:#ff4036;--err-text:#ff6259;--err-bg:rgba(255,64,54,.10);--field:#000000;--btn:#282828;--btn-hover:#333333}
+</style>
+</helmet>
+<div style="font-family:Inter,'Helvetica Neue',Helvetica,sans-serif">
+  <div onMouseEnter="{{ enter }}" onMouseLeave="{{ leave }}" onClick="{{ open }}" style="{{ rowStyle }}">
+    <span style="font-size:11px; color:{{ secondaryInk }}">{{ kindLabel }}</span>
+    <div style="display:flex; flex-direction:column; gap:2px; min-width:0">
+      <span style="font-size:12.5px; font-weight:500; letter-spacing:-0.005em; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; color:{{ nameColor }}">{{ name }}</span>
+      <span style="font-size:10.5px; color:{{ secondaryInk }}; white-space:nowrap; overflow:hidden; text-overflow:ellipsis">{{ description }}</span>
+    </div>
+    <sc-if value="{{ wide }}" hint-placeholder-val="{{ true }}">
+      <span style="font-size:11px; color:{{ authorColor }}; white-space:nowrap; overflow:hidden; text-overflow:ellipsis">{{ author }}</span>
+    </sc-if>
+    <sc-if value="{{ wide }}" hint-placeholder-val="{{ true }}">
+      <span style="font-family:'Iosevka Extended',Iosevka,monospace; letter-spacing:-0.05em; font-size:10.5px; color:{{ secondaryInk }}; white-space:nowrap">{{ version }}</span>
+    </sc-if>
+    <span style="font-size:11px; color:{{ statusFg }}; white-space:nowrap; overflow:hidden; text-overflow:ellipsis">{{ statusLabel }}</span>
+    <div style="display:flex; align-items:center; justify-content:flex-end; gap:4px">
+      <sc-if value="{{ hasAction }}" hint-placeholder-val="{{ true }}">
+        <div onClick="{{ act }}" style="{{ actionStyle }}">{{ action }}</div>
+      </sc-if>
+    </div>
+  </div>
+</div>
+
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:796,&quot;height&quot;:48},&quot;kind&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;DEVICE&quot;,&quot;MODULATOR&quot;,&quot;MODULE&quot;],&quot;default&quot;:&quot;DEVICE&quot;,&quot;tsType&quot;:&quot;string&quot;},&quot;itemName&quot;:{&quot;editor&quot;:&quot;text&quot;,&quot;default&quot;:&quot;DISPERSER&quot;,&quot;tsType&quot;:&quot;string&quot;},&quot;description&quot;:{&quot;editor&quot;:&quot;text&quot;,&quot;default&quot;:&quot;Allpass diffusion network for smearing transients.&quot;,&quot;tsType&quot;:&quot;string&quot;},&quot;author&quot;:{&quot;editor&quot;:&quot;text&quot;,&quot;default&quot;:&quot;kirkwood&quot;,&quot;tsType&quot;:&quot;string&quot;},&quot;version&quot;:{&quot;editor&quot;:&quot;text&quot;,&quot;default&quot;:&quot;1.2.0&quot;,&quot;tsType&quot;:&quot;string&quot;},&quot;status&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;Available&quot;,&quot;Installed&quot;,&quot;Update available&quot;,&quot;Superseded&quot;,&quot;Incompatible&quot;,&quot;Download failed&quot;,&quot;Verification failed&quot;],&quot;default&quot;:&quot;Available&quot;,&quot;tsType&quot;:&quot;string&quot;},&quot;requires&quot;:{&quot;editor&quot;:&quot;text&quot;,&quot;default&quot;:&quot;6.2&quot;,&quot;tsType&quot;:&quot;string&quot;},&quot;narrow&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:false,&quot;tsType&quot;:&quot;boolean&quot;,&quot;section&quot;:&quot;Layout&quot;},&quot;selected&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:false,&quot;tsType&quot;:&quot;boolean&quot;},&quot;forceHover&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:false,&quot;tsType&quot;:&quot;boolean&quot;},&quot;onOpen&quot;:{&quot;editor&quot;:null,&quot;tsType&quot;:&quot;(name: string) =&gt; void&quot;},&quot;onAction&quot;:{&quot;editor&quot;:null,&quot;tsType&quot;:&quot;(action: string, name: string) =&gt; void&quot;}}">
+const KIND = { DEVICE: "Device", MODULATOR: "Modulator", MODULE: "Module" };
+const STATUS = {
+  "Available":        { fg: "var(--ink-3)",       label: "Available",             action: "Install" },
+  "Installed":        { fg: "var(--ink-2)",       label: "Installed",             action: "" },
+  "Update available": { fg: "var(--accent-text)", label: "Update available",      action: "Update" },
+  "Superseded":       { fg: "var(--ink-2)",       label: "Replacement available", action: "See replacement" },
+  "Incompatible":     { fg: "var(--ink-3)",       label: "Needs Bitwig ",         action: "" },
+  "Download failed":  { fg: "var(--err-text)",    label: "Download failed",       action: "Retry" },
+  "Verification failed": { fg: "var(--err-text)", label: "Verification failed",   action: "Copy details" }
+};
+
+class Component extends DCLogic {
+  state = { hover: false };
+  renderVals() {
+    const p = this.props;
+    const status = p.status ?? "Available";
+    const s = STATUS[status] || STATUS.Available;
+    const hot = this.state.hover || !!p.forceHover;
+    const selected = !!p.selected;
+    const installed = ["Installed", "Superseded"].includes(status);
+    const action = p.action ?? s.action;
+
+    return {
+      kindLabel: KIND[p.kind ?? "DEVICE"] || p.kind,
+      name: p.itemName ?? "DISPERSER",
+      description: p.description ?? "Allpass diffusion network for smearing transients.",
+      author: p.author ?? "kirkwood",
+      version: p.version ?? "1.2.0",
+      statusFg: s.fg,
+      statusLabel: status === "Incompatible" ? s.label + (p.requires ?? "6.2") : s.label,
+      nameColor: installed ? "var(--ink-2)" : "var(--ink)",
+      authorColor: selected ? "var(--ink-3-warm)" : "var(--ink-2)",
+      secondaryInk: selected ? "var(--ink-3-warm)" : "var(--ink-3)",
+      wide: !p.narrow,
+      hasAction: !!action,
+      action,
+      actionStyle: [
+        "display:flex", "align-items:center", "height:24px", "padding:0 10px", "border-radius:3px",
+        "font-size:11px", "font-weight:500", "cursor:pointer", "white-space:nowrap",
+        status === "Update available"
+          ? "background:var(--btn); color:var(--accent-text)"
+          : status === "Verification failed" || status === "Download failed"
+            ? "background:var(--btn); color:var(--err-text)"
+            : "background:var(--btn); color:var(--ink)",
+        hot ? "" : "opacity:.9"
+      ].filter(Boolean).join(";"),
+      rowStyle: [
+        "display:grid",
+        "grid-template-columns:" + (p.narrow ? "66px minmax(0,1fr) 108px 122px" : "66px minmax(0,1fr) 116px 56px 142px 92px"),
+        "align-items:center",
+        "gap:12px",
+        "height:48px",
+        "padding:0 12px",
+        "cursor:pointer",
+        "background-color:" + (selected ? "rgba(255,90,31,.09)" : hot ? "var(--row-hover)" : "transparent")
+      ].join(";"),
+      enter: () => this.setState({ hover: true }),
+      leave: () => this.setState({ hover: false }),
+      open: () => p.onOpen && p.onOpen(p.itemName ?? p.name),
+      act: e => { if (e && e.stopPropagation) e.stopPropagation(); if (p.onAction) p.onAction(action, p.itemName); }
+    };
+  }
+}
+
+</script>
+</body>
+</html>

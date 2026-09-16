@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://unpkg.com/@phosphor-icons/web@2.1.1/src/duotone/style.css" />
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;display=swap" />
+<style>
+@font-face{font-family:'Iosevka Extended';src:url('uploads/Iosevka-Extended.ttf') format('truetype');font-weight:400;font-style:normal;font-display:swap}
+html,body{margin:0;padding:0;background:#000}
+a{color:#ff5a1f;text-decoration:none}
+a:hover{color:#ff7a45}
+:root{--page:#000000;--bg:#0a0a0a;--panel:#161616;--panel-2:#1e1e1e;--row:#0a0a0a;--row-alt:#1e1e1e;--row-hover:#262626;--line:#242424;--ink:#f2f2f2;--ink-2:#bcbcbc;--ink-3:#949494;--accent:#ff5a1f;--accent-text:#ff7a45;--accent-ink:#0a0a0a;--field:#ececec;--btn:#282828;--btn-hover:#333333}
+:root{--field:#000000}
+</style>
+</helmet>
+<div style="display:flex; align-items:center; gap:8px; flex:none; height:42px; min-width:0; padding:0 12px; background:var(--bg); font-family:Inter,'Helvetica Neue',Helvetica,sans-serif; overflow:hidden">
+  <div style="display:flex; align-items:center; gap:7px; flex:1 1 auto; min-width:64px; max-width:{{ searchMax }}; height:26px; padding:0 8px; background:var(--field); border-radius:3px">
+    <i class="ph-duotone ph-magnifying-glass" style="font-size:16px; flex:none; color:var(--ink-3)"></i>
+    <span style="min-width:0; font-size:11.5px; color:{{ queryColor }}; white-space:nowrap; overflow:hidden; text-overflow:ellipsis">{{ queryText }}</span>
+  </div>
+  <div style="display:flex; align-items:center; gap:2px; flex:none">
+    <div onClick="{{ toggleDevices }}" title="Devices" style="{{ devStyle }}"><span>Devices</span><span style="{{ countStyle }}">{{ devices }}</span></div>
+    <div onClick="{{ toggleModulators }}" title="Modulators" style="{{ modStyle }}"><span>Modulators</span><span style="{{ countStyle }}">{{ modulators }}</span></div>
+    <div onClick="{{ toggleModules }}" title="Modules" style="{{ grdStyle }}"><span>Modules</span><span style="{{ countStyle }}">{{ modules }}</span></div>
+  </div>
+  <div style="flex:1 1 0; min-width:8px"></div>
+  <div style="display:flex; align-items:center; gap:2px; flex:none; padding:2px; background:var(--panel); border-radius:4px">
+    <div onClick="{{ pickAll }}" style="{{ allStyle }}">All</div>
+    <div onClick="{{ pickInstalled }}" style="{{ instStyle }}">Installed</div>
+    <div onClick="{{ pickUpdatable }}" style="{{ updStyle }}">Updatable</div>
+  </div>
+</div>
+
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:820,&quot;height&quot;:42},&quot;query&quot;:{&quot;editor&quot;:&quot;text&quot;,&quot;default&quot;:&quot;&quot;,&quot;tsType&quot;:&quot;string&quot;},&quot;filter&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;All&quot;,&quot;Installed&quot;,&quot;Updatable&quot;],&quot;default&quot;:&quot;All&quot;,&quot;tsType&quot;:&quot;string&quot;},&quot;devices&quot;:{&quot;editor&quot;:&quot;int&quot;,&quot;default&quot;:52,&quot;tsType&quot;:&quot;number&quot;},&quot;modulators&quot;:{&quot;editor&quot;:&quot;int&quot;,&quot;default&quot;:27,&quot;tsType&quot;:&quot;number&quot;},&quot;modules&quot;:{&quot;editor&quot;:&quot;int&quot;,&quot;default&quot;:49,&quot;tsType&quot;:&quot;number&quot;},&quot;narrow&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:false,&quot;tsType&quot;:&quot;boolean&quot;,&quot;section&quot;:&quot;Layout&quot;}}">
+class Component extends DCLogic {
+  chip(on) {
+    return [
+      "display:flex", "align-items:center", "gap:6px", "height:26px", "padding:0 9px", "border-radius:3px",
+      "font-size:11px", "cursor:pointer", "white-space:nowrap",
+      "background:" + (on ? "var(--btn)" : "transparent"),
+      "color:" + (on ? "var(--ink)" : "var(--ink-3)")
+    ].join(";");
+  }
+  seg(on) {
+    return [
+      "display:flex", "align-items:center", "height:22px", "padding:0 9px", "border-radius:3px",
+      "font-size:11px", "cursor:pointer", "white-space:nowrap",
+      on ? "background:var(--btn); color:var(--ink); font-weight:500" : "color:var(--ink-3)"
+    ].join(";");
+  }
+  renderVals() {
+    const p = this.props;
+    const q = p.query ?? "";
+    const filter = p.filter ?? "All";
+    const kinds = p.kinds ?? "DEVICE|MODULATOR|MODULE";
+    const narrow = !!p.narrow;
+    const on = k => kinds.includes(k);
+    return {
+      queryText: q || (narrow ? "Search" : "Search name, author, description or keywords"),
+      queryColor: q ? "var(--ink)" : "var(--ink-3)",
+      searchMax: narrow ? "92px" : "304px",
+      devices: p.devices ?? 52, modulators: p.modulators ?? 27, modules: p.modules ?? 49,
+      countStyle: "font-family:'Iosevka Extended',Iosevka,monospace; letter-spacing:-0.05em; font-size:10px; color:var(--ink-3)",
+      devStyle: this.chip(on("DEVICE")), modStyle: this.chip(on("MODULATOR")), grdStyle: this.chip(on("MODULE")),
+      toggleDevices: () => p.onToggleKind && p.onToggleKind("DEVICE"),
+      toggleModulators: () => p.onToggleKind && p.onToggleKind("MODULATOR"),
+      toggleModules: () => p.onToggleKind && p.onToggleKind("MODULE"),
+      allStyle: this.seg(filter === "All"),
+      instStyle: this.seg(filter === "Installed"),
+      updStyle: this.seg(filter === "Updatable"),
+      pickAll: () => p.onFilter && p.onFilter("All"),
+      pickInstalled: () => p.onFilter && p.onFilter("Installed"),
+      pickUpdatable: () => p.onFilter && p.onFilter("Updatable")
+    };
+  }
+}
+
+</script>
+</body>
+</html>

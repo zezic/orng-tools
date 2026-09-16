@@ -1,5 +1,11 @@
 # Handoff: Orange Registry — custom content manager for Bitwig Studio
 
+> **Revision 4.** Adds the Orange Catalog feature (per `ui-spec-catalog.md`), the
+> `Local`/`Catalog` switch, a single-row install bar, and dot-free status treatment.
+> Supersedes the two-row install bar, the `ViewSwitch` strip and the "Entries" name
+> described in earlier revisions. See **For this audit round** immediately below for what
+> changed and where the risk sits.
+
 ## Overview
 
 Orange Registry (binary `orange-registry`) is a desktop utility that registers user-made
@@ -9,8 +15,14 @@ installation so it loads that entry list at startup, places the documents in the
 library, and writes descriptions and search keywords so the devices are findable in
 Bitwig's browser.
 
-This bundle documents the **UI** for that app: 19 states across one main window and three
-full-window secondary screens, in dark and light appearance.
+This bundle documents the **UI** for that app: **30 states** across two primary views
+(`Local` and `Catalog`), three full-window secondary screens, two modals and a drag
+overlay, in dark and light appearance.
+
+**This revision incorporates the implementation review** (`design-review.md`): the backup
+figure, diagnostics contents, About's detected-installation rows, the removal default, the
+derived step count, the gated UUID action, factory-row treatment and the new Unknown build
+state all reflect what the library can actually report.
 
 The design deliberately answers a handful of questions the spec left open. Those decisions
 are recorded in **Design decisions** below; they are the parts most worth validating
@@ -34,6 +46,50 @@ Two consequences worth stating plainly:
   detection, and the transitions between states are not the app's real transitions. Do not
   infer navigation from how the gallery switches states.
 
+## For this audit round
+
+Revision 4. Since the last audit the app gained the **Orange Catalog** (a second primary
+view, ten new states, four new components) and lost a good deal of chrome. The corrections
+from `design-review.md` are all applied and are marked as decisions 9–12 below.
+
+**Where the risk is concentrated.** Ten review rounds on this revision found the same defect
+class over and over: *a surface asserting something the data does not support.* Every one was
+a hardcoded value that survived next to real data — a panel that described one entry while
+showing another's provenance, band counts that counted a different set from the rows beneath
+them, a filter that highlighted itself without filtering, a confirmation naming the wrong
+device, a diagnostics report claiming every anchor resolved on the screen that exists because
+they did not. If you audit one thing, audit that: **for each stated fact, ask which input it
+derives from, and what happens when that input changes.**
+
+Specific claims worth testing against the real implementation:
+
+1. **The two views must agree.** A Local entry is catalog-sourced iff a catalog item of the
+   same name reports `Installed`, `Superseded` or `Update available`. If the real app can
+   hold state where those disagree (a catalog item installed under a different name, a
+   renamed document), the rule needs replacing with an identity match, not a name match.
+2. **Per-kind library folders.** The design states `devices/My Devices/*.bwdevice`,
+   `modulators/My Modulators/*.bwmodulator`, `modules/My Modules/*.bwmodule`. Confirm those
+   are the real paths and the real extensions.
+3. **Status gating** is tabulated under the inspector. Confirm the remedies are right —
+   particularly that `Missing file` offers Locate and not Reveal, and that a staged document
+   has an identity but no library path yet.
+4. **The catalog sample is nine items** and every count in the window derives from it. The
+   real catalog will hold hundreds; check that nothing in the spec assumes a small index
+   (the facet counts, the "N of M shown" summary, the single-file index fetch).
+5. **Version reporting** is one format, `6.1` + `94a90411`, suppressed entirely when
+   resolution fails. Confirm the library can always produce both, and that `—` is the right
+   thing to show when it cannot.
+6. **Update vs supersede.** The design assumes the repository guarantees that an update keeps
+   the parameter set, and that anything else is published under a new identity. The entire
+   distinction — one confirmation, one offer — rests on that guarantee holding.
+7. **Numbers that are still invented:** the nine apply steps and their metadata (35 MB backup,
+   428 factory entries, 6 files placed), the diagnostics report's jar size, the three backup
+   sizes, and the catalog items themselves. Correct them or confirm them.
+
+Open questions the design answered by choosing, and would revisit on request: where the
+`Local`/`Catalog` switch lives (decision 13), whether a catalog row needs its inline
+description (14), and how loudly `Superseded` should read (15).
+
 ## Fidelity
 
 **High-fidelity.** Colours, type sizes, spacing, surface levels and interaction states are
@@ -54,9 +110,9 @@ written by a technical writer), and icon choices beyond those named below.
   left) stands in for **native window chrome** — do not build it, use the platform's.
 - **Left gutter: 12px.** Everything aligns to it: install-bar content, toolbar, list rows,
   section bands, action bar, and all three secondary screens.
-- Secondary alignment columns: **25px** (status text, after a 5px dot + 8px gap) and
-  **46px** (nothing lands here any more since the row index was removed; noted only because
-  the install-bar title and kind column used to share it).
+- **There are no secondary alignment columns.** Earlier revisions had one at 25px (status
+  text, after a dot) and one at 46px (a row-index column); removing the dots and the index
+  put every left edge on the 12px gutter, including the action-bar summary and its note.
 - The list body reserves **15px** for a vertical scrollbar; right-edge content
   (section counts, row action buttons) therefore sits 27px from the window's right edge
   while bars sit at 12px. Verify against the target toolkit's scrollbar metrics.
@@ -173,7 +229,7 @@ Minimum text size is 10px, all of it non-essential mono data; all text was verif
 - Buttons, chips, fields, badges: **3px**
 - Cards, wells, segmented controls: **4px**
 - Modals: **8px**; window: **12px**
-- Status dots: 5px circles (6px in banners)
+- Tone dots: 6px circles, **banners only** — the lists, install bar and action bar have none
 - Row action buttons: 22×22px hit area, 16px icon
 - All Phosphor icons: **16px, duotone** — sized uniformly so they align on the pixel grid at
   1× displays. Large display glyphs use Phosphor **light**: 54px (empty states), 56px (drag
@@ -187,16 +243,31 @@ Minimum text size is 10px, all of it non-essential mono data; all text was verif
 **Purpose:** see what is registered, stage new documents, fix problems, apply changes.
 
 **Install bar** (top, `--panel`, two rows):
-- Row 1: installation name (13.5px/600) · build string (mono 10px, `--ink-2`) · full path
-  (mono 10.5px, `--ink-3`, truncates with ellipsis, flexes) · `Change install` filled button
-  with `ph-folder-open` · overflow button with `ph-dots-three-outline-vertical`.
-- Row 2 (9px below, starting at the 12px gutter): status dot + registry state (11px) ·
-  `Guard <armed|disarmed|unknown>` · `·` · `Backup <date>` (clickable, opens Restore).
-- Registry states and their dot colours: `Registered <n>` accent dot / `--ink-2` text;
-  `Stock` `--ink-3` dot; `Needs re-apply` accent dot and accent text; `Unknown build`
-  `--ink-3`; `Modified elsewhere` `--err`.
-- Overflow menu (190px, `--panel-2`, 6px radius, shadow): Settings · Restore backup… ·
-  Open backups folder · **separator** · About Orange Registry.
+The install bar is **one 42px row** (9px padding), left to right:
+
+- `Local` / `Catalog` switch — two tabs, active one filled `--btn` with `--ink` text at 500,
+  inactive `--ink-3`. This is the app's only top-level navigation, and it exists because the
+  app has two peer activities: manage what is registered, and discover what is available.
+- Installation name (13.5px/600), build hash (mono 10px, `--ink-2`, tooltip `Build <hash>`),
+  full path (mono 10.5px, `--ink-3`, flexes and truncates).
+- **Registry state, shown only when it is not `Registered`** — `Stock`, `Needs re-apply`
+  (`--accent-text`), `Unknown build`, `Modified elsewhere` (`--err-text`). When the
+  installation is simply registered the chip says nothing, so it is omitted.
+- **Catalog view only:** index freshness (`--ink-3`, or `--accent-text` when stale) and a
+  refresh control — icon-only when current, a labelled `Refresh` button when stale.
+- `Change install` filled button with `ph-folder-open`, then the overflow control.
+
+**One version format throughout:** the title carries the version (`Bitwig Studio 6.1`), the
+chip carries the build hash (`94a90411`). The library reports `6.1 (94a90411)`; there is no
+`rev`-timestamp form. When resolution fails the title drops to `Bitwig Studio` and the chip
+is suppressed — that state means the installation could not be read, so it claims no version.
+
+An earlier revision had a second row carrying the registered count, tamper-guard state and
+backup date. It was removed: the count duplicated the list's own `Registered` band (and
+disagreed with it), the guard is an implementation detail with no user action attached, and
+the backup date was only a route to Restore. Guard and backup now appear in **Settings** —
+the diagnostics report and the Backups row — where they are actually consulted, and both
+carry a no-backup form for a stock installation.
 
 **Toolbar** (42px, `--panel`): search well (`--field`, max 200px, flexes down to 64px,
 `ph-magnifying-glass`, placeholder "Search name or UUID") · three kind filters
@@ -215,7 +286,7 @@ actually have. If space is tight, drop other labels before these.
 | 1 | 66px | Kind — `Device` / `Modulator` / `Module`, 11px, `--ink-3` |
 | 2 | `minmax(0,1fr)` | Name (12.5px/500, `--ink`) + reason (10.5px, `--ink-3`) |
 | 3 | 106px | UUID first segment, mono, + `ph-copy` at 50% opacity |
-| 4 | 130px | Status dot + status label |
+| 4 | 130px | Status label (colour-graded, no dot) |
 | 5 | 84px | Action buttons, right-aligned, revealed on hover |
 
 Inside column 2 the **name takes shrink priority** (`flex: 0 1 auto`) over the reason text
@@ -225,7 +296,27 @@ Narrow mode (inspector open, 4 columns: 66 / 1fr / 116 / 76): the UUID column an
 reason text are both dropped. The status label still names the problem and the inspector
 carries the detail.
 
-**Statuses** (dot colour / text colour):
+**Statuses.** There are **no status dots anywhere** — in the lists, the install bar or the
+action bar. A dot beside a label repeats what the label says, and an orange dot made healthy
+states read as alerts. Colour alone carries the grade, and orange is reserved for states
+that want a decision:
+
+| Status | Colour | Meaning |
+|---|---|---|
+| `Registered` | `--ink-3` | Live in the installation |
+| `Factory` | `--ink-3` | Bitwig's own entry, read-only |
+| `Pending removal` | `--ink-3` | Queued for removal; name gets `line-through` |
+| `Rejected` | `--ink-3` | Not a Bitwig document; name dims to `--ink-2`, and **kind and UUID both render as an em dash** — the file was never read, so it has neither |
+| `Staged` | `--ink-2` | Dropped, not yet applied |
+| `Pending restart` | `--ink-2` | Applied; Bitwig must relaunch to see it |
+| `Changed` | `--accent-text` | File on disk differs from the record |
+| `Update available` | `--accent-text` | Catalog has a newer version of this identity |
+| `Missing file` | `--err-text` | Document not found in the user library |
+| `Conflict` | `--err-text` | UUID already in use |
+
+Grey means settled or inert, neutral means in flight with nothing to decide, orange means a
+decision is waiting, red means broken. Banners keep a 6px tone dot, because there the colour
+*is* the message and no status label is doing the work.
 
 | Status | Dot | Text | Meaning |
 |---|---|---|---|
@@ -237,23 +328,40 @@ carries the detail.
 | `Conflict` | `--err` | `--err` | UUID already in use |
 | `Rejected` | `--err` | `--ink-3` | Not a Bitwig document; name also dims to `--ink-2` |
 | `Pending removal` | `--ink-3` | `--ink-3` | Queued for removal; name gets `line-through` |
-| `Factory` | transparent | `--ink-3` | Bitwig's own entry, read-only, whole row at 50% opacity |
+| `Factory` | transparent | `--ink-3` | Bitwig's own entry, read-only — see note below |
 
 `Changed` and `Missing file` are kept **separate** (per the spec's open question): same
 remedy, different cause, and the cause is what the user needs in order to act.
+
+**Factory rows are not dimmed.** An earlier revision put the whole row at 50% opacity; that
+measured 4.34:1 on the secondary cells and no usable opacity cleared the floor. Read-only is
+signalled instead by the absent hover response, the `Factory` status itself and the
+separate `Factory` band it sits under. Those cells measure 6.53:1.
 
 **Row actions** (hover-revealed, plus a persistent overflow): `ph-folder-open` reveal ·
 `ph-trash` remove (label "Cancel" for staged/conflict) · `ph-fingerprint` assign new UUID
 (staged/conflict only) · `ph-file-magnifying-glass` locate (missing file only, accent
 coloured) · `ph-arrow-u-up-left` undo (pending removal only) · `ph-dots-three-vertical`.
 
-**Section bands** (26px, sticky, `--row-alt`): `Pending` in `--accent-text` /
-`Registered` in `--ink-2`, both 11px/500 at the gutter, with a right-aligned mono count.
-Staged rows are **pinned above** registered rows rather than sorted in.
+**Section bands** (26px, sticky, `--row-alt`, 11px/500 at the gutter, right-aligned mono
+count). Three of them, in DOM order: `Pending` in `--accent-text`, `Registered` in
+`--ink-2`, and `Factory` in `--ink-3` — the last present only while factory entries are
+shown. Staged rows are **pinned above** registered rows rather than sorted in.
 
-**Action bar** (min 52px, `--panel`): status dot + summary (11.5px, tone-coloured) with an
-optional second line note (10.5px, `--ink-3`, aligned to the 25px column); primary button
-right. Summary tones: neutral `--ink-3` dot, warn accent, error `--err`, ok `--ink`.
+Two rules that are easy to get wrong and were both bugs during design:
+
+- **Every band count describes the rows beneath it**, not a global figure. The `Registered`
+  count excludes factory rows (they have their own band) and is not the install bar's
+  registration count — those legitimately differ, since an entry queued for removal is still
+  registered until Apply runs.
+- **Band `z-index` must ascend in DOM order** (Pending 1, Registered 2, Factory 3). They are
+  sticky siblings in one scroll container, so with descending or equal z-index the first band
+  stays pinned forever and ends up labelling rows from a later section.
+
+**Action bar** (min 52px, `--panel`): summary (11.5px, tone-coloured) with an optional
+second line note (10.5px, `--ink-3`), both starting on the 12px gutter; primary button right.
+No dot. Summary tone colours: neutral and ok `--ink-2`, warn `--accent-text`, error
+`--err-text`.
 
 **Primary button:** accent fill, `--accent-ink` text, 32px tall, 12px/600, label + trailing
 icon (`ph-check` for update mode, `ph-arrow-right` for prepare mode). Disabled = `--btn`
@@ -269,10 +377,40 @@ Body (`--panel-2`, 12px gutter, 14px between groups, scrolls):
 - `Search keywords` — wrapping well of accent-filled pills (10.5px, `--accent-ink`, with a `×`), helper: "Proposed from the name."
 - separator
 - `UUID` — mono, `word-break: break-all`, with `ph-copy`
-- `Registered library path` — mono, wraps
+- `Registered library path` — mono, wraps. **Folder and extension derive from the kind**,
+  since each kind has its own library folder: `devices/My Devices/<name>.bwdevice`,
+  `modulators/My Modulators/<name>.bwmodulator`,
+  `modules/My Modules/<name>.bwmodule`. Reporting everything as a `.bwdevice` contradicts
+  the row's own kind column, the accepted-extensions line on the onboarding state, and the
+  per-kind folder creation that `design-review.md` item 6 requires.
+- For a `Rejected` entry, **UUID and library path are replaced by an `Identity` row**
+  reading "Not read. This file is not a Bitwig document, so it has no UUID and nothing was
+  placed in the library." A rejected file has neither, so showing an all-zeros UUID and a
+  path states two things that are not true
 - `Placement` — pill: `linked` (`ph-link`, ok), `copied` (`ph-copy-simple`, info), `unresolved` (`ph-link-break`, err)
 - separator
-- Actions: `ph-folder-open` Reveal file · `ph-fingerprint` Assign new UUID… · `ph-trash` Remove entry (in `--err`)
+- Actions: `ph-folder-open` Reveal file · `ph-fingerprint` Assign new UUID… (**staged and
+  conflicting entries only**, same restriction as the row) · `ph-trash` Remove entry (in
+  `--err`, tooltip "The document file is kept")
+
+A UUID is how a saved project finds a device. Reassigning one that is already registered
+breaks every project referencing it silently, so the restriction holds wherever the action
+appears.
+
+**The panel's status rules are the row's status rules**, not a second set. All of it derives
+from the entry's status:
+
+| Status | Path row | Actions |
+|---|---|---|
+| `Registered`, `Pending restart`, `Changed`, `Update available` | `Registered library path` | Reveal file · Remove entry |
+| `Staged`, `Conflict` | **`Will be placed at`**, in `--ink-3`, plus "Nothing is written until Apply runs." | Assign new UUID… · Remove entry |
+| `Missing file` | `Registered library path` | **`Locate file…`** (in `--accent-text`) · Remove entry — no Reveal, because the file cannot be found |
+| `Rejected` | replaced by the `Identity` row; **Description and Search keywords are dropped too** | Remove entry |
+
+Getting this wrong is not cosmetic: during design the panel offered `Reveal file` on a
+missing file (the one action that cannot work) while omitting `Locate file` (the one that
+fixes it), and reported a "registered library path" for documents that Apply had not yet
+placed.
 
 Description and keywords are the reason this panel exists — they are what make a registered
 device feel native in Bitwig's browser, so they are editable here with proposed defaults.
@@ -284,12 +422,29 @@ full-page variants carry **11px corner crop marks** inset 16px, in `--line`.
 
 - **Nothing registered** — `ph-light ph-tray-arrow-down` 54px accent; "Drop a device here
   to register it"; body naming what the app does and that Bitwig must be closed for the
-  first run; the three accepted extensions in mono separated by `·`; `Add files…` primary;
-  footnote "A backup is written before anything is changed".
+  first run; the three accepted extensions in mono separated by `·`; then an aside —
+  "Nothing of your own yet? The catalog has devices, modulators and Grid modules you can
+  install in one click." — and **`Browse the catalog` as the accent primary** with
+  `Add files…` secondary; footnote "A backup is written before anything is changed".
+
+  The catalog is the call to action rather than Add files: a user on this screen has nothing
+  of their own to add, so the friendlier path is the one that gives them something.
 - **No install found** — `ph-light ph-folder-dashed` 54px `--ink-3`; lists the three
   searched locations; `Locate Bitwig Studio…` primary + `Copy diagnostics` secondary;
   footnote "The installation root contains bitwig.jar". The install bar degrades to
   "No installation selected" in `--ink-3`.
+- **Unknown build** — `ph-light ph-question` 54px `--ink-3`, crop marks; "This Bitwig
+  installation could not be read"; body explaining that the app finds what it needs by
+  structure rather than by version number, that this installation is arranged in a way it
+  does not recognise, that this usually means a new Bitwig release, and that **nothing has
+  been changed**; `Copy diagnostics` primary + `Change install…` secondary; footnote "The
+  diagnostics report names what was looked for and what was found". The install bar shows
+  the `Unknown build` badge with no version, and the action bar reads "Installation not
+  recognised" with the primary disabled.
+
+  This is the state a user reaches the morning after a Bitwig release. It is nobody's
+  fault and it is most likely to be met by someone not expecting it, so the copy must not
+  read like an error the user caused. It is a recognised condition, not a crash.
 - **No match** — `ph-light ph-funnel-x` 36px; 13px title; `Clear filters` secondary. The
   toolbar stays in place above it.
 
@@ -326,43 +481,73 @@ dismiss. Five uses:
 `--panel-2` body with `--bg` header and footer bands. Header: accent dot · title
 "Prepare this installation" · `Plan` label right. Body: one framing sentence; then the plan
 as numbered lines (mono ordinal + 11px/1.5 text, the installation-modifying line's ordinal
-in `--accent-text`); then a `ph-square` checkbox "Also delete the document file of removed
-entries" with a sub-note; then a closing note that a Bitwig update resets the installation.
+in `--accent-text`); then a closing note that a Bitwig update resets the installation.
 Footer: `Cancel` filled + `Prepare installation` accent.
+
+The modal carries **no** delete-the-document checkbox. Removal is Update-mode work, which
+applies without confirmation, so a checkbox here would be unreachable in exactly the case
+it was written for; the choice lives in Settings instead.
 
 **Only prepare mode confirms.** Update mode applies directly.
 
 ### 7. Apply progress (modal, 436px)
 
-Header: accent dot · "Preparing the installation" · sub-line "Step N of 9 · <step name>".
+Header: accent dot · "Preparing the installation" · sub-line "Step N of <total> · <step name>".
 Optional authorisation notice (`--accent-soft` ground, warm-tinted body, no side bar).
 Then nine steps, 27px each: mono ordinal · 5px state dot · label (600 when active) ·
 right-aligned mono meta. Footer: 2px progress track (`--line` with an accent fill) ·
 percentage in mono · `Cancel`.
 
-The nine steps: Back up the installation (238 MB) · Read the Core Registry (428 entries) ·
-Prepare the installation · Neutralise the tamper guard · Place documents (6 files) ·
-Link library folders · Write descriptions and search keywords · Verify · Activate.
+The nine steps: Back up the jar and description bundles (35 MB) · Read the Core Registry
+(428 entries) · Prepare the installation · Neutralise the tamper guard · Place documents
+(6 files) · Link library folders · Write descriptions and search keywords · Verify ·
+Activate.
+
+Only `bitwig.jar` (34 MB) and the three description bundles are copied — never the ~957 MB
+installation. **The step count is derived, not fixed:** "Link library folders" does not run
+under the *copy documents into the installation* placement setting, and renders with an
+em-dash ordinal and "not run" while the header and percentage fall back to eight steps.
 
 Cancel is offered up to Activate. Update mode shows **none** of this — it is a transient
 line in the action bar.
 
 ### 8. Settings (full window)
 
-Header 44px: `ph-arrow-left` + `Entries` back control · `ph-gear-six` · "Settings".
+Header 44px: `ph-arrow-left` + `Local` back control · `ph-gear-six` · "Settings".
 Body, 12px gutter, max 620px, sections 15px apart, each with a 10.5px/600 `--ink-2` label:
 
 - **Paths** — three rows on a `128px / 1fr / auto / auto` grid: Bitwig install, User
-  library, Backups. Value in a mono `--field` well; `Browse`/`Open` filled button;
-  `ph-arrow-counter-clockwise` reset (absent for Backups).
+  library, Backups. Value in a mono `--field` well; `Browse` filled button and a
+  `ph-arrow-counter-clockwise` reset on the first two. The Backups row instead carries
+  `Restore…` (with `ph-clock-counter-clockwise`), or the text "No backup yet" when the
+  installation has never been prepared.
 - **Document placement** — two radio rows (`ph-radio-button` / `ph-circle`), the selected
   one on an accent-tinted ground with warm-tinted description ink. Link (documents survive
   a Bitwig update) vs copy (an update removes them).
 - **Appearance** — System / Light / Dark segmented control on a `--field` ground with
   `ph-desktop` / `ph-sun` / `ph-moon`.
+- **Removing entries** — a `ph-square` checkbox "Also delete the document file", **off by
+  default**, with the consequence spelled out: removing an entry unregisters it and leaves
+  the document in the library. This is the only home for that choice (see decision 9).
 - **Diagnostics** — one line of explanation, `Copy report` button, and a mono report block
-  in a `--field` well (8 lines: install, version, jar, registry, guard, locale, license,
-  entries).
+  in a `--field` well: install path, version and build, jar path and size, which anchors
+  resolved, **guard state**, **backup date and size**, entry-list location and count,
+  placement strategy, factory breakdown.
+
+  **Every variable line derives from the installation the screen was opened from** — none of
+  it is fixed text. From a prepared install: `anchors registry ok · descriptions ok · library
+  ok`, `guard disarmed by orange-registry 0.9.2`, `backup 14 Sep 2026 · 35.1 MB`,
+  `entries … · 6 entries`. From a stock one: `guard armed · installation not prepared`,
+  `backup none yet`, `entries … · none recorded`. From `Unknown build`:
+  `anchors registry NOT LOCATED`, `guard state unknown`. This matters more here than
+  anywhere else in the app — the report is the artefact a user sends to get a new Bitwig
+  build supported, and `Copy diagnostics` is the primary action of the state that most
+  needs it, so a report that claims every anchor resolved would deny the failure it exists
+  to describe. Guard and backup moved here when the install bar
+  lost its second row; both derive from the installation, so a stock one reports
+  `guard armed · installation not prepared` and `backup none yet`, and the Backups row
+  reads "No backup yet" instead of offering `Restore…`. There is deliberately **no licence line** — the entitlement tier is assembled
+  at Bitwig startup and nothing static in the installation exposes it.
 - **About** row — clickable card with `ph-info`, version in mono, `ph-caret-right`.
 
 One screen, no tabs. Diagnostics live here because that is what a user sends when a new
@@ -370,11 +555,19 @@ Bitwig build is not recognised.
 
 ### 9. Restore backup (full window)
 
+**Two forms.** With no backup — a stock installation that has never been prepared — the
+region carries an empty state: `ph-light ph-archive` 54px, "Nothing to restore yet", a body
+explaining that a backup is written just before the installation is prepared, a note that
+backups hold the jar and description bundles (~35 MB, not the installation), a footer reading
+"No backup exists for this installation." and an inert primary. The warning card and the list
+appear only when a backup exists. No placeholder date is ever shown.
+
 Header adds an `Open backups folder` button. A warning card (`--warn-bg`, warm-tinted body,
 `ph-warning`): "Restoring removes every registration from this installation." plus the
 consequence — projects will not recall custom devices afterwards, though documents and the
 app's own record are kept. Then the backup list: radio rows with date (12px/500), a
-`Latest` accent-tinted pill on the newest, mono metadata, mono size at right; selected row
+`Latest` accent-tinted pill on the newest, mono metadata in the `6.1 (94a90411) · jar +
+description bundles` form, mono size at right (~33–35 MB, not the installation size); selected row
 accent-tinted with warm-tinted metadata; alternate rows carry `--zebra`. Footer: a mono-free
 note, `Cancel`, and `Restore this backup` as an **outlined** `--err` button — deliberately
 not a filled one, so the destructive action does not compete with the accent and so its
@@ -382,12 +575,141 @@ label keeps contrast in both themes.
 
 ### 10. About (full window)
 
+**Version, Build and Resolution all derive from the installation**, like the Settings
+report. When resolution fails, Version and Build render as `—` and Resolution reads
+"Anchors not located" in `--err-text` — About must not report a confident version in the
+state where the install bar deliberately suppresses one.
+
 52px accent-filled mark with `ph-light ph-package` in `--accent-ink`; product name
-(19px/600) and a mono line `0.9.2 · orange-registry · macOS arm64`; one sentence of
-description; a **Detected installation** card (Version / Build / Verified against, labels
-in Inter, values in mono); a disclaimer card with `ph-scales` stating no affiliation with
-Bitwig GmbH and that the tool modifies a local installation at the user's discretion;
-`Copy diagnostics` and `Licences` buttons.
+(19px/600) and a mono line `0.9.2 · orange-registry · macOS arm64`; two sentences of
+description, the second stating that the app finds what it needs by structure rather than
+by version; a **Detected installation** card with three rows — **Version** (`6.1`),
+**Build** (`94a90411`) and **Resolution**, a dot plus "All anchors located" in `--accent`
+or "Anchors not located" in `--err`; a disclaimer card with `ph-scales` stating no
+affiliation with Bitwig GmbH and that the tool modifies a local installation at the user's
+discretion; `Copy diagnostics` and `Licences` buttons.
+
+There is **no "verified against" or supported-builds row, and the UI must not imply one.**
+The app locates what it needs by structure, which is what lets an unseen Bitwig release
+work on day one and a genuinely changed one fail loudly instead of mispatching. The
+Resolution row is how that is reported, and it has both a success and a failure form.
+
+## The Catalog view
+
+**Orange Catalog** is a public, curated repository of community devices, modulators and Grid
+modules that the app can install directly. Two facts shape the design: items are 20–30 KB so
+installing is effectively instant and needs no download manager, and **an item is executable
+DSP** — the repository's review process is the only trust boundary, so the author is visible
+before installing, not buried in a detail panel.
+
+### Toolbar (42px)
+
+Parallel to the Local toolbar, with one deliberate difference: **search covers name, author,
+description and keywords**, and says so in the placeholder ("Search name, author, description
+or keywords", 320px; "Search" when the panel narrows it). Local searches name and UUID —
+different fields, because the question is different: *what is this thing I have* versus *is
+there a thing that does X*.
+
+Then the three kind filters with facet counts, and an **install filter** as a three-state
+segmented control — `All` / `Installed` / `Updatable` — not a checkbox, because
+`Updatable` is the state a returning user wants.
+
+### Row (48px)
+
+Six columns: kind (66) · name + one-line description (1fr) · author (116) · version (56,
+mono) · status (142) · action (92). Narrow mode drops author and version, which the open
+panel is already showing.
+
+A catalog row leads with **what it is and who made it** — the reverse of a Local row, which
+leads with kind and identity. The description is inline and clamped to one line: without it,
+browsing means opening every item; clamped, rows stay even. The author sits in `--ink-2`,
+brighter than version or description, because it is the trust signal.
+
+**There is no UUID in a catalog row.** It identifies a thing you already have; it does not
+help you choose one. It lives in the panel.
+
+Actions are `--btn`-filled, never accent — the action bar's primary stays the only accent
+fill in the window. `Update` takes `--accent-text`, the two failures `--err-text`.
+
+### Statuses
+
+| Status | Colour | Action |
+|---|---|---|
+| `Available` | `--ink-3` | `Install` |
+| `Installed` | `--ink-2` | none; the name dims to `--ink-2` |
+| `Update available` | `--accent-text` | `Update` |
+| `Replacement available` | `--ink-2` | `See replacement` |
+| `Needs Bitwig <version>` | `--ink-3` | none; states the version it needs |
+| `Download failed` | `--err-text` | `Retry` |
+| `Verification failed` | `--err-text` | `Copy details` |
+
+### Item detail (272px, same panel as the Local inspector)
+
+Author and version, full description, **Requires Bitwig \<version\> or newer** stated whether
+or not it is satisfied, licence, the keywords that become search terms once installed, the
+homepage if the author gave one, and **provenance — a link to the merged change in the
+repository**. That link is what makes review the trust boundary rather than a claim about
+one. UUID last, secondary. Primary action, plus `Remove` when installed.
+
+### Install, update, supersede
+
+- **Install** is one click. On a prepared installation it is *Update entries* work: no
+  backup, no confirmation, Bitwig may stay open, takes effect next launch.
+- **Update confirms**, and installs do not. Bitwig resolves a device by identity, so
+  replacing the file changes every project that already uses it. The modal names the item
+  and the target version in its title ("Update BREATH FOLLOWER to 2.1.0?"), states the pair
+  in mono beneath the lead sentence ("installed 2.0.3 → catalog 2.1.0"), and leads with the
+  one sentence that matters — "Projects that already use this device will use the new
+  version." — then explains that the catalog only permits updates which keep the parameter
+  set, so those projects still load. An updatable item therefore needs **two** version
+  fields in the data: the installed one and the catalog one.
+- **Supersede** is an offer, not a debt. An incompatible revision is published as a **new
+  item with a new identity**; the old one stays published. The row reads
+  `Replacement available` in neutral grey with no badge — quieter than `Update available` —
+  and the panel carries the counterintuitive part: a newer version exists as a separate
+  device, installing it leaves your projects alone, both can be installed at once.
+
+  **Both items must exist in the catalog, and the offer must navigate.** The design shows
+  `CURVECOMP` (installed, 0.9.0, `Replacement available`) and `CURVECOMP II` (2.0.0,
+  `Available`, its own UUID, keywords and review reference) as separate rows, and
+  `See CURVECOMP II` in the panel opens that item. Naming a replacement the catalog does not
+  list makes the coexistence claim unverifiable — which is the one thing this state has to
+  get across.
+
+### Network and trust states
+
+- **Offline with a cached index** is a degraded state, not an error: **no banner**. The age
+  is stated next to the install path ("Catalog from 12 days ago"), turning `--accent-text`
+  and growing a labelled `Refresh` once stale. Browsing and installing cached items work.
+- **Never fetched** gets a full-region empty state explaining that the index is one small
+  file and caches once fetched, with `Try again`.
+- **Download failed** is ordinary: per-item, `Retry`.
+- **Verification failed is a trust event and must not read like a network error.** The file
+  does not match the hash the catalog states, so the install is **refused**, the row holds
+  the failure, and the only action is `Copy details` — deliberately **not** `Retry`. The
+  banner says nothing was written to the library or the installation. The design shows both
+  failures in one view so they visibly differ.
+
+### What the Local view gains
+
+- **Provenance per entry**: a `ph-duotone ph-package` marker on catalog-sourced rows
+  (tooltip `Orange Catalog · <version>`) and a **Source** block in the inspector with the
+  review link. Local-file entries show `Local file`.
+
+  **Provenance is derived, never listed.** An entry is catalog-sourced when a catalog item of
+  the same name reports an installed-ish status (`Installed`, `Superseded` or
+  `Update available`) — so the two views cannot disagree about what is installed. Building
+  this from a hand-maintained name list means Local and Catalog drift apart the first time a
+  catalog status changes, which is exactly what happened during design: the catalog claimed
+  an item was installed that the Local list did not contain, and a superseded item lost its
+  marker.
+
+  Likewise the **inspector must be given the entry that was clicked** — name, kind, UUID,
+  status, description, keywords, library path, placement and provenance. If it falls back to
+  defaults it will show one entry's identity beside another's provenance, and the
+  staged-only `Assign new UUID` gating will evaluate against the wrong row. (Note the
+  attribute cannot be called `name` at the mount — that names the component to import.)
+- `Update available` as an additional status.
 
 ## Interactions & behaviour
 
@@ -401,7 +723,7 @@ Bitwig GmbH and that the tool modifies a local installation at the user's discre
   - *Prepare install* — modifies the installation. Confirms first, writes a backup, runs
     the nine-step transaction, requires Bitwig closed.
 - **Overflow menu** is the only route to Settings, Restore and About; each replaces the
-  whole window and returns via the `Entries` back control.
+  whole window and returns via the `Local` back control.
 - **Drag** resolves accept/reject per file before the drop.
 - Animations were **not specified** in the prototype. Suggested: no transition on hover
   tone (instant), and a short fade for the drag overlay. Nothing in the design depends on
@@ -441,6 +763,47 @@ a functional check:
 8. Row indices and decorative ordinals were **removed**: a positional number is not an
    identity, and the UUID already identifies a row.
 
+Added by the implementation review:
+
+9. **The delete-the-document choice lives in Settings**, not on the apply confirmation,
+   because removal is Update-mode work and never confirms. Default: keep the file — the
+   document is the user's own work, the registration is not. The row action names the
+   default in its tooltip.
+10. **The step count is derived** rather than fixed at nine, because "Link library folders"
+    does not run under copy placement.
+11. **Version reporting is a single format** (`6.1` + `94a90411`) and is **suppressed
+    entirely when resolution fails** — a confident version on an unreadable installation
+    is worse than none.
+12. **`Unknown build` is a designed, full-region state**, not an empty list under a grey
+    badge.
+
+Added by the catalog round:
+
+13. **Two top-level views, one two-item switch** (`Local` / `Catalog`), living in the install
+    bar rather than its own strip. The app has two peer activities; a switch is the smallest
+    affordance that admits it. The toolbar could not host it — with search, three kind
+    filters and the install filter, the catalog toolbar already needs ~844px of 796.
+14. **A catalog row is not an entry row.** It leads with what the item is and who made it,
+    carries a clamped one-line description, and omits the UUID entirely.
+15. **Supersede reads as an offer**, in neutral grey, quieter than an update.
+16. **Updates confirm; installs do not** — an update reaches backwards into saved projects.
+17. **Verification failure is a trust event**, refusing the install and offering only
+    `Copy details`, never `Retry`.
+18. **No status dots**, and orange is reserved for states awaiting a decision.
+19. **Every overflow screen reports the installation it was opened from**, never fixed
+    text: Settings' four variable report lines, About's Version / Build / Resolution, and
+    whether Restore has anything to list. Three separate rounds of review caught one of
+    these each — if a screen states an installation fact, that fact has to arrive as a prop.
+20. **The install bar is one row.** Registered count, guard state and backup date were
+    removed from it — duplicated, non-actionable and menu-reachable respectively. Guard and
+    backup moved to Settings, with a no-backup form for stock installations.
+
+One behavioural invariant the design depends on, confirmed by the review: preparation
+creates the library folders for **all three kinds**, whether or not anything of that kind
+is registered. Without it, registering the first entry of a new kind would write into the
+installation during Update mode — the mode that promises never to block and never to
+require Bitwig closed. The design needs nothing for this beyond the invariant holding.
+
 ## Assets
 
 - **Phosphor Icons** 2.1.1, duotone (all 16px UI icons) and light (large display glyphs),
@@ -459,19 +822,22 @@ browser; child files also render standalone.
 
 | File | Contents |
 |---|---|
-| `Orange Registry.dc.html` | Root: window shell, all 19 states, state picker, theme toggle, drag overlay, both modals, banner |
-| `EntryRow.dc.html` | One list row: 9 statuses, 3 kinds, hover/selected/factory/narrow variants |
-| `InstallBar.dc.html` | Install bar: 5 registry states, guard, backup, overflow menu |
-| `ListToolbar.dc.html` | Search, kind filters, factory toggle, Add files |
-| `ActionBar.dc.html` | Summary, note, primary/secondary actions, both apply modes |
-| `Inspector.dc.html` | 272px detail panel |
-| `EmptyState.dc.html` | Three empty variants |
-| `SettingsScreen.dc.html` | Settings |
+| `Orange Registry.dc.html` | Root: window shell, all 30 states, state picker, theme toggle, drag overlay, plan/progress/update modals, banner |
+| `EntryRow.dc.html` | One Local row: 10 statuses, 3 kinds, hover/selected/factory/narrow, catalog provenance marker |
+| `InstallBar.dc.html` | Single-row install bar: Local/Catalog switch, conditional state chip, catalog freshness, overflow menu |
+| `ListToolbar.dc.html` | Local toolbar: search, kind filters with counts, factory toggle, Add files |
+| `ActionBar.dc.html` | Summary, note, primary action, both apply modes |
+| `Inspector.dc.html` | 272px Local detail panel, including the Source block |
+| `CatalogRow.dc.html` | One catalog row: 7 statuses, inline description, author, version, action |
+| `CatalogToolbar.dc.html` | Catalog toolbar: wide-scope search, kind facets, All/Installed/Updatable |
+| `CatalogDetail.dc.html` | 272px catalog item panel, including provenance and the supersede block |
+| `EmptyState.dc.html` | Six variants: nothing registered, no install, unknown build, no match, catalog never fetched, catalog no results |
+| `SettingsScreen.dc.html` | Settings, including diagnostics, guard and backup state |
 | `RestoreScreen.dc.html` | Restore backup |
 | `AboutScreen.dc.html` | About |
 | `support.js` | Prototype runtime — **not part of the design**, required only to open the HTML |
 
-Open `Orange Registry.dc.html` and use the picker above the window to reach any state; the
+Open `Orange Registry.dc.html` and use the picker above the window to reach any of the 30 states; the
 `Dark`/`Light` toggle beside the title switches appearance. The child files are the same
 components in isolation, each with editable properties.
 

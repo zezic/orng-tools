@@ -8,6 +8,7 @@ members = [
     "crates/orange-catalog",
     "crates/orange-tools",
     "apps/orange-registry",
+    "apps/orange-catalog-lint",
 ]
 
 [workspace.package]
@@ -30,3 +31,4 @@ indexmap = "2"
 zip = { version = "2", default-features = false, features = ["deflate"] }
 sysinfo = { version = "0.33", default-features = false, features = ["system"] }
 tempfile = "3"
+clap = { version = "4", features = ["derive"] }

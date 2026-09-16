@@ -15,11 +15,13 @@
 pub mod index;
 pub mod item;
 pub mod manifest;
+pub mod owners;
 pub mod validate;
 
 pub use index::{Index, IndexEntry};
 pub use item::{AuthorId, Item, Slug, scan};
 pub use manifest::Manifest;
+pub use owners::{Authorization, Owner, Owners, Refusal, authorize};
 pub use validate::{Problem, Report, Severity};
 
 #[derive(Debug, thiserror::Error)]

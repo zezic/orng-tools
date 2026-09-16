@@ -7,11 +7,11 @@
 //! cannot survive that round trip are rejected when a [`Registration`] is built,
 //! not here.
 
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 use uuid::Uuid;
 
-use crate::{Error, Kind, LibraryPath, Registration, Result};
+use crate::{Error, Kind, LibraryPath, Registration, Result, fs};
 
 /// Format marker. The reader refuses anything it does not recognise rather than
 /// misinterpreting a future layout.
@@ -25,36 +25,17 @@ pub struct Manifest {
 }
 
 impl Manifest {
-    /// Default location, identical in shape on every platform so that the
-    /// injected class can derive it from `user.home` in one line.
-    pub fn default_path() -> Result<PathBuf> {
-        let var = if cfg!(windows) { "USERPROFILE" } else { "HOME" };
-        let home = std::env::var_os(var).ok_or(Error::Install(bitwig_install::Error::NoHome))?;
-        Ok(Path::new(&home).join(".orange-registry").join("entries.tsv"))
-    }
-
     /// Read the list, treating a missing file as an empty one: an installation
     /// with nothing registered is a normal state, not a failure.
     pub fn load(path: &Path) -> Result<Self> {
-        let text = match std::fs::read_to_string(path) {
-            Ok(text) => text,
-            Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(Self::default()),
-            Err(source) => return Err(Error::Io { path: path.display().to_string(), source }),
-        };
-        Self::parse(&text)
+        match fs::read_to_string_if_exists(path)? {
+            Some(text) => Self::parse(&text),
+            None => Ok(Self::default()),
+        }
     }
 
     pub fn save(&self, path: &Path) -> Result<()> {
-        if let Some(parent) = path.parent() {
-            std::fs::create_dir_all(parent).map_err(|source| Error::Io {
-                path: parent.display().to_string(),
-                source,
-            })?;
-        }
-        std::fs::write(path, self.to_tsv()).map_err(|source| Error::Io {
-            path: path.display().to_string(),
-            source,
-        })
+        fs::write_new(path, self.to_tsv())
     }
 
     pub fn parse(text: &str) -> Result<Self> {

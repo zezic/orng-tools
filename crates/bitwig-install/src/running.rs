@@ -1,4 +1,6 @@
-use sysinfo::{ProcessRefreshKind, RefreshKind, System};
+use sysinfo::{ProcessRefreshKind, RefreshKind, System, UpdateKind};
+
+use crate::Installation;
 
 /// Process names Bitwig runs under. The engine and plugin hosts are separate
 /// processes and hold the installation open after the main window closes, so
@@ -25,25 +27,31 @@ impl RunState {
     }
 }
 
-/// Scan for running Bitwig processes.
+/// Scan for processes holding `install` open.
 ///
-/// Matches on process name rather than executable path: the audio engine and
-/// plugin hosts live in nested bundles, and on Linux they may be started from a
-/// copy of the install the caller never resolved.
-pub fn running_state() -> RunState {
-    let refresh = RefreshKind::nothing().with_processes(ProcessRefreshKind::nothing());
+/// Candidates are found by process name, because the audio engine and the plugin
+/// hosts live in nested bundles whose names are all that is stable about them.
+/// They are then narrowed to this installation by executable path: a second copy
+/// of Bitwig running elsewhere does not stop this one being modified, and on
+/// Linux running from a copy the caller never resolved is normal.
+///
+/// A process whose path cannot be read counts as holding the installation open.
+/// Being told to quit a Bitwig that was not in the way costs a moment; modifying
+/// an archive under a live JVM costs the session.
+pub fn running_state(install: &Installation) -> RunState {
+    let refresh = RefreshKind::nothing()
+        .with_processes(ProcessRefreshKind::nothing().with_exe(UpdateKind::Always));
     let system = System::new_with_specifics(refresh);
 
     let mut found: Vec<String> = system
         .processes()
         .values()
-        .filter_map(|process| {
+        .filter(|process| {
             let name = process.name().to_string_lossy().to_ascii_lowercase();
-            PROCESS_MARKERS
-                .iter()
-                .any(|marker| name.contains(marker))
-                .then(|| process.name().to_string_lossy().into_owned())
+            PROCESS_MARKERS.iter().any(|marker| name.contains(marker))
         })
+        .filter(|process| process.exe().is_none_or(|exe| exe.starts_with(install.root())))
+        .map(|process| process.name().to_string_lossy().into_owned())
         .collect();
 
     found.sort();
@@ -56,8 +64,15 @@ pub fn running_state() -> RunState {
 mod tests {
     use super::*;
 
+    /// That the scan narrows to one installation is proved where a second one
+    /// exists to narrow against: `orange-tools`' preparation tests run against a
+    /// copy while the real Bitwig may well be open.
     #[test]
     fn scanning_does_not_panic() {
-        let _ = running_state();
+        let Ok(install) = Installation::discover() else {
+            eprintln!("no Bitwig Studio installed, skipping");
+            return;
+        };
+        let _ = running_state(&install);
     }
 }

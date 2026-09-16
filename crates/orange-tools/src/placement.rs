@@ -11,7 +11,7 @@
 
 use std::path::{Path, PathBuf};
 
-use crate::{Error, Installation, Kind, Registration, Result, UserLibrary};
+use crate::{Installation, Kind, Registration, Result, UserLibrary, fs};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Strategy {
@@ -75,7 +75,7 @@ pub fn place(
             .join(registration.library_path.file_name()),
         Strategy::Copy => registration.library_path.resolve(install),
     };
-    write_file(&destination, document)?;
+    fs::write_new(&destination, document)?;
     Ok(destination)
 }
 
@@ -106,7 +106,7 @@ pub fn ensure_all_links(install: &Installation, library: &UserLibrary) -> Result
 /// of Bitwig's is never destroyed. Returns whether a link was created.
 pub fn ensure_link(install: &Installation, library: &UserLibrary, kind: Kind) -> Result<bool> {
     let target = library.folder(kind.user_folder());
-    create_dir(&target)?;
+    fs::create_dir_all(&target)?;
 
     let link = install
         .library_dir()
@@ -115,47 +115,24 @@ pub fn ensure_link(install: &Installation, library: &UserLibrary, kind: Kind) ->
 
     if let Ok(metadata) = link.symlink_metadata() {
         if !metadata.file_type().is_symlink() {
-            return Err(Error::Io {
-                path: link.display().to_string(),
-                source: std::io::Error::new(
+            return Err(fs::error(
+                &link,
+                std::io::Error::new(
                     std::io::ErrorKind::AlreadyExists,
                     "a real directory is already there",
                 ),
-            });
+            ));
         }
         // An existing link to the right place is the goal state, not an error.
         if std::fs::read_link(&link).is_ok_and(|current| current == target) {
             return Ok(false);
         }
-        std::fs::remove_file(&link).map_err(|source| Error::Io {
-            path: link.display().to_string(),
-            source,
-        })?;
+        fs::remove_file(&link)?;
     }
 
-    create_dir(link.parent().unwrap_or(&link))?;
-    symlink_dir(&target, &link).map_err(|source| Error::Io {
-        path: link.display().to_string(),
-        source,
-    })?;
+    fs::create_dir_all(link.parent().unwrap_or(&link))?;
+    symlink_dir(&target, &link).map_err(|source| fs::error(&link, source))?;
     Ok(true)
-}
-
-fn write_file(path: &Path, bytes: &[u8]) -> Result<()> {
-    if let Some(parent) = path.parent() {
-        create_dir(parent)?;
-    }
-    std::fs::write(path, bytes).map_err(|source| Error::Io {
-        path: path.display().to_string(),
-        source,
-    })
-}
-
-fn create_dir(path: &Path) -> Result<()> {
-    std::fs::create_dir_all(path).map_err(|source| Error::Io {
-        path: path.display().to_string(),
-        source,
-    })
 }
 
 /// Windows cannot create a symlink without elevation, but an unprivileged user

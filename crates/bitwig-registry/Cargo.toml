@@ -9,7 +9,6 @@ repository.workspace = true
 [dependencies]
 bitwig-classfile.workspace = true
 bitwig-document.workspace = true
-krakatau2.workspace = true
 thiserror.workspace = true
 uuid.workspace = true
 

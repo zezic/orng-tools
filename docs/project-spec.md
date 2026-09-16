@@ -237,9 +237,27 @@ genuinely changed one fails loudly instead of mispatching.
 
 ### 5.4 Verification
 
-Bitwig ships a JRE (no compiler). Before a prepared archive replaces the installed one, it
-is run under that JVM to force class initialisation through the real verifier. If that does
-not exit clean, the installation is never touched.
+Bitwig ships a JRE with no compiler. Before a prepared archive replaces the installed one,
+a small class is put on the classpath ahead of it and asked to load every class the patch
+edited. Loading links a class, linking is what runs the JVM's own verifier, and forcing
+initialisation then runs the registry's several hundred registrations for real. If that
+does not exit clean, the archive is discarded and the installation is never touched.
+
+That class is assembled at run time from Krakatau assembly held in this repository, so
+producing it needs no JDK and the bytes are reviewable as text. It takes the class names as
+arguments rather than holding them as constants, which is what keeps it fixed across
+builds - nothing in it is retargeted. It goes in a temporary directory, never the archive.
+
+The order of a preparation follows from this:
+
+1. Back up the archive and the description bundles.
+2. Write the patched archive beside the installed one, under a temporary name.
+3. Verify it.
+4. Move it into place. One rename, and the first moment the installation changes.
+5. Link the library folders for all three kinds.
+
+Everything that can fail happens before step 4, so a failed preparation leaves an
+installation that was never touched rather than one that has to be repaired.
 
 ---
 
@@ -272,6 +290,13 @@ is offered only before an identity has been registered.
 **6.7 The document is the source of truth for identity.** Anything derivable from a
 document is read from it rather than restated alongside it. Applies to the entry list and
 to Orange Catalog manifests alike.
+
+**6.8 The backup is the patch source, not the installed file.** A backup is taken once per
+build and never overwritten, and every preparation of that build patches it rather than
+whatever is installed now. Preparing twice then yields the same archive byte for byte
+instead of stacking a second copy of every edit, and restore always has an unmodified
+original. An installation that is already modified with no backup to work from is refused,
+because there is then nothing pristine to patch.
 
 ---
 
@@ -374,18 +399,22 @@ a reviewed index rather than trusted for coming from the right domain.
 
 Built and tested against a real installation:
 
-- All five library crates, with the anchors resolving correctly and 428 factory entries read
+- All six library crates, with the anchors resolving correctly and 428 factory entries read
   back whole.
 - Document reading for all three serializations, with identity rewriting verified byte-exact
   and reversible.
 - The tamper guard: inspect, disarm, idempotent.
 - Registrations, the entry list format, description bundles, document placement and linking.
+- The prepare transaction, end to end against a copy of the installed Bitwig: it backs up,
+  patches, verifies under the bundled JVM, activates and links. Preparing twice is proved
+  to produce the same archive, restore is proved to give back the original byte for byte,
+  and a patch broken in a way only a JVM can catch is proved not to reach the installation.
 
 Not built yet:
 
-- The injected class and the two calls that reference it.
-- The prepare transaction: backup, rewrite, verify under the bundled JVM, activate, roll
-  back.
+- The injected class and the two calls that reference it. Everything around them is in
+  place: preparation already widens the register method's access, and the archive edit set
+  it would join is one call away.
 - The application.
 - Orange Catalog and its validator.
 

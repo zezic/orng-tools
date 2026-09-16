@@ -275,7 +275,9 @@ The order of a preparation follows from this:
 2. Write the patched archive beside the installed one, under a temporary name.
 3. Verify it.
 4. Move it into place. One rename, and the first moment the installation changes.
-5. Link the library folders for all three kinds.
+5. Link the library folders for all three kinds, unless documents are being copied into the
+   installation instead (6.3). A plan states which steps it will run, so a step list drawn
+   before the run cannot promise one it will skip.
 
 Everything that can fail happens before step 4, so a failed preparation leaves an
 installation that was never touched rather than one that has to be repaired.
@@ -296,9 +298,17 @@ closed, writes a backup, and is worth confirming. Everything else is a file writ
 both as heavyweight would make routine work feel dangerous and train users to click through
 the dialog that matters.
 
-**6.3 Preparation links all three kinds.** Otherwise the first modulator added to a
-device-only installation would have to create a folder inside the installation - a write
-that can demand authorisation, during the mode that promises never to block.
+**6.3 Preparation links all three kinds, unless documents are being copied.** Otherwise the
+first modulator added to a device-only installation would have to create a folder inside
+the installation - a write that can demand authorisation, during the mode that promises
+never to block.
+
+Under the copy strategy the links must not be made at all. A registered path resolves
+inside the installation's `Library`, so a linked folder resolves straight back out into the
+user library and a document "copied into the installation" lands in exactly the file the
+linked strategy would have used. The setting would read as a choice and make none. Copying
+is the user asking for entry changes to write into the installation, which is the invariant
+this decision protects, so opting out of it opts out of the link as well.
 
 **6.4 Entitlement: grant entries, never the flag.** Section 4.2.
 

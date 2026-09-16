@@ -7,7 +7,8 @@ Bitwig internals it depends on. Everything below was checked against a real Bitw
 Round 1 is closed: all ten items were addressed, and several were answered better than
 they were asked. Round 2 adds the Catalog view, and raises eight items - three factual,
 one that contradicts a safety property of the transaction, three that depend on data no
-format currently carries, and one that is our bug rather than the design's.
+format currently carries, and one that was our bug rather than the design's and is now
+fixed.
 
 ---
 
@@ -84,7 +85,10 @@ So the transaction is five steps:
 2. Prepare the installation (write the patched archive beside the original)
 3. Verify
 4. Activate (one rename, and the first moment anything changes)
-5. Link library folders
+5. Link library folders - skipped under `Copy` placement, per item 8
+
+A plan now states which of these it will run, so the drawn list can show a skipped step as
+not run without the app deciding for itself which one that is.
 
 Placing documents and writing descriptions are *Update entries* work. They touch no part of
 the archive and cannot disturb the tamper seal, which is exactly why they are not inside the
@@ -145,21 +149,21 @@ least able to explain what happened.
 
 ---
 
-## Round 2: our bug, found by the design
+## Round 2: our bug, found by the design (fixed)
 
-### 8. "Link library folders is skipped under Copy placement" is correct, and the library does not do it
+### 8. "Link library folders is skipped under Copy placement" is correct, and the library did not do it
 
-The design assumes preparation skips the link step when placement is `Copy`. It is right,
-and we are wrong: preparation currently links all three kinds unconditionally.
+The design assumes preparation skips the link step when placement is `Copy`. It was right,
+and we were wrong: preparation linked all three kinds unconditionally.
 
 The consequence is worse than a redundant step. `Copy` writes to the registered library
 path, which resolves *through* the link into the user library - so with the links in place,
 `Copy` and `Link` put the document in the same file, and the `Copied` placement state is
 unreachable. The setting has no effect.
 
-Fixing this properly means preparation has to know the placement strategy, which it
-currently does not. No design change; recorded here so the two documents do not disagree
-while it is fixed.
+Fixed: preparation now takes the placement strategy, and a plan states which steps it will
+run, so a step list drawn before the run cannot promise one that will be skipped. No design
+change was needed - the design already had it right.
 
 ---
 

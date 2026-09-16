@@ -15,8 +15,8 @@ use bitwig_classfile::{Jar, JarEdits};
 use bitwig_document::Kind;
 use bitwig_registry::{Binding, guard};
 use orange_tools::{
-    Backup, Error, GuardState, Installation, LibraryPath, Manifest, OrangeHome, Plan,
-    Registration, Step, UserLibrary,
+    Backup, Error, GuardState, Installation, LibraryPath, Manifest, OrangeHome, Placement,
+    Plan, Registration, Step, Strategy, UserLibrary, placement,
 };
 
 /// A copy of the installed Bitwig that a test may destroy.
@@ -79,7 +79,20 @@ impl Mirror {
     }
 
     fn plan(&self) -> Plan {
-        Plan::compute(&self.install, &self.library, &self.home).expect("planning failed")
+        self.plan_with(Strategy::Link)
+    }
+
+    fn plan_with(&self, strategy: Strategy) -> Plan {
+        Plan::compute(&self.install, &self.library, &self.home, strategy)
+            .expect("planning failed")
+    }
+
+    /// The installation's folder for `kind`, as it is on disk.
+    fn library_folder(&self, kind: Kind) -> PathBuf {
+        self.install
+            .library_dir()
+            .join(kind.library_subdir())
+            .join(kind.user_folder())
     }
 
     /// Apply, collecting the steps that were reported.
@@ -163,11 +176,7 @@ fn prepares_a_real_installation_and_the_result_loads() {
     // All three kinds are linked whether or not anything of that kind is
     // registered, so that entry updates never write into the installation.
     for kind in Kind::ALL {
-        let link = mirror
-            .install
-            .library_dir()
-            .join(kind.library_subdir())
-            .join(kind.user_folder());
+        let link = mirror.library_folder(kind);
         assert!(link.symlink_metadata().unwrap().file_type().is_symlink(), "{kind:?} not linked");
     }
 }
@@ -210,7 +219,8 @@ fn a_modified_installation_with_no_backup_is_refused() {
     // Losing the backup is the case that matters: without it there is no
     // pristine archive to patch, and patching the patched one would stack.
     std::fs::remove_dir_all(mirror.home.backups()).unwrap();
-    let refused = Plan::compute(&mirror.install, &mirror.library, &mirror.home);
+    let refused =
+        Plan::compute(&mirror.install, &mirror.library, &mirror.home, Strategy::Link);
     assert!(matches!(refused, Err(Error::AlreadyModified(_))), "{refused:?}");
 }
 
@@ -301,6 +311,66 @@ fn a_broken_entry_list_costs_the_entries_and_not_the_launch() {
         !report.contains("ExceptionInInitializerError"),
         "the failure escaped into Bitwig's own initialiser:\n{report}"
     );
+}
+
+/// Copying documents into the installation only means anything if the library
+/// folders are left alone.
+///
+/// A registered path resolves inside the installation's `Library`. Link the
+/// folders and that path resolves straight back out into the user library, so a
+/// document "copied into the installation" lands in the same file the linked
+/// strategy would have used -- the setting reads as a choice and makes none.
+#[test]
+fn copying_documents_keeps_them_inside_the_installation() {
+    let mirror = mirror_or_skip!();
+
+    let plan = mirror.plan_with(Strategy::Copy);
+    let promised: Vec<Step> = plan.steps().collect();
+    assert_eq!(
+        promised,
+        [Step::Backup, Step::Patch, Step::Verify, Step::Activate],
+        "copying should not link the library folders"
+    );
+    // What it said it would run is what it ran, so a step list drawn from the
+    // plan cannot describe a different transaction from the one that happens.
+    assert_eq!(mirror.apply(plan), promised);
+
+    for kind in Kind::ALL {
+        let folder = mirror.library_folder(kind);
+        let linked = folder
+            .symlink_metadata()
+            .is_ok_and(|meta| meta.file_type().is_symlink());
+        assert!(!linked, "{kind:?} was linked under Copy");
+    }
+
+    // The document has to be reachable at its registered path and be a real file
+    // inside the installation, not a link out of it.
+    let registration = Registration {
+        uuid: uuid::Uuid::new_v4(),
+        kind: Kind::Device,
+        name: "ORANGE COPIED".into(),
+        library_path: LibraryPath::for_document(Kind::Device, "ORANGE COPIED.bwdevice").unwrap(),
+        description: "written by a test".into(),
+        keywords: Vec::new(),
+    };
+    let written = placement::place(
+        &mirror.install,
+        &mirror.library,
+        &registration,
+        b"not a real document",
+        Strategy::Copy,
+    )
+    .unwrap();
+
+    assert!(written.starts_with(mirror.install.root()), "{written:?} is outside the installation");
+    assert!(
+        !written.starts_with(mirror.library.root()),
+        "{written:?} landed in the user library, so Copy did nothing"
+    );
+    assert!(matches!(
+        placement::inspect(&mirror.install, &registration),
+        Placement::Copied(_)
+    ));
 }
 
 /// Where `prepare` stages a replacement archive. Named here rather than exposed,

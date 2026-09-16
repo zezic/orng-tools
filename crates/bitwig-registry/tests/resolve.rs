@@ -56,7 +56,7 @@ fn resolves_every_anchor() {
     // The install bar and About screen name the build, so it has to resolve on
     // a normal installation even though a patch does not depend on it.
     let build = binding.build.expect("build string not found");
-    assert!(build.version >= bitwig_registry::BitwigVersion::parse("6.0").unwrap());
+    assert!(build.version >= bitwig_document::BitwigVersion::parse("6.0").unwrap());
     assert_eq!(build.revision.len(), 40);
     println!("build         {build}");
 }

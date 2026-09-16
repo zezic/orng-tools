@@ -18,9 +18,9 @@ use std::path::PathBuf;
 
 use uuid::Uuid;
 
-pub use bitwig_document::{Document, Identity, Kind, Serialization};
+pub use bitwig_document::{BitwigVersion, Document, Identity, Kind, Serialization};
 pub use bitwig_install::{AppData, Installation, RunState, UserLibrary, running_state};
-pub use bitwig_registry::{Anchor, Binding, BitwigVersion, BuildId, Entry, GuardState};
+pub use bitwig_registry::{Anchor, Binding, BuildId, Entry, GuardState};
 pub use manifest::Manifest;
 
 #[derive(Debug, thiserror::Error)]

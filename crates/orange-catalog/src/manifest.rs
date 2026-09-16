@@ -8,7 +8,7 @@
 
 use std::path::Path;
 
-use bitwig_registry::BitwigVersion;
+use bitwig_document::BitwigVersion;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 

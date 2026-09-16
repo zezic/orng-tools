@@ -3,7 +3,7 @@ name = "bitwig-install"
 description = "Locating a Bitwig Studio installation and the user data that belongs to it"
 version.workspace = true
 edition.workspace = true
-license.workspace = true
+license = "MIT OR Apache-2.0"
 repository.workspace = true
 
 [dependencies]

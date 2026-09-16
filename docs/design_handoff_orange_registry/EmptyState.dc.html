@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://unpkg.com/@phosphor-icons/web@2.1.1/src/duotone/style.css" />
+<link rel="stylesheet" href="https://unpkg.com/@phosphor-icons/web@2.1.1/src/light/style.css" />
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;display=swap" />
+<style>
+@font-face{font-family:'Iosevka Extended';src:url('uploads/Iosevka-Extended.ttf') format('truetype');font-weight:400;font-style:normal;font-display:swap}
+@font-face{font-family:'Iosevka Extended';src:url('uploads/Iosevka-ExtendedBold.ttf') format('truetype');font-weight:700;font-style:normal;font-display:swap}
+html,body{margin:0;padding:0;background:#000}
+a{color:#ff5a1f;text-decoration:none}
+a:hover{color:#ff7a45}
+:root{--page:#000000;--bg:#0a0a0a;--panel:#161616;--panel-2:#1e1e1e;--row:#0a0a0a;--row-alt:#1e1e1e;--row-hover:#262626;--zebra:rgba(255,255,255,.05);--line:#242424;--line-soft:#1a1a1a;--ink:#f2f2f2;--ink-2:#bcbcbc;--ink-3:#949494;--ink-2-warm:#c6b6aa;--ink-3-warm:#9e9089;--ink-2-err:#c9b4b1;--ink-3-err:#9d8c8a;--accent:#ff5a1f;--accent-text:#ff7a45;--accent-ink:#0a0a0a;--accent-soft:rgba(255,90,31,.10);--ok:#f2f2f2;--ok-bg:rgba(242,242,242,.06);--warn:#ff5a1f;--warn-bg:rgba(255,90,31,.10);--err:#ff4036;--err-text:#ff6259;--err-bg:rgba(255,64,54,.10);--info:#a9a9a9;--info-bg:rgba(169,169,169,.07);--field:#000000;--btn:#282828;--btn-hover:#333333;--scrim:rgba(0,0,0,.74);--shadow:0 30px 80px rgba(0,0,0,.85)}
+</style>
+</helmet>
+<div style="position:relative; display:flex; flex-direction:column; align-items:center; justify-content:center; box-sizing:border-box; width:100%; height:100%; padding:20px 34px; text-align:center; font-family:Inter,'Helvetica Neue',Helvetica,sans-serif">
+  <sc-if value="{{ hasMarks }}" hint-placeholder-val="{{ true }}">
+    <div style="position:absolute; left:16px; top:16px; width:11px; height:11px; border-left:1px solid var(--line); border-top:1px solid var(--line)"></div>
+    <div style="position:absolute; right:16px; top:16px; width:11px; height:11px; border-right:1px solid var(--line); border-top:1px solid var(--line)"></div>
+    <div style="position:absolute; left:16px; bottom:16px; width:11px; height:11px; border-left:1px solid var(--line); border-bottom:1px solid var(--line)"></div>
+    <div style="position:absolute; right:16px; bottom:16px; width:11px; height:11px; border-right:1px solid var(--line); border-bottom:1px solid var(--line)"></div>
+  </sc-if>
+
+  <i class="{{ icon }}" style="font-size:{{ iconSize }}; color:{{ iconColor }}; margin-bottom:16px"></i>
+  <span style="font-size:{{ titleSize }}; font-weight:600; color:var(--ink); letter-spacing:-0.02em">{{ title }}</span>
+  <span style="max-width:{{ bodyWidth }}; margin-top:9px; font-size:11.5px; line-height:1.6; color:var(--ink-2); text-wrap:pretty">{{ body }}</span>
+
+  <sc-if value="{{ hasExts }}" hint-placeholder-val="{{ true }}">
+    <div style="display:flex; align-items:center; gap:10px; margin-top:15px; font-family:'Iosevka Extended',Iosevka,monospace; letter-spacing:-0.05em; font-size:10.5px; color:var(--ink-3)">
+      <span>.bwdevice</span><span style="color:var(--ink-3)">&middot;</span>
+      <span>.bwmodulator</span><span style="color:var(--ink-3)">&middot;</span>
+      <span>.bwmodule</span>
+    </div>
+  </sc-if>
+
+  <sc-if value="{{ hasAction }}" hint-placeholder-val="{{ true }}">
+    <div style="display:flex; align-items:center; gap:8px; margin-top:18px">
+      <div onClick="{{ onAction }}" style="{{ actionStyle }}"><span>{{ action }}</span></div>
+      <sc-if value="{{ hasAlt }}" hint-placeholder-val="{{ false }}">
+        <div onClick="{{ onAlt }}" style="display:flex; align-items:center; height:32px; padding:0 12px; border-radius:3px; background:var(--btn); color:var(--ink-2); font-size:11.5px; cursor:pointer" style-hover="background:var(--btn-hover); color:var(--ink)"><span>{{ alt }}</span></div>
+      </sc-if>
+    </div>
+  </sc-if>
+
+  <sc-if value="{{ hasFoot }}" hint-placeholder-val="{{ false }}">
+    <span style="max-width:400px; margin-top:18px; font-size:10.5px; line-height:1.55; color:var(--ink-3); text-wrap:pretty">{{ foot }}</span>
+  </sc-if>
+</div>
+
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:820,&quot;height&quot;:420},&quot;variant&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;onboarding&quot;,&quot;noinstall&quot;,&quot;nomatch&quot;],&quot;default&quot;:&quot;onboarding&quot;,&quot;tsType&quot;:&quot;string&quot;},&quot;onAction&quot;:{&quot;editor&quot;:null,&quot;tsType&quot;:&quot;() =&gt; void&quot;},&quot;onAlt&quot;:{&quot;editor&quot;:null,&quot;tsType&quot;:&quot;() =&gt; void&quot;}}">
+const V = {
+  onboarding: {
+    icon: "ph-light ph-tray-arrow-down", iconSize: "54px", iconColor: "var(--accent)", marks: true,
+    title: "Drop a device here to register it",
+    body: "Orange Registry reads the document's identity and makes this installation recognise it. Bitwig Studio must be closed the first time, while the installation is prepared.",
+    exts: true, action: "Add files\u2026", primary: true,
+    foot: "A backup is written before anything is changed"
+  },
+  noinstall: {
+    icon: "ph-light ph-folder-dashed", iconSize: "54px", iconColor: "var(--ink-3)", marks: true,
+    title: "No Bitwig Studio installation found",
+    body: "Orange Registry looked in /Applications, ~/Applications and /opt/bitwig-studio. Point it at the installation root if it lives somewhere else.",
+    action: "Locate Bitwig Studio\u2026", primary: true, alt: "Copy diagnostics",
+    foot: "The installation root contains bitwig.jar"
+  },
+  nomatch: {
+    icon: "ph-light ph-funnel-x", iconSize: "36px", iconColor: "var(--ink-3)",
+    title: "No entries match", titleSize: "13px", bodyWidth: "340px",
+    body: "Nothing here matches \u201cwavesh\u201d with the current kind filters.",
+    action: "Clear filters", primary: false
+  }
+};
+class Component extends DCLogic {
+  renderVals() {
+    const v = V[this.props.variant ?? "onboarding"] || V.onboarding;
+    const primary = v.primary !== false;
+    return {
+      icon: v.icon, iconSize: v.iconSize, iconColor: v.iconColor, hasMarks: !!v.marks,
+      title: v.title, titleSize: v.titleSize ?? "16.5px",
+      body: v.body, bodyWidth: v.bodyWidth ?? "430px",
+      hasExts: !!v.exts,
+      hasAction: !!v.action, action: v.action,
+      hasAlt: !!v.alt, alt: v.alt,
+      hasFoot: !!v.foot, foot: v.foot,
+      actionStyle: [
+        "display:flex", "align-items:center", "height:32px", "padding:0 14px",
+        "border-radius:3px", "font-size:12px", "cursor:pointer", "letter-spacing:-0.01em",
+        primary
+          ? "background:var(--accent); color:var(--accent-ink); font-weight:600; border:1px solid var(--accent)"
+          : "background:var(--btn); color:var(--ink-2)"
+      ].join(";"),
+      onAction: () => this.props.onAction && this.props.onAction(),
+      onAlt: () => this.props.onAlt && this.props.onAlt()
+    };
+  }
+}
+
+</script>
+</body>
+</html>

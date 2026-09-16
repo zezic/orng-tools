@@ -1,0 +1,10 @@
+/target
+
+.DS_Store
+
+# Design prototype fonts. Redistributable, but only alongside their licence
+# text; add that before putting them in the tree.
+/docs/design_handoff_orange_registry/uploads/
+
+# Design handoff archive; the extracted bundle beside it is what gets read.
+/docs/*.zip

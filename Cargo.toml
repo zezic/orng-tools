@@ -1,0 +1,32 @@
+[workspace]
+resolver = "3"
+members = [
+    "crates/bitwig-install",
+    "crates/bitwig-document",
+    "crates/bitwig-classfile",
+    "crates/bitwig-registry",
+    "crates/orange-catalog",
+    "crates/orange-tools",
+    "apps/orange-registry",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+license = "GPL-3.0"
+repository = "https://github.com/zezic/orange-tools"
+
+[workspace.dependencies]
+bitwig-install = { path = "crates/bitwig-install", version = "0.1.0" }
+bitwig-document = { path = "crates/bitwig-document", version = "0.1.0" }
+bitwig-classfile = { path = "crates/bitwig-classfile", version = "0.1.0" }
+bitwig-registry = { path = "crates/bitwig-registry", version = "0.1.0" }
+orange-catalog = { path = "crates/orange-catalog", version = "0.1.0" }
+orange-tools = { path = "crates/orange-tools", version = "0.1.0" }
+
+krakatau2 = { git = "https://github.com/zezic/Krakatau.git", rev = "dc7840619881edd7979eb952c7752e78fd7f1f26" }
+thiserror = "2"
+uuid = { version = "1", features = ["v4"] }
+indexmap = "2"
+zip = { version = "2", default-features = false, features = ["deflate"] }
+sysinfo = { version = "0.33", default-features = false, features = ["system"] }

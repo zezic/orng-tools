@@ -1,0 +1,577 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<meta name="design_doc_mode" content="canvas" />
+<link rel="stylesheet" href="https://unpkg.com/@phosphor-icons/web@2.1.1/src/duotone/style.css" />
+<link rel="stylesheet" href="https://unpkg.com/@phosphor-icons/web@2.1.1/src/light/style.css" />
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;display=swap" />
+<style>
+@font-face{font-family:'Iosevka Extended';src:url('uploads/Iosevka-Extended.ttf') format('truetype');font-weight:400;font-style:normal;font-display:swap}
+@font-face{font-family:'Iosevka Extended';src:url('uploads/Iosevka-ExtendedBold.ttf') format('truetype');font-weight:700;font-style:normal;font-display:swap}
+html,body{margin:0;padding:0;background:#000}
+a{color:#ff5a1f;text-decoration:none}
+a:hover{color:#ff7a45}
+#ordoc{--page:#000000;--bg:#0a0a0a;--panel:#161616;--panel-2:#1e1e1e;--row:#0a0a0a;--row-alt:#1e1e1e;--row-hover:#262626;--zebra:rgba(255,255,255,.05);--line:#242424;--line-soft:#1a1a1a;--ink:#f2f2f2;--ink-2:#bcbcbc;--ink-3:#949494;--ink-2-warm:#c6b6aa;--ink-3-warm:#9e9089;--ink-2-err:#c9b4b1;--ink-3-err:#9d8c8a;--accent:#ff5a1f;--accent-text:#ff7a45;--accent-ink:#0a0a0a;--accent-soft:rgba(255,90,31,.10);--ok:#f2f2f2;--ok-bg:rgba(242,242,242,.06);--warn:#ff5a1f;--warn-bg:rgba(255,90,31,.10);--err:#ff4036;--err-text:#ff6259;--err-bg:rgba(255,64,54,.10);--info:#a9a9a9;--info-bg:rgba(169,169,169,.07);--field:#000000;--btn:#282828;--btn-hover:#333333;--scrim:rgba(0,0,0,.74);--shadow:0 30px 80px rgba(0,0,0,.85)}
+#ordoc[data-theme="light"]{--page:#e6e6e6;--bg:#f2f2f2;--panel:#fafafa;--panel-2:#ffffff;--row:#f2f2f2;--row-alt:#e4e4e4;--row-hover:#dcdcdc;--zebra:rgba(0,0,0,.045);--line:#c6c6c6;--line-soft:#dadada;--ink:#171717;--ink-2:#3e3e3e;--ink-3:#5e5e5e;--ink-2-warm:#463c34;--ink-3-warm:#665c53;--ink-2-err:#453a38;--ink-3-err:#655a58;--accent:#e8500f;--accent-text:#9e3809;--accent-ink:#0a0a0a;--accent-soft:rgba(232,80,15,.10);--ok:#171717;--ok-bg:rgba(23,23,23,.05);--warn:#e8500f;--warn-bg:rgba(232,80,15,.10);--err:#bf2a1c;--err-text:#a32316;--err-bg:rgba(191,42,28,.09);--info:#3e3e3e;--info-bg:rgba(62,62,62,.07);--field:#ececec;--btn:#e2e2e2;--btn-hover:#d8d8d8;--scrim:rgba(255,255,255,.66);--shadow:0 26px 60px rgba(0,0,0,.22)}
+</style>
+</helmet>
+<div id="ordoc" data-theme="{{ theme }}" style="min-height:100vh; padding:30px 22px 52px; background:var(--page); font-family:Inter,'Helvetica Neue',Helvetica,sans-serif; -webkit-font-smoothing:antialiased">
+  <div style="display:flex; flex-direction:column; gap:18px; max-width:1060px; margin:0 auto">
+
+    <div style="display:flex; align-items:flex-end; gap:16px; flex-wrap:wrap">
+      <div style="display:flex; flex-direction:column; gap:5px; flex:1; min-width:240px">
+        <span style="font-size:21px; font-weight:600; color:var(--ink); letter-spacing:-0.025em">Orange Registry</span>
+        <span style="font-family:'Iosevka Extended',Iosevka,monospace; letter-spacing:-0.05em; font-size:11px; color:var(--ink-3)">Desktop UI &middot; 820&times;560 &middot; 19 states</span>
+      </div>
+      <div style="display:flex; gap:2px; padding:3px; background:var(--panel); border-radius:4px">
+        <div onClick="{{ setDark }}" style="{{ darkBtn }}">Dark</div>
+        <div onClick="{{ setLight }}" style="{{ lightBtn }}">Light</div>
+      </div>
+    </div>
+
+    <div style="display:flex; flex-direction:column; gap:10px; padding:14px 14px 15px; background:var(--panel); border-radius:6px">
+      <sc-for list="{{ groups }}" as="g" hint-placeholder-count="4">
+        <div style="display:flex; align-items:center; gap:10px; flex-wrap:wrap">
+          <div style="display:flex; align-items:center; gap:7px; width:112px; flex:none">
+            <span style="font-size:11px; font-weight:500; color:var(--ink-2); white-space:nowrap">{{ g.label }}</span>
+          </div>
+          <div style="display:flex; align-items:center; gap:3px; flex-wrap:wrap">
+            <sc-for list="{{ g.items }}" as="c" hint-placeholder-count="4">
+              <div onClick="{{ c.go }}" style="{{ c.style }}">{{ c.label }}</div>
+            </sc-for>
+          </div>
+        </div>
+      </sc-for>
+    </div>
+
+    <div style="display:flex; flex-direction:column; gap:12px; align-items:center">
+      <div style="position:relative; width:820px; height:560px; flex:none; display:flex; flex-direction:column; overflow:hidden; background:var(--bg); border-radius:12px; box-shadow:var(--shadow)">
+
+        <div style="position:relative; display:flex; align-items:center; gap:8px; flex:none; height:30px; padding:0 11px; background:var(--bg)">
+          <div style="display:flex; gap:5px">
+            <div style="width:8px; height:8px; border-radius:50%; background:var(--line)"></div>
+            <div style="width:8px; height:8px; border-radius:50%; background:var(--line)"></div>
+            <div style="width:8px; height:8px; border-radius:50%; background:var(--line)"></div>
+          </div>
+          <span style="flex:1; text-align:center; font-family:'Iosevka Extended',Iosevka,monospace; letter-spacing:-0.05em; font-size:10.5px; color:var(--ink-3)">orange-registry</span>
+          <div style="width:34px"></div>
+          
+        </div>
+
+        <sc-if value="{{ isSettings }}" hint-placeholder-val="{{ false }}">
+          <div style="display:grid; grid-template-rows:minmax(0,1fr); grid-template-columns:minmax(0,1fr); flex:1; min-height:0"><dc-import name="SettingsScreen" onBack="{{ goMain }}" onAbout="{{ goAbout }}" onTheme="{{ setTheme }}" hint-size="100%,100%"></dc-import></div>
+        </sc-if>
+        <sc-if value="{{ isRestore }}" hint-placeholder-val="{{ false }}">
+          <div style="display:grid; grid-template-rows:minmax(0,1fr); grid-template-columns:minmax(0,1fr); flex:1; min-height:0"><dc-import name="RestoreScreen" onBack="{{ goMain }}" hint-size="100%,100%"></dc-import></div>
+        </sc-if>
+        <sc-if value="{{ isAbout }}" hint-placeholder-val="{{ false }}">
+          <div style="display:grid; grid-template-rows:minmax(0,1fr); grid-template-columns:minmax(0,1fr); flex:1; min-height:0"><dc-import name="AboutScreen" onBack="{{ goMain }}" hint-size="100%,100%"></dc-import></div>
+        </sc-if>
+
+        <sc-if value="{{ isApp }}" hint-placeholder-val="{{ true }}">
+          <div style="display:flex; flex-direction:column; flex:1; min-height:0">
+
+            <sc-if value="{{ hasInstall }}" hint-placeholder-val="{{ true }}">
+              <dc-import name="InstallBar" state="{{ installState }}" count="{{ count }}" guard="{{ guard }}" backup="{{ backup }}" menuOpen="{{ menuOpen }}" onToggleMenu="{{ toggleMenu }}" onSettings="{{ goSettings }}" onRestore="{{ goRestore }}" onAbout="{{ goAbout }}" hint-size="100%,70px"></dc-import>
+            </sc-if>
+            <sc-if value="{{ noInstall }}" hint-placeholder-val="{{ false }}">
+              <div style="position:relative; display:flex; align-items:center; gap:12px; flex:none; padding:13px 12px; background:var(--panel)">
+                <span style="flex:1; font-size:13.5px; font-weight:600; letter-spacing:-0.015em; color:var(--ink-3)">No installation selected</span>
+                <div style="display:flex; align-items:center; gap:6px; padding:4px 9px; border-radius:3px; background:var(--btn); color:var(--ink-2); font-size:11px; cursor:pointer" style-hover="background:var(--btn-hover); color:var(--ink)"><i class="ph-duotone ph-folder-open" style="font-size:16px"></i><span>Change install</span></div>
+                <div onClick="{{ toggleMenu }}" style="display:flex; align-items:center; justify-content:center; width:26px; height:24px; border-radius:3px; color:var(--ink-2); cursor:pointer" style-hover="background:var(--btn-hover)"><i class="ph-duotone ph-dots-three-outline-vertical" style="font-size:16px"></i></div>
+                
+              </div>
+            </sc-if>
+
+            <div style="display:flex; flex:1; min-height:0">
+              <div style="display:flex; flex-direction:column; flex:1; min-width:0">
+
+                <sc-if value="{{ showList }}" hint-placeholder-val="{{ true }}">
+                  <dc-import name="ListToolbar" narrow="{{ inspectorOpen }}" factory="{{ factoryOn }}" query="{{ query }}" devices="{{ devices }}" modulators="{{ modulators }}" modules="{{ modules }}" hint-size="100%,42px"></dc-import>
+                  <div style="flex:1; min-height:0; overflow:auto; background:var(--row)">
+                    <sc-if value="{{ hasStaged }}" hint-placeholder-val="{{ true }}">
+                      <div style="display:flex; align-items:center; gap:9px; height:26px; padding:0 12px; background:var(--row-alt); position:sticky; top:0; z-index:2">
+                        <span style="font-size:11px; font-weight:500; color:var(--accent-text)">Pending</span>
+                        <div style="flex:1"></div>
+                        <span style="font-family:'Iosevka Extended',Iosevka,monospace; letter-spacing:-0.05em; font-size:10.5px; color:var(--ink-3)">{{ stagedCount }}</span>
+                      </div>
+                      <sc-for list="{{ staged }}" as="r" hint-placeholder-count="3">
+                        <dc-import name="EntryRow" kind="{{ r.kind }}" entry-name="{{ r.name }}" uuid="{{ r.uuid }}" status="{{ r.status }}" reason="{{ r.reason }}" narrow="{{ inspectorOpen }}" forceActions="{{ r.forceActions }}" onOpen="{{ openInspector }}" hint-size="100%,36px"></dc-import>
+                      </sc-for>
+                    </sc-if>
+                    <div style="display:flex; align-items:center; gap:9px; height:26px; padding:0 12px; background:var(--row-alt); position:sticky; top:0; z-index:1">
+                      <span style="font-size:11px; font-weight:500; color:var(--ink-2)">Registered</span>
+                      <div style="flex:1"></div>
+                      <span style="font-family:'Iosevka Extended',Iosevka,monospace; letter-spacing:-0.05em; font-size:10.5px; color:var(--ink-3)">{{ countPad }}</span>
+                    </div>
+                    <sc-for list="{{ rows }}" as="r" hint-placeholder-count="7">
+                      <dc-import name="EntryRow" kind="{{ r.kind }}" entry-name="{{ r.name }}" uuid="{{ r.uuid }}" status="{{ r.status }}" reason="{{ r.reason }}" selected="{{ r.selected }}" narrow="{{ inspectorOpen }}" factory="{{ r.factory }}" forceActions="{{ r.forceActions }}" onOpen="{{ openInspector }}" hint-size="100%,36px"></dc-import>
+                    </sc-for>
+                  </div>
+                </sc-if>
+
+                <sc-if value="{{ showToolbarOnly }}" hint-placeholder-val="{{ false }}">
+                  <dc-import name="ListToolbar" narrow="{{ inspectorOpen }}" factory="{{ factoryOn }}" query="{{ query }}" devices="{{ devices }}" modulators="{{ modulators }}" modules="{{ modules }}" hint-size="100%,42px"></dc-import>
+                </sc-if>
+
+                <sc-if value="{{ showEmpty }}" hint-placeholder-val="{{ false }}">
+                  <div style="display:grid; grid-template-rows:minmax(0,1fr); grid-template-columns:minmax(0,1fr); flex:1; min-height:0; background:var(--bg)">
+                    <dc-import name="EmptyState" variant="{{ emptyVariant }}" hint-size="100%,100%"></dc-import>
+                  </div>
+                </sc-if>
+
+              </div>
+
+              <sc-if value="{{ inspectorOpen }}" hint-placeholder-val="{{ false }}">
+                <dc-import name="Inspector" onClose="{{ closeInspector }}" hint-size="272px,100%"></dc-import>
+              </sc-if>
+            </div>
+
+            <sc-if value="{{ hasBanner }}" hint-placeholder-val="{{ false }}">
+              <div style="{{ bannerStyle }}">
+                <span style="width:6px; height:6px; flex:none; margin-top:5px; border-radius:50%; background:{{ bannerColor }}"></span>
+                <div style="display:flex; flex-direction:column; gap:4px; flex:1; min-width:0">
+                  <span style="font-size:12px; font-weight:600; letter-spacing:-0.01em; color:var(--ink)">{{ bannerTitle }}</span>
+                  <span style="font-size:10.5px; line-height:1.55; color:{{ bannerBodyColor }}; text-wrap:pretty">{{ bannerBody }}</span>
+                </div>
+                <sc-if value="{{ hasBannerBtn }}" hint-placeholder-val="{{ false }}">
+                  <div style="display:flex; align-items:center; gap:6px; height:28px; padding:0 11px; flex:none; border-radius:3px; border:1px solid {{ bannerColor }}; color:{{ bannerColor }}; font-size:11.5px; font-weight:500; cursor:pointer">
+                    <span>{{ bannerBtn }}</span>
+                  </div>
+                </sc-if>
+                <sc-if value="{{ bannerDismiss }}" hint-placeholder-val="{{ false }}">
+                  <div onClick="{{ goMain }}" title="Dismiss" style="display:flex; align-items:center; justify-content:center; width:24px; height:24px; flex:none; border-radius:3px; color:var(--ink-3); cursor:pointer" style-hover="color:var(--ink)"><i class="ph-duotone ph-x" style="font-size:16px"></i></div>
+                </sc-if>
+              </div>
+            </sc-if>
+
+            <dc-import name="ActionBar" summary="{{ summary }}" note="{{ note }}" tone="{{ tone }}" primary="{{ primaryLabel }}" mode="{{ mode }}" disabled="{{ primaryDisabled }}" disabledReason="{{ disabledReason }}" secondary="{{ secondaryLabel }}" secondaryIcon="{{ secondaryIcon }}" onPrimary="{{ goConfirm }}" hint-size="100%,52px"></dc-import>
+          </div>
+        </sc-if>
+
+        <sc-if value="{{ isDrag }}" hint-placeholder-val="{{ false }}">
+          <div style="position:absolute; inset:0; z-index:60; display:flex; flex-direction:column; align-items:center; justify-content:center; background:var(--scrim)">
+            <div style="position:absolute; inset:12px; border:1px dashed var(--accent); background:var(--accent-soft)"></div>
+            <div style="position:absolute; left:20px; top:20px; width:12px; height:12px; border-left:1px solid var(--accent); border-top:1px solid var(--accent)"></div>
+            <div style="position:absolute; right:20px; top:20px; width:12px; height:12px; border-right:1px solid var(--accent); border-top:1px solid var(--accent)"></div>
+            <div style="position:absolute; left:20px; bottom:20px; width:12px; height:12px; border-left:1px solid var(--accent); border-bottom:1px solid var(--accent)"></div>
+            <div style="position:absolute; right:20px; bottom:20px; width:12px; height:12px; border-right:1px solid var(--accent); border-bottom:1px solid var(--accent)"></div>
+            <i class="ph-light ph-tray-arrow-down" style="font-size:56px; color:var(--accent); position:relative"></i>
+            <span style="position:relative; margin-top:16px; font-size:17px; font-weight:600; letter-spacing:-0.02em; color:var(--ink)">Drop to stage 3 documents</span>
+            <div style="position:relative; display:flex; flex-direction:column; gap:1px; margin-top:16px; min-width:318px">
+              <div style="display:flex; align-items:center; gap:9px; padding:7px 10px; background:var(--panel)">
+                <span style="font-family:'Iosevka Extended',Iosevka,monospace; letter-spacing:-0.05em; font-size:10px; color:var(--accent-text)">1</span>
+                <span style="flex:1; font-family:'Iosevka Extended',Iosevka,monospace; letter-spacing:-0.05em; font-size:10.5px; color:var(--ink)">WAVESHAPER ALPHA.bwdevice</span>
+              </div>
+              <div style="display:flex; align-items:center; gap:9px; padding:7px 10px; background:var(--panel)">
+                <span style="font-family:'Iosevka Extended',Iosevka,monospace; letter-spacing:-0.05em; font-size:10px; color:var(--accent-text)">2</span>
+                <span style="flex:1; font-family:'Iosevka Extended',Iosevka,monospace; letter-spacing:-0.05em; font-size:10.5px; color:var(--ink)">SLEW LIMITER.bwmodule</span>
+              </div>
+              <div style="display:flex; align-items:center; gap:9px; padding:7px 10px; background:var(--panel)">
+                <span style="font-family:'Iosevka Extended',Iosevka,monospace; letter-spacing:-0.05em; font-size:10px; color:var(--accent-text)">3</span>
+                <span style="flex:1; font-family:'Iosevka Extended',Iosevka,monospace; letter-spacing:-0.05em; font-size:10.5px; color:var(--ink)">My Modulators/</span>
+                <span style="font-family:'Iosevka Extended',Iosevka,monospace; letter-spacing:-0.05em; font-size:10px; color:var(--ink-3)">1 file</span>
+              </div>
+              <div style="display:flex; align-items:center; gap:9px; padding:7px 10px; background:transparent">
+                <span style="font-family:'Iosevka Extended',Iosevka,monospace; letter-spacing:-0.05em; font-size:10px; color:var(--ink-3)">&mdash;&mdash;</span>
+                <span style="flex:1; font-family:'Iosevka Extended',Iosevka,monospace; letter-spacing:-0.05em; font-size:10.5px; color:var(--ink-3); text-decoration:line-through">notes.txt</span>
+                <span style="font-size:10.5px; color:var(--ink-3)">ignored</span>
+              </div>
+            </div>
+            <span style="position:relative; margin-top:16px; font-family:'Iosevka Extended',Iosevka,monospace; letter-spacing:-0.05em; font-size:10.5px; color:var(--ink-3)">.bwdevice &middot; .bwmodulator &middot; .bwmodule</span>
+          </div>
+        </sc-if>
+
+        <sc-if value="{{ isConfirm }}" hint-placeholder-val="{{ false }}">
+          <div style="position:absolute; inset:0; z-index:70; display:flex; align-items:center; justify-content:center; padding:26px; background:var(--scrim)">
+            <div style="display:flex; flex-direction:column; width:476px; max-height:100%; overflow:hidden; background:var(--panel-2); border-radius:8px; box-shadow:var(--shadow)">
+              <div style="position:relative; display:flex; align-items:center; gap:10px; flex:none; padding:14px 14px 12px; background:var(--bg)">
+                <span style="flex:1; font-size:14px; font-weight:600; letter-spacing:-0.02em; color:var(--ink)">Prepare this installation</span>
+                <span style="font-size:10.5px; color:var(--ink-3)">Plan</span>
+                
+              </div>
+              <div style="display:flex; flex-direction:column; gap:11px; flex:1; overflow:auto; padding:13px 14px 14px">
+                <span style="font-size:11.5px; line-height:1.55; color:var(--ink-2); text-wrap:pretty">This is the one operation that modifies Bitwig Studio itself.</span>
+                <div style="display:flex; flex-direction:column; gap:0">
+                  <sc-for list="{{ planLines }}" as="p" hint-placeholder-count="6">
+                    <div style="display:flex; align-items:flex-start; gap:10px; padding:5px 0">
+                      <span style="font-family:'Iosevka Extended',Iosevka,monospace; letter-spacing:-0.05em; font-size:10px; color:{{ p.color }}; flex:none; margin-top:1px">{{ p.num }}</span>
+                      <span style="flex:1; font-size:11px; line-height:1.5; color:var(--ink); text-wrap:pretty">{{ p.text }}</span>
+                    </div>
+                  </sc-for>
+                </div>
+                <div style="display:flex; align-items:center; gap:9px; padding:9px 10px; background:var(--bg); border-radius:4px">
+                  <i class="ph-duotone ph-square" style="font-size:16px; flex:none; color:var(--ink-3)"></i>
+                  <div style="display:flex; flex-direction:column; gap:2px">
+                    <span style="font-size:11px; color:var(--ink)">Also delete the document file of removed entries</span>
+                    <span style="font-size:10.5px; color:var(--ink-3)">Off keeps OLD REVERB.bwdevice in your library.</span>
+                  </div>
+                </div>
+                <span style="font-size:10.5px; line-height:1.5; color:var(--ink-3); text-wrap:pretty">A Bitwig update resets the installation. Prepare it again afterwards. Your registered devices are kept.</span>
+              </div>
+              <div style="position:relative; display:flex; align-items:center; gap:8px; flex:none; padding:12px 14px; background:var(--bg)">
+                
+                <div style="flex:1"></div>
+                <div onClick="{{ goMain }}" style="display:flex; align-items:center; height:30px; padding:0 13px; border-radius:3px; background:var(--btn); color:var(--ink-2); font-size:11.5px; cursor:pointer" style-hover="background:var(--btn-hover); color:var(--ink)">Cancel</div>
+                <div onClick="{{ goProgress }}" style="display:flex; align-items:center; gap:8px; height:32px; padding:0 14px; border-radius:3px; background:var(--accent); border:1px solid var(--accent); color:var(--accent-ink); font-size:12px; font-weight:600; letter-spacing:-0.01em; cursor:pointer">
+                  <span>Prepare installation</span><i class="ph-duotone ph-arrow-right" style="font-size:16px"></i>
+                </div>
+              </div>
+            </div>
+          </div>
+        </sc-if>
+
+        <sc-if value="{{ isProgress }}" hint-placeholder-val="{{ false }}">
+          <div style="position:absolute; inset:0; z-index:70; display:flex; align-items:center; justify-content:center; padding:26px; background:var(--scrim)">
+            <div style="display:flex; flex-direction:column; width:436px; max-height:100%; overflow:hidden; background:var(--panel-2); border-radius:8px; box-shadow:var(--shadow)">
+              <div style="position:relative; display:flex; align-items:center; gap:10px; flex:none; padding:14px 14px 12px; background:var(--bg)">
+                <div style="display:flex; flex-direction:column; gap:2px; flex:1">
+                  <span style="font-size:14px; font-weight:600; letter-spacing:-0.02em; color:var(--ink)">Preparing the installation</span>
+                  <span style="font-size:10.5px; color:var(--ink-3)">{{ progressStep }}</span>
+                </div>
+                
+              </div>
+              <sc-if value="{{ isAuth }}" hint-placeholder-val="{{ false }}">
+                <div style="display:flex; align-items:flex-start; gap:10px; flex:none; margin:13px 14px 0; padding:10px 11px; background:var(--accent-soft)">
+                  <div style="display:flex; flex-direction:column; gap:3px">
+                    <span style="font-size:11.5px; font-weight:600; color:var(--ink)">Authorisation requested</span>
+                    <span style="font-size:10.5px; line-height:1.5; color:var(--ink-2-warm); text-wrap:pretty">Writing into the installation needs your permission. Answer the system prompt to continue.</span>
+                  </div>
+                </div>
+              </sc-if>
+              <div style="display:flex; flex-direction:column; gap:0; flex:1; overflow:auto; padding:12px 14px 14px">
+                <sc-for list="{{ steps }}" as="s" hint-placeholder-count="9">
+                  <div style="display:flex; align-items:center; gap:10px; height:27px">
+                    <span style="font-family:'Iosevka Extended',Iosevka,monospace; letter-spacing:-0.05em; font-size:10px; color:{{ s.color }}; flex:none">{{ s.num }}</span>
+                    <span style="width:5px; height:5px; flex:none; border-radius:50%; background:{{ s.dot }}"></span>
+                    <span style="flex:1; font-size:11.5px; font-weight:{{ s.weight }}; color:{{ s.textColor }}">{{ s.label }}</span>
+                    <span style="font-family:'Iosevka Extended',Iosevka,monospace; letter-spacing:-0.05em; font-size:10px; color:var(--ink-3)">{{ s.meta }}</span>
+                  </div>
+                </sc-for>
+              </div>
+              <div style="position:relative; display:flex; align-items:center; gap:10px; flex:none; padding:12px 14px; background:var(--bg)">
+                
+                <div style="flex:1; height:2px; background:var(--line)">
+                  <div style="width:{{ progressPct }}; height:100%; background:var(--accent)"></div>
+                </div>
+                <span style="font-family:'Iosevka Extended',Iosevka,monospace; letter-spacing:-0.05em; font-size:10px; color:var(--ink-3); flex:none">{{ progressPct }}</span>
+                <div onClick="{{ goMain }}" style="display:flex; align-items:center; height:28px; padding:0 12px; flex:none; border-radius:3px; background:var(--btn); color:var(--ink-2); font-size:11.5px; cursor:pointer" style-hover="background:var(--btn-hover); color:var(--ink)">Cancel</div>
+              </div>
+            </div>
+          </div>
+        </sc-if>
+
+      </div>
+
+      <div style="display:flex; align-items:flex-start; gap:10px; width:820px; max-width:100%">
+        <span style="font-size:11px; font-weight:600; color:var(--accent-text); white-space:nowrap; margin-top:2px">{{ captionTitle }}</span>
+        <span style="flex:1; font-size:11.5px; line-height:1.5; color:var(--ink-3); text-wrap:pretty">{{ caption }}</span>
+      </div>
+    </div>
+  </div>
+</div>
+
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:1060,&quot;height&quot;:800}}">
+const REGISTERED = [
+  { kind: "DEVICE", name: "DISPERSER", uuid: "21882ab0-7c41-4d0b-9a10-ff3e5d2e77a1", status: "Registered" },
+  { kind: "DEVICE", name: "CURVECOMP", uuid: "7c41d0b2-9a10-4ff3-8e5d-2e77a1c0de44", status: "Registered" },
+  { kind: "DEVICE", name: "TAPE DRIVE", uuid: "3e90b1c4-5d2e-4771-a1c0-de4419e11c93", status: "Pending restart", reason: "Bitwig is open" },
+  { kind: "MODULATOR", name: "SHAPER", uuid: "c0de4419-e11c-4930-9f88-b4a20188b4a2", status: "Missing file", reason: "Not found in the user library" },
+  { kind: "MODULATOR", name: "BREATH FOLLOWER", uuid: "5d2e77a1-c0de-4441-9e11-c930f88b4a20", status: "Registered" },
+  { kind: "MODULE", name: "FOLD BACK", uuid: "e11c930f-88b4-4a20-9188-b4a201e11c93", status: "Changed", reason: "File on disk differs" },
+  { kind: "DEVICE", name: "OLD REVERB", uuid: "88b4a201-e11c-4930-9f88-b4a2015d2e77", status: "Pending removal" }
+];
+const STAGED = [
+  { kind: "DEVICE", name: "WAVESHAPER ALPHA", uuid: "9a10ff3e-5d2e-4771-a1c0-de4419e11c93", status: "Staged" },
+  { kind: "MODULE", name: "SLEW LIMITER", uuid: "4b71c8d9-21f0-4ab3-8c77-1e9b0d4a6f22", status: "Conflict", reason: "UUID already used by a factory module" },
+  { kind: "DEVICE", name: "notes.txt", uuid: "00000000-0000-0000-0000-000000000000", status: "Rejected", reason: "Not a Bitwig device document" }
+];
+const FACTORY = [
+  { kind: "DEVICE", name: "Polysynth", uuid: "8c4b1e2a-0000-4000-8000-000000000001", status: "Factory", factory: true },
+  { kind: "MODULATOR", name: "LFO", uuid: "8c4b1e2a-0000-4000-8000-000000000002", status: "Factory", factory: true }
+];
+const STEP_LABELS = [
+  ["Back up the installation", "238 MB"],
+  ["Read the Core Registry", "428 entries"],
+  ["Prepare the installation", ""],
+  ["Neutralise the tamper guard", ""],
+  ["Place documents", "6 files"],
+  ["Link library folders", ""],
+  ["Write descriptions and search keywords", ""],
+  ["Verify", ""],
+  ["Activate", ""]
+];
+const PLAN = [
+  { color: "var(--ink-3)", text: "A backup is written first to ~/Library/Application Support/OrangeRegistry/backups." },
+  { color: "var(--accent-text)", text: "The installation at /Applications/Bitwig Studio.app is modified so it loads your entry list at startup." },
+  { color: "var(--ink-3)", text: "2 entries registered: WAVESHAPER ALPHA, SLEW LIMITER." },
+  { color: "var(--ink-3)", text: "1 entry removed: OLD REVERB." },
+  { color: "var(--ink-3)", text: "2 documents copied to ~/Documents/Bitwig Studio/Library/devices/My Devices." },
+  { color: "var(--ink-3)", text: "1 library link created inside the installation's Library folder." }
+];
+
+const SCREENS = {
+  main: {
+    caption: ["Entry list", "The everyday state. Pending work is pinned above the registered entries, and Apply runs the cheap Update entries mode without a confirmation."],
+    list: true, staged: true, banner: null,
+    action: { summary: "2 to add, 1 to remove, 2 to fix", note: "Update entries \u00b7 Bitwig may stay open", primary: "Apply 5 changes", mode: "update" }
+  },
+  hover: {
+    caption: ["Row hover", "Row actions appear on hover, next to a status that is always visible. The overflow control carries the rest."],
+    list: true, staged: true, hoverRow: 0,
+    action: { summary: "2 to add, 1 to remove, 2 to fix", note: "Update entries \u00b7 Bitwig may stay open", primary: "Apply 5 changes", mode: "update" }
+  },
+  factory: {
+    caption: ["Factory entries shown", "Bitwig's own 428 entries are recessed and read-only. Off by default."],
+    list: true, staged: false, factory: true, factoryOn: true,
+    action: { summary: "Nothing pending", primary: "Apply changes", mode: "update", disabled: true, disabledReason: "Nothing to apply" }
+  },
+  inspector: {
+    caption: ["Detail inspector", "Slides over the list. Description and search keywords are what make a registered device feel native, so they are editable here with proposed defaults."],
+    list: true, staged: true, inspector: true, selected: "DISPERSER",
+    action: { summary: "2 to add, 1 to remove, 2 to fix", note: "Update entries \u00b7 Bitwig may stay open", primary: "Apply 5 changes", mode: "update" }
+  },
+  onboarding: {
+    caption: ["Nothing registered", "The primary onboarding surface. It names the accepted extensions and states that Bitwig must be closed for the first run."],
+    empty: "onboarding", installState: "Stock", count: 0, guard: "Armed", backup: "No backup yet",
+    action: { summary: "Nothing staged yet", note: "Drop documents onto the window, or use Add files", primary: "Prepare installation", mode: "prepare", disabled: true, disabledReason: "Nothing to register yet" }
+  },
+  noinstall: {
+    caption: ["No install found", "The list region is given over entirely to locating an installation. Diagnostics stay reachable while the app is not in a working state."],
+    empty: "noinstall", noInstall: true,
+    action: { summary: "No installation selected", tone: "warn", primary: "Prepare installation", mode: "prepare", disabled: true, disabledReason: "No installation selected" }
+  },
+  nomatch: {
+    caption: ["Filter matches nothing", "Minor state. The toolbar stays put and offers a way out."],
+    empty: "nomatch", toolbar: true, query: "wavesh",
+    action: { summary: "2 to add, 1 to remove, 2 to fix", note: "5 entries hidden by the current filter", primary: "Apply 5 changes", mode: "update" }
+  },
+  drag: {
+    caption: ["Drag over the window", "The whole window is the target. Accept and reject are stated per file before the drop, and a dropped folder is read one level deep."],
+    list: true, staged: true, drag: true,
+    action: { summary: "2 to add, 1 to remove, 2 to fix", primary: "Apply 5 changes", mode: "update" }
+  },
+  running: {
+    caption: ["Bitwig is running", "Only blocks the Prepare install mode. In Update entries mode this banner never appears."],
+    list: true, staged: true, installState: "Stock", count: 0, guard: "Armed", backup: "No backup yet",
+    banner: { tone: "warn", title: "Quit Bitwig Studio before preparing the installation.", body: "Bitwig Studio is still running. The audio engine holds the files this step has to replace.", btn: "Check again" },
+    action: { summary: "3 to add", tone: "warn", primary: "Prepare installation", mode: "prepare", disabled: true, disabledReason: "Bitwig Studio is still running" }
+  },
+  reapply: {
+    caption: ["Needs re-apply", "The entries are fine; the installation is what needs work. Said once, at full width, without marking every row as broken."],
+    list: true, staged: false, installState: "Needs re-apply", guard: "Armed", backup: "Backup: 14 Sep 2026",
+    banner: { tone: "warn", title: "A Bitwig update reset this installation.", body: "Your 6 registered devices are kept, with the same UUIDs, so projects still recall them. Prepare the installation again to restore them. Bitwig Studio must be closed.", btn: "What changed?" },
+    action: { summary: "6 entries to restore", tone: "warn", note: "Prepare install \u00b7 a backup is written first", primary: "Prepare installation", mode: "prepare" }
+  },
+  confirm: {
+    caption: ["Plan confirmation", "Only the Prepare install mode confirms. One explicit action, no typed ceremony, cancel equally available."],
+    list: true, staged: true, confirm: true, installState: "Stock", count: 0, guard: "Armed", backup: "No backup yet",
+    action: { summary: "2 to add, 1 to remove", primary: "Prepare installation", mode: "prepare" }
+  },
+  progress: {
+    caption: ["Apply progress", "Prepare install is a transaction with nameable steps. Cancel is allowed up to Activate."],
+    list: true, staged: true, progress: 4, installState: "Stock", count: 0, guard: "Armed", backup: "No backup yet",
+    action: { summary: "Preparing the installation\u2026", primary: "Prepare installation", mode: "prepare", disabled: true, disabledReason: "In progress" }
+  },
+  auth: {
+    caption: ["Authorisation requested", "macOS and Linux may ask for permission to write into the installation. The step list waits rather than failing."],
+    list: true, staged: true, progress: 2, auth: true, installState: "Stock", count: 0, guard: "Armed", backup: "No backup yet",
+    action: { summary: "Waiting for authorisation\u2026", primary: "Prepare installation", mode: "prepare", disabled: true, disabledReason: "In progress" }
+  },
+  success: {
+    caption: ["Success", "Persistent and dismissible after Prepare install. The next instruction depends on whether Bitwig is running."],
+    list: true, staged: false, installState: "Registered", count: 8, guard: "Disarmed", backup: "Backup: 15 Sep 2026",
+    banner: { tone: "ok", title: "Start Bitwig Studio. Your devices are in the browser.", body: "8 entries registered, 1 removed. Descriptions and search keywords were written, so typing a name finds the device.", dismiss: true },
+    action: { summary: "Nothing pending", tone: "ok", primary: "Apply changes", mode: "update", disabled: true, disabledReason: "Nothing to apply" }
+  },
+  restart: {
+    caption: ["Restart needed", "Update entries mode never blocks, so this case has to be stated \u2014 otherwise a user who cannot find the device assumes the app failed."],
+    list: true, staged: false, installState: "Registered", count: 7, guard: "Disarmed",
+    banner: { tone: "ok", title: "Restart Bitwig Studio to see your changes.", body: "2 entries were registered. Bitwig reads the entry list when it launches, so an open Bitwig will not show them yet.", dismiss: true },
+    action: { summary: "Nothing pending", tone: "ok", primary: "Apply changes", mode: "update", disabled: true, disabledReason: "Nothing to apply" }
+  },
+  failure: {
+    caption: ["Failure", "Which step failed, what the app did about it, and a technical report to attach to a bug report. Never a raw error as the primary message."],
+    list: true, staged: true, installState: "Stock", count: 0, guard: "Armed", backup: "Backup: 15 Sep 2026",
+    banner: { tone: "err", title: "Verification failed. The Core Registry did not match what was written.", body: "Your installation was restored from backup. Nothing was changed.", btn: "Copy details", dismiss: true },
+    action: { summary: "2 to add, 1 to remove", tone: "err", note: "Prepare install \u00b7 failed at step 8 of 9", primary: "Try again", mode: "prepare" }
+  }
+};
+
+const GROUPS = [
+  { label: "List", keys: ["main", "hover", "inspector", "factory", "nomatch"] },
+  { label: "First run", keys: ["onboarding", "noinstall", "drag"] },
+  { label: "Apply", keys: ["confirm", "progress", "auth", "success", "restart", "failure", "running"] },
+  { label: "Screens", keys: ["reapply", "settings", "restore", "about"] }
+];
+const CHIP = {
+  main: "Entry list", hover: "Row hover", inspector: "Inspector", factory: "Factory shown", nomatch: "No match",
+  onboarding: "Nothing registered", noinstall: "No install", drag: "Drag over",
+  confirm: "Confirm plan", progress: "Progress", auth: "Authorisation", success: "Success",
+  restart: "Restart needed", failure: "Failure", running: "Bitwig running",
+  reapply: "Needs re-apply", settings: "Settings", restore: "Restore backup", about: "About"
+};
+const FULL = {
+  settings: ["Settings", "One screen, no tabs. Diagnostics live here because that is what a user sends when a new Bitwig build is not recognised."],
+  restore: ["Restore backup", "Deliberate, behind the overflow control, and explicit about the cost: projects stop recalling custom devices afterwards."],
+  about: ["About", "Version, the builds it was verified against, and the disclaimer."]
+};
+
+class Component extends DCLogic {
+  state = { theme: "dark", screen: "main", menuOpen: false };
+
+  chipStyle(on) {
+    return [
+      "display:flex", "align-items:center", "height:24px", "padding:0 9px",
+      "border-radius:3px", "cursor:pointer", "white-space:nowrap",
+      "font-size:11px",
+      on ? "background:var(--accent); color:var(--accent-ink)"
+         : "background:var(--btn); color:var(--ink-3)"
+    ].join(";");
+  }
+  themeBtn(on) {
+    return [
+      "display:flex", "align-items:center", "height:24px", "padding:0 11px", "border-radius:3px", "cursor:pointer",
+      "font-size:11px",
+      on ? "background:var(--btn); color:var(--ink)" : "background:transparent; color:var(--ink-3)"
+    ].join(";");
+  }
+
+  renderVals() {
+    const screen = this.state.screen;
+    const full = FULL[screen];
+    const s = SCREENS[screen] || SCREENS.main;
+    const go = k => () => this.setState({ screen: k, menuOpen: false });
+
+    const tone = s.banner ? s.banner.tone : "neutral";
+    const bannerColor = { warn: "var(--accent-text)", err: "var(--err-text)", ok: "var(--ink)", info: "var(--ink-2)" }[tone] || "var(--ink-2)";
+    const bannerBg = { warn: "var(--warn-bg)", err: "var(--err-bg)", ok: "var(--ok-bg)", info: "var(--info-bg)" }[tone] || "transparent";
+
+    const progress = s.progress;
+    const steps = STEP_LABELS.map(([label, meta], i) => {
+      const done = progress !== undefined && i < progress;
+      const active = progress !== undefined && i === progress;
+      return {
+        label, num: i + 1,
+        meta: done ? (meta || "done") : "",
+        dot: done ? "var(--ink-2)" : active ? "var(--accent)" : "transparent",
+        color: active ? "var(--accent-text)" : "var(--ink-3)",
+        textColor: done ? "var(--ink-2)" : active ? "var(--ink)" : "var(--ink-3)",
+        weight: active ? "600" : "400"
+      };
+    });
+
+    const rows = [];
+    REGISTERED.forEach((r, i) => rows.push({
+      ...r,
+      selected: s.selected === r.name,
+      forceActions: s.hoverRow === i,
+      factory: false
+    }));
+    if (s.factoryOn) FACTORY.forEach(r => rows.push({ ...r, selected: false, forceActions: false }));
+
+    const a = s.action || {};
+    const listWithStaged = !!s.list && s.staged !== false;
+    const count = s.count ?? 6;
+
+    return {
+      theme: this.state.theme,
+      setDark: () => this.setState({ theme: "dark" }),
+      setLight: () => this.setState({ theme: "light" }),
+      setTheme: t => this.setState({ theme: t }),
+      darkBtn: this.themeBtn(this.state.theme === "dark"),
+      lightBtn: this.themeBtn(this.state.theme === "light"),
+
+      groups: GROUPS.map(g => ({
+        label: g.label,
+        items: g.keys.map(k => ({ label: CHIP[k], style: this.chipStyle(screen === k), go: go(k) }))
+      })),
+
+      isSettings: screen === "settings",
+      isRestore: screen === "restore",
+      isAbout: screen === "about",
+      isApp: !full,
+
+      hasInstall: !full && !s.noInstall,
+      noInstall: !!s.noInstall,
+      installState: s.installState ?? "Registered",
+      count, countPad: count,
+      guard: s.guard ?? "Disarmed",
+      backup: s.backup ?? "Backup: 14 Sep 2026",
+      menuOpen: this.state.menuOpen,
+      toggleMenu: () => this.setState({ menuOpen: !this.state.menuOpen }),
+
+      showList: !!s.list,
+      showToolbarOnly: !s.list && !!s.toolbar,
+      showEmpty: !s.list && !!s.empty,
+      emptyVariant: s.empty ?? "onboarding",
+      query: s.query ?? "",
+      devices: s.factoryOn ? 157 : 5,
+      modulators: s.factoryOn ? 45 : 2,
+      modules: s.factoryOn ? 234 : 2,
+
+      hasStaged: listWithStaged,
+      staged: STAGED.map(r => ({ ...r, forceActions: false })),
+      stagedCount: STAGED.length,
+      rows,
+
+      inspectorOpen: !!s.inspector,
+      openInspector: () => this.setState({ screen: "inspector" }),
+      closeInspector: () => this.setState({ screen: "main" }),
+
+      hasBanner: !!s.banner,
+      bannerStyle: s.banner ? [
+        "position:relative", "display:flex", "align-items:flex-start", "gap:11px", "flex:none",
+        "padding:12px", "background:" + bannerBg
+      ].join(";") : "",
+      bannerColor,
+      bannerBodyColor: { warn: "var(--ink-2-warm)", err: "var(--ink-2-err)" }[tone] || "var(--ink-2)",
+      bannerTitle: s.banner ? s.banner.title : "",
+      bannerBody: s.banner ? s.banner.body : "",
+      hasBannerBtn: !!(s.banner && s.banner.btn),
+      bannerBtn: s.banner ? s.banner.btn : "",
+      bannerDismiss: !!(s.banner && s.banner.dismiss),
+
+      summary: a.summary ?? "Nothing pending",
+      note: a.note ?? "",
+      tone: a.tone ?? "neutral",
+      primaryLabel: a.primary ?? "Apply changes",
+      mode: a.mode ?? "update",
+      primaryDisabled: !!a.disabled,
+      disabledReason: a.disabledReason ?? "",
+      secondaryLabel: "",
+      secondaryIcon: "ph-duotone ph-arrow-clockwise",
+
+      isDrag: !!s.drag,
+      isConfirm: !!s.confirm,
+      isProgress: progress !== undefined,
+      isAuth: !!s.auth,
+      progressStep: progress !== undefined ? "Step " + (progress + 1) + " of 9 \u00b7 " + STEP_LABELS[progress][0] : "",
+      progressPct: progress !== undefined ? Math.round((progress / 9) * 100) + "%" : "0%",
+      steps,
+      planLines: PLAN.map((p, i) => ({ ...p, num: i + 1 })),
+
+      goMain: go("main"),
+      goSettings: go("settings"),
+      goRestore: go("restore"),
+      goAbout: go("about"),
+      goConfirm: () => this.setState({ screen: "confirm", menuOpen: false }),
+      goProgress: () => this.setState({ screen: "progress", menuOpen: false }),
+
+      captionTitle: full ? full[0] : s.caption[0],
+      caption: full ? full[1] : s.caption[1]
+    };
+  }
+}
+
+</script>
+</body>
+</html>

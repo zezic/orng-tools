@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://unpkg.com/@phosphor-icons/web@2.1.1/src/duotone/style.css" />
+<link rel="stylesheet" href="https://unpkg.com/@phosphor-icons/web@2.1.1/src/light/style.css" />
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;display=swap" />
+<style>
+@font-face{font-family:'Iosevka Extended';src:url('uploads/Iosevka-Extended.ttf') format('truetype');font-weight:400;font-style:normal;font-display:swap}
+@font-face{font-family:'Iosevka Extended';src:url('uploads/Iosevka-ExtendedBold.ttf') format('truetype');font-weight:700;font-style:normal;font-display:swap}
+html,body{margin:0;padding:0;background:#000}
+a{color:#ff5a1f;text-decoration:none}
+a:hover{color:#ff7a45}
+:root{--page:#000000;--bg:#0a0a0a;--panel:#161616;--panel-2:#1e1e1e;--row:#0a0a0a;--row-alt:#1e1e1e;--row-hover:#262626;--zebra:rgba(255,255,255,.05);--line:#242424;--line-soft:#1a1a1a;--ink:#f2f2f2;--ink-2:#bcbcbc;--ink-3:#949494;--ink-2-warm:#c6b6aa;--ink-3-warm:#9e9089;--ink-2-err:#c9b4b1;--ink-3-err:#9d8c8a;--accent:#ff5a1f;--accent-text:#ff7a45;--accent-ink:#0a0a0a;--accent-soft:rgba(255,90,31,.10);--k-device:#a9a9a9;--k-device-bg:transparent;--k-mod:#a9a9a9;--k-mod-bg:transparent;--k-module:#a9a9a9;--k-module-bg:transparent;--ok:#f2f2f2;--ok-bg:rgba(242,242,242,.07);--warn:#ff5a1f;--warn-bg:rgba(255,90,31,.10);--err:#ff4036;--err-text:#ff6259;--err-bg:rgba(255,64,54,.10);--info:#a9a9a9;--info-bg:rgba(169,169,169,.08);--field:#000000;--btn:#282828;--btn-hover:#333333;--scrim:rgba(0,0,0,.74);--shadow:0 30px 80px rgba(0,0,0,.8)}
+</style>
+</helmet>
+<div style="position:relative; flex:none; background:var(--panel); padding:11px 12px 9px; font-family:Inter,'Helvetica Neue',Helvetica,sans-serif">
+  <div style="display:flex; align-items:center; gap:12px">
+    <span style="font-size:13.5px; font-weight:600; letter-spacing:-0.015em; color:var(--ink); white-space:nowrap">{{ title }}</span>
+    <span title="{{ buildFull }}" style="font-family:'Iosevka Extended',Iosevka,monospace; letter-spacing:-0.05em; font-size:10px; color:var(--ink-2); white-space:nowrap; flex:none">{{ build }}</span>
+    <span title="{{ path }}" style="flex:1; min-width:0; font-family:'Iosevka Extended',Iosevka,monospace; letter-spacing:-0.05em; font-size:10.5px; color:var(--ink-3); white-space:nowrap; overflow:hidden; text-overflow:ellipsis">{{ path }}</span>
+    <div onClick="{{ onChange }}" style="display:flex; align-items:center; gap:6px; flex:none; padding:4px 9px; border-radius:3px; background:var(--btn); color:var(--ink-2); font-size:11px; cursor:pointer; white-space:nowrap" style-hover="background:var(--btn-hover); color:var(--ink); border-color:var(--ink-3)">
+      <i class="ph-duotone ph-folder-open" style="font-size:16px"></i><span>Change install</span>
+    </div>
+    <div onClick="{{ toggleMenu }}" title="More" style="display:flex; align-items:center; justify-content:center; width:26px; height:24px; flex:none; border-radius:3px; color:var(--ink-2); cursor:pointer" style-hover="background:var(--btn-hover); color:var(--ink)">
+      <i class="ph-duotone ph-dots-three-outline-vertical" style="font-size:16px"></i>
+    </div>
+  </div>
+  <div style="display:flex; align-items:center; gap:9px; margin-top:9px">
+    <div style="display:flex; align-items:center; gap:8px; flex:none">
+      <span style="width:5px; height:5px; border-radius:50%; background:{{ badgeDot }}"></span>
+      <span style="font-size:11px; color:{{ badgeFg }}; white-space:nowrap">{{ badge }}</span>
+    </div>
+    <div style="flex:1; min-width:10px"></div>
+    <span style="font-size:11px; color:var(--ink-3); flex:none; white-space:nowrap">Guard {{ guard }}</span>
+    <span style="color:var(--ink-3); flex:none; font-size:10px">&middot;</span>
+    <span onClick="{{ onRestore }}" style="font-size:11px; color:var(--ink-3); flex:none; white-space:nowrap; cursor:pointer" style-hover="color:var(--ink-2)">{{ backup }}</span>
+  </div>
+  <sc-if value="{{ menuOpen }}" hint-placeholder-val="{{ false }}">
+    <div style="position:absolute; top:40px; right:8px; z-index:40; min-width:190px; padding:4px; background:var(--panel-2); border:1px solid var(--line); border-radius:6px; box-shadow:0 18px 40px rgba(0,0,0,.7)">
+      <div onClick="{{ onSettings }}" style="display:flex; align-items:center; gap:9px; padding:6px 8px; border-radius:3px; font-size:11.5px; color:var(--ink); cursor:pointer" style-hover="background:var(--btn-hover)"><i class="ph-duotone ph-gear-six" style="font-size:16px; color:var(--ink-3)"></i><span>Settings</span></div>
+      <div onClick="{{ onRestore }}" style="display:flex; align-items:center; gap:9px; padding:6px 8px; border-radius:3px; font-size:11.5px; color:var(--ink); cursor:pointer" style-hover="background:var(--btn-hover)"><i class="ph-duotone ph-clock-counter-clockwise" style="font-size:16px; color:var(--ink-3)"></i><span>Restore backup&hellip;</span></div>
+      <div style="display:flex; align-items:center; gap:9px; padding:6px 8px; border-radius:3px; font-size:11.5px; color:var(--ink); cursor:pointer" style-hover="background:var(--btn-hover)"><i class="ph-duotone ph-folder-open" style="font-size:16px; color:var(--ink-3)"></i><span>Open backups folder</span></div>
+      <div style="height:1px; margin:4px 2px; background:var(--line)"></div>
+      <div onClick="{{ onAbout }}" style="display:flex; align-items:center; gap:9px; padding:6px 8px; border-radius:3px; font-size:11.5px; color:var(--ink); cursor:pointer" style-hover="background:var(--btn-hover)"><i class="ph-duotone ph-info" style="font-size:16px; color:var(--ink-3)"></i><span>About Orange Registry</span></div>
+    </div>
+  </sc-if>
+</div>
+
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:820,&quot;height&quot;:70},&quot;state&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;Stock&quot;,&quot;Registered&quot;,&quot;Needs re-apply&quot;,&quot;Unknown build&quot;,&quot;Modified elsewhere&quot;],&quot;default&quot;:&quot;Registered&quot;,&quot;tsType&quot;:&quot;string&quot;},&quot;count&quot;:{&quot;editor&quot;:&quot;int&quot;,&quot;default&quot;:6,&quot;tsType&quot;:&quot;number&quot;},&quot;guard&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;Armed&quot;,&quot;Disarmed&quot;,&quot;Unknown&quot;],&quot;default&quot;:&quot;Disarmed&quot;,&quot;tsType&quot;:&quot;string&quot;},&quot;title&quot;:{&quot;editor&quot;:&quot;text&quot;,&quot;default&quot;:&quot;Bitwig Studio 6.1&quot;,&quot;tsType&quot;:&quot;string&quot;},&quot;build&quot;:{&quot;editor&quot;:&quot;text&quot;,&quot;default&quot;:&quot;6.1.4&quot;,&quot;tsType&quot;:&quot;string&quot;},&quot;path&quot;:{&quot;editor&quot;:&quot;text&quot;,&quot;default&quot;:&quot;/Applications/Bitwig Studio.app&quot;,&quot;tsType&quot;:&quot;string&quot;},&quot;backup&quot;:{&quot;editor&quot;:&quot;text&quot;,&quot;default&quot;:&quot;Backup: 14 Sep 2026&quot;,&quot;tsType&quot;:&quot;string&quot;},&quot;menuOpen&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:false,&quot;tsType&quot;:&quot;boolean&quot;},&quot;onToggleMenu&quot;:{&quot;editor&quot;:null,&quot;tsType&quot;:&quot;() =&gt; void&quot;},&quot;onChange&quot;:{&quot;editor&quot;:null,&quot;tsType&quot;:&quot;() =&gt; void&quot;},&quot;onSettings&quot;:{&quot;editor&quot;:null,&quot;tsType&quot;:&quot;() =&gt; void&quot;},&quot;onRestore&quot;:{&quot;editor&quot;:null,&quot;tsType&quot;:&quot;() =&gt; void&quot;},&quot;onAbout&quot;:{&quot;editor&quot;:null,&quot;tsType&quot;:&quot;() =&gt; void&quot;}}">
+const BADGE = {
+  "Stock": ["var(--ink-3)", "var(--ink-2)"],
+  "Registered": ["var(--accent)", "var(--ink-2)"],
+  "Needs re-apply": ["var(--accent)", "var(--accent-text)"],
+  "Unknown build": ["var(--ink-3)", "var(--ink-2)"],
+  "Modified elsewhere": ["var(--err)", "var(--err)"]
+};
+
+class Component extends DCLogic {
+  renderVals() {
+    const p = this.props;
+    const state = p.state ?? "Registered";
+    const count = p.count ?? 6;
+    const [badgeDot, badgeFg] = BADGE[state] || BADGE.Stock;
+    return {
+      title: p.title ?? "Bitwig Studio 6.1",
+      build: p.build ?? "6.1.4",
+      buildFull: "Build " + (p.buildFull ?? "6.1.4 rev 20260714-1132"),
+      path: p.path ?? "/Applications/Bitwig Studio.app",
+      badge: state === "Registered" ? "Registered " + count : state,
+      badgeDot, badgeFg,
+      guard: (p.guard ?? "Disarmed"),
+      backup: (p.backup ?? "Backup: 14 Sep 2026").replace("Backup: ", "Backup "),
+      menuOpen: !!p.menuOpen,
+      toggleMenu: () => p.onToggleMenu && p.onToggleMenu(),
+      onChange: () => p.onChange && p.onChange(),
+      onSettings: () => p.onSettings && p.onSettings(),
+      onRestore: () => p.onRestore && p.onRestore(),
+      onAbout: () => p.onAbout && p.onAbout()
+    };
+  }
+}
+
+</script>
+</body>
+</html>

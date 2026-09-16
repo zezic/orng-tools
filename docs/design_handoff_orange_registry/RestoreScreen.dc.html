@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://unpkg.com/@phosphor-icons/web@2.1.1/src/duotone/style.css" />
+<link rel="stylesheet" href="https://unpkg.com/@phosphor-icons/web@2.1.1/src/light/style.css" />
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;display=swap" />
+<style>
+@font-face{font-family:'Iosevka Extended';src:url('uploads/Iosevka-Extended.ttf') format('truetype');font-weight:400;font-style:normal;font-display:swap}
+@font-face{font-family:'Iosevka Extended';src:url('uploads/Iosevka-ExtendedBold.ttf') format('truetype');font-weight:700;font-style:normal;font-display:swap}
+html,body{margin:0;padding:0;background:#000}
+a{color:#ff5a1f;text-decoration:none}
+a:hover{color:#ff7a45}
+:root{--page:#000000;--bg:#0a0a0a;--panel:#161616;--panel-2:#1e1e1e;--row:#0a0a0a;--row-alt:#1e1e1e;--row-hover:#262626;--zebra:rgba(255,255,255,.05);--line:#242424;--line-soft:#1a1a1a;--ink:#f2f2f2;--ink-2:#bcbcbc;--ink-3:#949494;--ink-2-warm:#c6b6aa;--ink-3-warm:#9e9089;--ink-2-err:#c9b4b1;--ink-3-err:#9d8c8a;--accent:#ff5a1f;--accent-text:#ff7a45;--accent-ink:#0a0a0a;--accent-soft:rgba(255,90,31,.10);--k-device:#a9a9a9;--k-device-bg:transparent;--k-mod:#a9a9a9;--k-mod-bg:transparent;--k-module:#a9a9a9;--k-module-bg:transparent;--ok:#f2f2f2;--ok-bg:rgba(242,242,242,.07);--warn:#ff5a1f;--warn-bg:rgba(255,90,31,.10);--err:#ff4036;--err-text:#ff6259;--err-bg:rgba(255,64,54,.10);--info:#a9a9a9;--info-bg:rgba(169,169,169,.08);--field:#000000;--btn:#282828;--btn-hover:#333333;--scrim:rgba(0,0,0,.74);--shadow:0 30px 80px rgba(0,0,0,.8)}
+</style>
+</helmet>
+<div style="display:flex; flex-direction:column; width:100%; height:100%; background:var(--bg); font-family:Inter,'Helvetica Neue',Helvetica,sans-serif">
+  <div style="display:flex; align-items:center; gap:9px; flex:none; height:44px; padding:0 12px; background:var(--panel)">
+    <div onClick="{{ onBack }}" style="display:flex; align-items:center; gap:6px; padding:4px 9px 4px 6px; border-radius:4px; color:var(--ink-2); font-size:11.5px; cursor:pointer" style-hover="background:var(--btn-hover); color:var(--ink)">
+      <i class="ph-duotone ph-arrow-left" style="font-size:16px"></i><span>Entries</span>
+    </div>
+    <div style="width:1px; height:16px; background:var(--line)"></div>
+    <i class="ph-duotone ph-clock-counter-clockwise" style="font-size:16px; color:var(--ink-2)"></i>
+    <span style="font-size:13.5px; font-weight:600; letter-spacing:-0.02em; color:var(--ink)">Restore backup</span>
+    <div style="flex:1"></div>
+    <div style="display:flex; align-items:center; gap:5px; padding:4px 9px; border-radius:4px; background:var(--btn); color:var(--ink-2); font-size:11px; cursor:pointer" style-hover="background:var(--btn-hover); color:var(--ink)"><i class="ph-duotone ph-folder-open" style="font-size:16px"></i><span>Open backups folder</span></div>
+  </div>
+
+  <div style="display:flex; align-items:flex-start; gap:9px; flex:none; margin:12px 12px 0; padding:10px 12px; background:var(--warn-bg); border-radius:4px">
+    <i class="ph-duotone ph-warning" style="font-size:16px; color:var(--warn); flex:none; margin-top:1px"></i>
+    <div style="display:flex; flex-direction:column; gap:3px">
+      <span style="font-size:11.5px; font-weight:700; color:var(--ink)">Restoring removes every registration from this installation.</span>
+      <span style="font-size:10.5px; line-height:1.5; color:var(--ink-2-warm); text-wrap:pretty">Projects that use custom devices will not recall them afterwards. Your documents and Orange Registry's own record are kept, so the installation can be prepared again.</span>
+    </div>
+  </div>
+
+  <div style="flex:1; overflow:auto; padding:13px 12px 16px">
+    <span style="display:block; margin-bottom:7px; font-size:10.5px; font-weight:600; color:var(--ink-2)">Available backups</span>
+    <div style="display:flex; flex-direction:column; gap:1px; background:var(--panel); border-radius:4px; overflow:hidden">
+      <sc-for list="{{ backups }}" as="b" hint-placeholder-count="3">
+        <div onClick="{{ b.pick }}" style="{{ b.rowStyle }}">
+          <i class="{{ b.radio }}" style="font-size:16px; color:{{ b.radioColor }}; flex:none"></i>
+          <div style="display:flex; flex-direction:column; gap:2px; min-width:0; flex:1">
+            <div style="display:flex; align-items:center; gap:7px">
+              <span style="font-size:12px; font-weight:400; color:var(--ink)">{{ b.date }}</span>
+              <sc-if value="{{ b.latest }}" hint-placeholder-val="{{ false }}">
+                <span style="padding:1px 5px; border-radius:3px; background:var(--accent-soft); color:var(--accent-text); font-size:10px; font-weight:600">Latest</span>
+              </sc-if>
+            </div>
+            <span style="font-family:'Iosevka Extended',Iosevka,'SF Mono',Menlo,monospace; letter-spacing:-0.05em; font-size:10px; color:{{ b.metaInk }}; white-space:nowrap; overflow:hidden; text-overflow:ellipsis">{{ b.meta }}</span>
+          </div>
+          <span style="font-family:'Iosevka Extended',Iosevka,'SF Mono',Menlo,monospace; letter-spacing:-0.05em; font-size:10.5px; color:{{ b.metaInk }}">{{ b.size }}</span>
+        </div>
+      </sc-for>
+    </div>
+  </div>
+
+  <div style="display:flex; align-items:center; gap:10px; flex:none; min-height:48px; padding:0 12px; background:var(--panel)">
+    <span style="flex:1; font-size:11px; color:var(--ink-3)">{{ footNote }}</span>
+    <div onClick="{{ onBack }}" style="display:flex; align-items:center; height:29px; padding:0 12px; border-radius:4px; background:var(--btn); color:var(--ink-2); font-size:11.5px; cursor:pointer" style-hover="background:var(--btn-hover); color:var(--ink)">Cancel</div>
+    <div style="display:flex; align-items:center; gap:7px; height:31px; padding:0 14px; border-radius:4px; background:transparent; border:1px solid var(--err); color:var(--err); font-size:12px; font-weight:700; cursor:pointer">
+      <i class="ph-duotone ph-clock-counter-clockwise" style="font-size:16px"></i><span>Restore this backup</span>
+    </div>
+  </div>
+</div>
+
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:820,&quot;height&quot;:560},&quot;onBack&quot;:{&quot;editor&quot;:null,&quot;tsType&quot;:&quot;() =&gt; void&quot;}}">
+const DATA = [
+  { date: "14 September 2026, 18:42", meta: "Bitwig Studio 6.1.4 \u00b7 rev 20260714-1132 \u00b7 before preparing installation", size: "238.4 MB" },
+  { date: "02 July 2026, 09:17", meta: "Bitwig Studio 6.1.2 \u00b7 rev 20260611-0904 \u00b7 before preparing installation", size: "237.1 MB" },
+  { date: "19 March 2026, 21:05", meta: "Bitwig Studio 6.0.8 \u00b7 rev 20260302-1740 \u00b7 before preparing installation", size: "231.8 MB" }
+];
+class Component extends DCLogic {
+  state = { sel: 0 };
+  renderVals() {
+    const sel = this.state.sel;
+    return {
+      backups: DATA.map((b, i) => ({
+        ...b,
+        latest: i === 0,
+        metaInk: i === sel ? "var(--ink-3-warm)" : "var(--ink-3)",
+        radio: i === sel ? "ph-duotone ph-radio-button" : "ph-duotone ph-circle",
+        radioColor: i === sel ? "var(--accent)" : "var(--ink-3)",
+        rowStyle: [
+          "display:flex", "align-items:center", "gap:10px", "padding:10px 12px", "cursor:pointer",
+          "background:" + (i === sel ? "var(--accent-soft)" : i % 2 === 0 ? "var(--zebra)" : "transparent")
+        ].join(";"),
+        pick: () => this.setState({ sel: i })
+      })),
+      footNote: "Restores " + DATA[sel].date.split(",")[0] + " wholesale. Bitwig Studio must be closed.",
+      onBack: () => this.props.onBack && this.props.onBack()
+    };
+  }
+}
+
+</script>
+</body>
+</html>

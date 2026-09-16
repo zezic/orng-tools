@@ -1,0 +1,11 @@
+[package]
+name = "bitwig-install"
+description = "Locating a Bitwig Studio installation and the user data that belongs to it"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+thiserror.workspace = true
+sysinfo.workspace = true

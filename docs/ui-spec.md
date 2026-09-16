@@ -255,7 +255,8 @@ the dialog that does matter. Apply immediately and report in the action bar.
   It is not a copy of the installation, and must not be described as one.
 - Entries to be registered, and entries to be removed.
 - Files copied, and the destination.
-- Library links created.
+- Library links created - under `Copy documents into the installation` there are none, and
+  the line is omitted rather than shown empty.
 - That this must be repeated after a Bitwig update.
 
 **Removal is not confirmed here.** Entries are almost always removed in Update mode, which
@@ -277,19 +278,25 @@ degrade to an indeterminate indicator in place - never a dialog.
 **Prepare install** is a transaction with ordered, nameable steps. Show them as a step
 list with the current one active, not a bare spinner:
 
-1. Back up the installation
-2. Read the Core Registry
-3. Prepare the installation
-4. Neutralise the tamper guard
-5. Place documents
-6. Link library folders
-7. Write descriptions and search keywords
-8. Verify
-9. Activate
+1. Back up the archive and the description bundles
+2. Prepare the installation
+3. Verify
+4. Activate
+5. Link library folders
 
-Step 6 does not run under the `Copy documents into the installation` placement setting, so
-the count is not always nine. Either derive it, or keep nine and render the step as
-skipped - but do not label the run "step N of 9" when it will only take eight.
+**Nothing in the installation changes until step 4.** The patched archive is written beside
+the original under a temporary name, loaded under Bitwig's own JVM to verify it, and moved
+into place by a single rename. A failure at any earlier step leaves an installation that was
+never touched.
+
+That is why placing documents and writing descriptions are **not** in this list. They are
+Update entries work: they touch no part of the archive, cannot disturb the tamper seal, and
+so have no business inside the transaction that can fail. Reading the Core Registry is not a
+step either - it happens while the plan is computed, before the user has agreed to anything.
+
+Step 5 does not run under the `Copy documents into the installation` placement setting, and
+the plan states which steps it will run. Draw the full list and render a step that will not
+run as skipped; do not label a run "step N of 5" when it will take four.
 
 The UI must not be frozen during this. Cancel is allowed up to the activation step; after
 activation the operation is atomic and cancel is hidden.
@@ -302,10 +309,14 @@ The next instruction depends on whether Bitwig is currently running:
 - **Success, Bitwig running**: `Restart Bitwig Studio to see your changes.` This case only
   arises in Update entries mode, and stating it is required - a user who added a device
   and cannot find it in an open Bitwig will otherwise assume the app failed.
-- **Failure**: state which step failed, in one sentence, plus what the app did about it
-  (`Your installation was restored from backup. Nothing was changed.`), plus a
-  `Copy details` control that yields a technical report for a bug report. Never show a
-  raw Rust error as the primary message.
+- **Failure**: state which step failed, in one sentence, plus what it means for the
+  installation, plus a `Copy details` control that yields a technical report for a bug
+  report. Never show a raw Rust error as the primary message.
+
+  The honest sentence is `Your installation was not changed.` - not "restored from backup".
+  A failure before activation never touched it, so there is nothing to restore and saying
+  otherwise implies a repair that did not happen. Restore stays what it is: a thing the
+  user asks for, to undo a preparation that succeeded.
 
 Success in Update entries mode is a transient confirmation in the action bar, not a
 persistent panel. Success in Prepare install mode is a persistent, dismissible summary.
@@ -369,7 +380,8 @@ Small, one screen, no tabs. Required:
 
   It can report: install path, Bitwig version and build revision, jar path, which anchors
   resolved and which did not, tamper guard state, the entry list location and its count,
-  and the placement strategy. It **cannot** report the user's Bitwig licence tier. That is
+  and the placement strategy. Real values for the paths are in the appendix; a mockup that
+  invents one teaches a user to look in the wrong place. It **cannot** report the user's Bitwig licence tier. That is
   runtime state assembled at startup and nothing static in the installation exposes it, so
   no licence line can be filled in.
 
@@ -497,6 +509,26 @@ Same window, install not prepared yet:
   writes there, so only preparation can reach that state.
 - The backup is `bitwig.jar` (about 34 MB) plus the three description bundles. The
   installation as a whole is roughly a gigabyte and is never copied.
+- **The paths the UI shows are these, and not approximations of them.** A mockup that
+  invents one teaches a user to look where nothing is.
+
+  | | |
+  | --- | --- |
+  | Entry list | `~/.orange-registry/entries.tsv` |
+  | Backups | `~/.orange-registry/backups/<version>-<short revision>/` |
+  | The archive | `Contents/Java/bitwig.jar` on macOS |
+  | Description bundles | `Contents/Resources/localization/` on macOS |
+
+  Both of the app's own paths are outside the installation, and that is the point: a Bitwig
+  update replaces the installation wholesale, and it would take the entry list and the
+  backup of the thing it replaced with it.
+
+  The entry list is tab separated, not JSON. The class injected into the archive reads it at
+  every launch, and `split("\t")` needs no parser, no dependency and no error handling worth
+  the name. The extension is load-bearing and should be drawn as it is.
+
+  `Contents/Java` and `Contents/Resources` are different places: the archive is in the
+  former, the browser descriptions in the latter.
 - Descriptions and keywords written to the base bundle reach every language. Bitwig loads
   the base file first and lets the locale-specific file overwrite it key by key, so a key
   that exists only in the base file survives. One file per kind is enough; there is no

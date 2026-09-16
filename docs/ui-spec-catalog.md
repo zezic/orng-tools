@@ -120,6 +120,10 @@ Opens from a row, in the same 272px panel the entries view uses. Contents:
 - Homepage or source link, if the author gave one.
 - **Provenance**: a link to the merged change in the repository. This is what makes review
   the trust boundary rather than a claim about one.
+
+  The index carries this per item. It is not derivable from the index's own revision, which
+  names the commit the whole index was generated from and therefore traces the index rather
+  than the item; the two must not be confused in the UI.
 - UUID, monospace, secondary.
 - Primary action, plus `Remove` when installed.
 
@@ -172,6 +176,18 @@ Small, but required:
 
 - **Provenance per entry**: local file, or a catalog item at a version. A marker on the row
   and the full detail in the inspector.
+
+  **Keyed on UUID, never on display name.** The entry list records where each entry came
+  from and at which version, so the match is exact. Display names are allowed to collide in
+  the repository and the app renames entries when they do, precisely because the name is not
+  the identity - so a name-keyed match would eventually mark the wrong row, and would do it
+  first to the user who hit the rename path.
+
+  This is also what makes `Update available` computable. It needs the installed version and
+  the catalog version, and the installed one is recorded rather than inferred: comparing the
+  file against the catalog's digest would only say that it differs, which cannot tell
+  `Update available` from `Changed`. Those have different causes and different remedies and
+  the UI is right to keep them apart.
 - A catalog-sourced entry gains `Update available` as a status, alongside the existing ones.
 - Removing a catalog-sourced entry is less consequential than removing a local one - it can
   be reinstalled in one click. The delete-the-file question (see `design-review.md` item 5)

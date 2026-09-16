@@ -94,7 +94,7 @@ fn a_well_formed_tree_validates_and_indexes() {
     let sources = sources_or_skip!();
     let fixture = Fixture::new("well-formed");
     for (n, document) in sources.iter().enumerate() {
-        fixture.add("caviio", &format!("item-{n}"), document, "1.0.0");
+        fixture.add("example", &format!("item-{n}"), document, "1.0.0");
     }
 
     let items = fixture.items();
@@ -108,7 +108,7 @@ fn a_well_formed_tree_validates_and_indexes() {
     for entry in &index.items {
         assert_eq!(entry.digest.len(), 64, "digest is not a sha-256");
         assert!(entry.size > 0);
-        assert!(entry.path.starts_with("devices/caviio/"));
+        assert!(entry.path.starts_with("devices/example/"));
         assert!(!entry.name.is_empty());
     }
     // The index must survive the trip it actually makes: serialize, publish, parse.
@@ -121,7 +121,7 @@ fn two_items_may_not_claim_one_identity() {
     let fixture = Fixture::new("duplicate-identity");
     // The same document under two slugs is the collision that matters: with
     // name-derived UUIDs, two authors can reach it without copying anything.
-    fixture.add("caviio", "original", &sources[0], "1.0.0");
+    fixture.add("example", "original", &sources[0], "1.0.0");
     fixture.add("someone", "borrowed", &sources[0], "1.0.0");
 
     let report = validate::check(&fixture.items());
@@ -137,7 +137,7 @@ fn two_items_may_not_claim_one_identity() {
 fn the_manifest_may_not_claim_another_authors_directory() {
     let sources = sources_or_skip!();
     let fixture = Fixture::new("author-mismatch");
-    let dir = fixture.add("caviio", "item", &sources[0], "1.0.0");
+    let dir = fixture.add("example", "item", &sources[0], "1.0.0");
     fixture.write_manifest(&dir, "someone-else", "1.0.0");
 
     let report = validate::check(&fixture.items());
@@ -149,7 +149,7 @@ fn the_manifest_may_not_claim_another_authors_directory() {
 fn a_published_identity_may_not_change() {
     let sources = sources_or_skip!();
     let fixture = Fixture::new("identity-changed");
-    let dir = fixture.add("caviio", "item", &sources[0], "1.0.0");
+    let dir = fixture.add("example", "item", &sources[0], "1.0.0");
     let published = Index::build(&fixture.items(), None);
 
     // Replace the document with a different one under the same slug.
@@ -174,7 +174,7 @@ fn a_published_identity_may_not_change() {
 fn changed_content_must_raise_the_version() {
     let sources = sources_or_skip!();
     let fixture = Fixture::new("content-changed");
-    let dir = fixture.add("caviio", "item", &sources[0], "1.0.0");
+    let dir = fixture.add("example", "item", &sources[0], "1.0.0");
     let published = Index::build(&fixture.items(), None);
 
     // Re-identify the document in place: same slug, same version, new bytes.
@@ -209,10 +209,10 @@ fn changed_content_must_raise_the_version() {
 fn a_version_may_not_go_backwards() {
     let sources = sources_or_skip!();
     let fixture = Fixture::new("version-backwards");
-    let dir = fixture.add("caviio", "item", &sources[0], "2.0.0");
+    let dir = fixture.add("example", "item", &sources[0], "2.0.0");
     let published = Index::build(&fixture.items(), None);
 
-    fixture.write_manifest(&dir, "caviio", "1.9.0");
+    fixture.write_manifest(&dir, "example", "1.9.0");
     let report = validate::check_against(&fixture.items(), &published);
     assert!(!report.is_mergeable());
     assert!(report.problems.iter().any(|p| matches!(p, Problem::VersionWentBackwards { .. })));
@@ -222,7 +222,7 @@ fn a_version_may_not_go_backwards() {
 fn a_name_collision_warns_without_blocking() {
     let sources = sources_or_skip!();
     let fixture = Fixture::new("name-collision");
-    fixture.add("caviio", "original", &sources[0], "1.0.0");
+    fixture.add("example", "original", &sources[0], "1.0.0");
 
     // Same display name, different identity: legal, but two entries would appear
     // under one name in Bitwig's flat browser.
@@ -254,7 +254,7 @@ fn a_name_collision_warns_without_blocking() {
 fn a_first_run_has_no_history_to_break() {
     let sources = sources_or_skip!();
     let fixture = Fixture::new("first-run");
-    fixture.add("caviio", "item", &sources[0], "1.0.0");
+    fixture.add("example", "item", &sources[0], "1.0.0");
 
     let empty = Index { schema: orange_catalog::index::SCHEMA, revision: None, items: Vec::new() };
     assert!(validate::check_against(&fixture.items(), &empty).is_mergeable());

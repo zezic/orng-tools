@@ -105,13 +105,13 @@ mod tests {
         class : "meta",
         data :
         {
-            "creator" : "Caviio",
+            "creator" : "Example Studio",
             "revision_no" : 52795,
             "device_name" : "DISPERSER",
             "has_audio_input" : false
         }"#;
         let fields = scan(src);
-        assert_eq!(fields["creator"].value, "Caviio");
+        assert_eq!(fields["creator"].value, "Example Studio");
         assert_eq!(fields["device_name"].value, "DISPERSER");
         assert!(!fields.contains_key("revision_no"));
         // The recorded span must address exactly the value's bytes.

@@ -198,11 +198,11 @@ mod tests {
 
     #[test]
     fn identifiers_are_directory_and_url_safe() {
-        assert!(AuthorId::new("caviio").is_ok());
+        assert!(AuthorId::new("example").is_ok());
         assert!(Slug::new("glue-comp").is_ok());
         assert!(Slug::new("glue-comp-2").is_ok());
 
-        for bad in ["Caviio", "glue comp", "glue_comp", "-lead", "trail-", "a--b", ""] {
+        for bad in ["Example", "glue comp", "glue_comp", "-lead", "trail-", "a--b", ""] {
             assert!(Slug::new(bad).is_err(), "accepted {bad:?}");
         }
     }

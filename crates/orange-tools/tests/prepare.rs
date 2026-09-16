@@ -14,7 +14,10 @@ use bitwig_classfile::edit::{self, Instr};
 use bitwig_classfile::{Jar, JarEdits};
 use bitwig_document::Kind;
 use bitwig_registry::{Binding, guard};
-use orange_tools::{Backup, Error, GuardState, Installation, OrangeHome, Plan, Step, UserLibrary};
+use orange_tools::{
+    Backup, Error, GuardState, Installation, LibraryPath, Manifest, OrangeHome, Plan,
+    Registration, Step, UserLibrary,
+};
 
 /// A copy of the installed Bitwig that a test may destroy.
 ///
@@ -69,7 +72,7 @@ impl Mirror {
         let install = Installation::at(&root).expect("the mirror is not a valid installation");
         Some(Mirror {
             library: UserLibrary::at(&temp.path().join("Library")),
-            home: OrangeHome::at(&temp.path().join(".orange-registry")),
+            home: OrangeHome::at(temp.path()),
             install,
             _temp: temp,
         })
@@ -93,6 +96,13 @@ impl Mirror {
     fn guard_state(&self) -> GuardState {
         let jar = Jar::open(&self.install.jar()).unwrap();
         guard::inspect(&jar.entry(&self.binding().guard_entry).unwrap()).unwrap()
+    }
+
+    /// Put an entry list where the injected class will look for it.
+    fn write_entries(&self, entries: &str) {
+        let path = self.home.entries();
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        std::fs::write(path, entries).unwrap();
     }
 
     fn archive(&self) -> Vec<u8> {
@@ -224,6 +234,73 @@ fn a_patch_that_does_not_verify_never_reaches_the_installation() {
     assert!(matches!(failure, Err(Error::VerificationFailed { .. })), "{failure:?}");
     assert_eq!(broken, mirror.archive(), "the installation was modified anyway");
     assert!(!staging_path(&mirror).exists(), "the rejected archive was left behind");
+}
+
+/// The test this whole module exists for.
+///
+/// Verification loads the patched registry class and forces its initialiser,
+/// which now ends in a call to the injected class. The injected class catches
+/// everything it might throw, so the proof is not that the JVM exited zero --
+/// it would have done that with a call resolving to nothing. The proof is that
+/// it printed no complaint, which verification treats as a failure.
+///
+/// So a clean run with entries waiting means: the helper was found, its
+/// retargeted names resolved to this build's registry, category enum and grant
+/// row, and Bitwig's own registration method accepted every row.
+///
+/// What this one cannot show is that the entry list was read at all -- an
+/// installation that found no file would also print nothing. That is what
+/// `a_broken_entry_list_costs_the_entries_and_not_the_launch` is for: it can
+/// only report if it read the file. The two together cover the chain.
+#[test]
+fn the_injected_class_registers_the_entry_list() {
+    let mirror = mirror_or_skip!();
+
+    let mut manifest = Manifest::default();
+    for (name, kind) in
+        [("ORANGE TEST DEVICE", Kind::Device), ("ORANGE TEST SHAPER", Kind::Modulator)]
+    {
+        manifest.insert(Registration {
+            uuid: uuid::Uuid::new_v4(),
+            kind,
+            name: name.into(),
+            library_path: LibraryPath::for_document(kind, &format!("{name}.{}", kind.extension()))
+                .unwrap(),
+            description: "written by a test".into(),
+            keywords: vec!["orange".into(), "test".into()],
+        });
+    }
+    mirror.write_entries(&manifest.to_tsv());
+
+    mirror.apply(mirror.plan());
+}
+
+/// The other half: the injected class must never stop Bitwig starting.
+///
+/// It runs inside a class initialiser Bitwig cannot do without, so an entry list
+/// it cannot make sense of has to cost the entries and nothing else. A file
+/// hand-edited into nonsense is the realistic way that happens.
+///
+/// Preparation refuses, which is the right answer at prepare time -- a list this
+/// installation cannot apply is worth being told about. What matters here is
+/// *how* it refuses: with the message the class prints when it catches
+/// something, and not with an initialiser error, which is what an exception
+/// escaping into Bitwig would look like. That the message is there at all also
+/// proves the class read the entry list this preparation was computed against.
+#[test]
+fn a_broken_entry_list_costs_the_entries_and_not_the_launch() {
+    let mirror = mirror_or_skip!();
+    mirror.write_entries("#orange-registry 1\nnot-a-uuid\tDEVICE\tA\tdevices/A.bwdevice\t\t\n");
+
+    let refused = mirror.plan().apply(|_| {});
+    let Err(Error::VerificationFailed { report }) = refused else {
+        panic!("expected the broken list to be reported, got {refused:?}");
+    };
+    assert!(report.contains("could not apply the entry list"), "{report}");
+    assert!(
+        !report.contains("ExceptionInInitializerError"),
+        "the failure escaped into Bitwig's own initialiser:\n{report}"
+    );
 }
 
 /// Where `prepare` stages a replacement archive. Named here rather than exposed,

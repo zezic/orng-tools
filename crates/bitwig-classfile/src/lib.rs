@@ -50,6 +50,8 @@ pub enum Error {
     ClassParse(String),
     #[error("assembly failed: {0}")]
     Assembly(String),
+    #[error("the constant pool is full")]
+    PoolFull,
 }
 
 pub type Result<T> = std::result::Result<T, Error>;

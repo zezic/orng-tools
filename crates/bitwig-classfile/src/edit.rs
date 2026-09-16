@@ -8,7 +8,7 @@
 //! branch offsets) instead of asking the caller to keep them consistent.
 
 use krakatau2::lib::classfile::attrs::AttrBody;
-use krakatau2::lib::classfile::cpool::Const;
+use krakatau2::lib::classfile::cpool::{BStr, Const};
 use krakatau2::lib::{
     AssemblerOptions, DisassemblerOptions, ParserOptions, assemble as assemble_all, classfile,
 };
@@ -16,9 +16,9 @@ use krakatau2::lib::{
 use crate::{Error, Result};
 
 // Types this module's own signatures are written in. A caller cannot use
-// `edit_method_code`, `find_window` or `parse` without them, so they are
-// re-exported here rather than making every caller depend on krakatau2.
-pub use krakatau2::lib::classfile::code::{Bytecode, Instr, Pos};
+// `edit_method`, `find_window` or `parse` without them, so they are re-exported
+// here rather than making every caller depend on krakatau2.
+pub use krakatau2::lib::classfile::code::{Bytecode, Code, Instr, Pos};
 pub use krakatau2::lib::classfile::parse::Class;
 
 /// Parse, hand the class to `edit`, and serialize the result.
@@ -73,15 +73,19 @@ pub fn method_name<'a>(class: &'a Class<'_>, index: usize) -> Option<&'a str> {
     class.cp.utf8(method.name).and_then(|b| std::str::from_utf8(b).ok())
 }
 
-/// Run `edit` over the bytecode of the named method.
+/// Run `edit` over the named method's whole `Code` attribute.
+///
+/// Wider than the bytecode alone because an edit that adds instructions may have
+/// to raise the operand stack the method declares, and a class whose declared
+/// stack is too small does not verify.
 ///
 /// Returns whether the method was found, so callers can fail loudly instead of
 /// silently producing an unpatched class.
 #[must_use = "a false return means the method was not found and nothing was edited"]
-pub fn edit_method_code(
-    class: &mut Class<'_>,
+pub fn edit_method<'a>(
+    class: &mut Class<'a>,
     name: &str,
-    edit: impl FnOnce(&mut Bytecode),
+    edit: impl FnOnce(&mut Code<'a>),
 ) -> bool {
     let Some(index) = (0..class.methods.len()).find(|i| method_name(class, *i) == Some(name))
     else {
@@ -93,8 +97,68 @@ pub fn edit_method_code(
     let AttrBody::Code((code, _)) = &mut attr.body else {
         return false;
     };
-    edit(&mut code.bytecode);
+    edit(code);
     true
+}
+
+/// Run `edit` over the bytecode of the named method.
+#[must_use = "a false return means the method was not found and nothing was edited"]
+pub fn edit_method_code(
+    class: &mut Class<'_>,
+    name: &str,
+    edit: impl FnOnce(&mut Bytecode),
+) -> bool {
+    edit_method(class, name, |code| edit(&mut code.bytecode))
+}
+
+/// Append the constant pool entries naming a method, returning the index an
+/// `invokestatic` can name it by.
+///
+/// Appended rather than looked up: the pool is rebuilt from scratch when the
+/// class is written back, so a duplicate entry costs nothing, while a lookup
+/// that matched a same-named member of a different descriptor would cost a great
+/// deal.
+pub fn add_method_ref<'a>(
+    class: &mut Class<'a>,
+    owner: &'a str,
+    name: &'a str,
+    descriptor: &'a str,
+) -> Result<u16> {
+    let (owner, name_and_type) = add_member_parts(class, owner, name, descriptor)?;
+    push_const(class, Const::Method(owner, name_and_type))
+}
+
+/// Append the constant pool entries naming a field, returning the index a
+/// `getfield` can name it by.
+pub fn add_field_ref<'a>(
+    class: &mut Class<'a>,
+    owner: &'a str,
+    name: &'a str,
+    descriptor: &'a str,
+) -> Result<u16> {
+    let (owner, name_and_type) = add_member_parts(class, owner, name, descriptor)?;
+    push_const(class, Const::Field(owner, name_and_type))
+}
+
+/// The owning class and the name-and-type every member reference is built from.
+fn add_member_parts<'a>(
+    class: &mut Class<'a>,
+    owner: &'a str,
+    name: &'a str,
+    descriptor: &'a str,
+) -> Result<(u16, u16)> {
+    let owner_text = push_const(class, Const::Utf8(BStr(owner.as_bytes())))?;
+    let owner_class = push_const(class, Const::Class(owner_text))?;
+    let name_text = push_const(class, Const::Utf8(BStr(name.as_bytes())))?;
+    let descriptor_text = push_const(class, Const::Utf8(BStr(descriptor.as_bytes())))?;
+    let name_and_type = push_const(class, Const::NameAndType(name_text, descriptor_text))?;
+    Ok((owner_class, name_and_type))
+}
+
+fn push_const<'a>(class: &mut Class<'a>, entry: Const<'a>) -> Result<u16> {
+    let index = u16::try_from(class.cp.0.len()).map_err(|_| Error::PoolFull)?;
+    class.cp.0.push(entry);
+    Ok(index)
 }
 
 /// Run `edit` over the bytecode of every method that has any.

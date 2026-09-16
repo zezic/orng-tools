@@ -4,10 +4,13 @@
 //! The directory this project owns, beside the installation it prepares.
 //!
 //! One root holds everything durable: the entry list a prepared installation
-//! reads at startup, and the backups preparation takes before it writes. The
-//! layout is identical on every platform, because the class injected into the
-//! installation has to derive the entry list's path from `user.home` in one
-//! line and cannot afford a platform switch.
+//! reads at startup, and the backups preparation takes before it writes.
+//!
+//! What parameterises it is the user's home directory, not the root itself, and
+//! that is a contract rather than a convenience. The class injected into the
+//! installation finds the entry list by joining `user.home` with a fixed name in
+//! one line, and it has no way to be told anything else. Keeping the same shape
+//! here means the two can only ever disagree if this file is wrong.
 //!
 //! Nothing here is under the installation. A Bitwig update replaces that
 //! directory wholesale, and it would take the backup of the thing it replaced
@@ -23,34 +26,41 @@ const ROOT: &str = ".orange-registry";
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct OrangeHome {
-    root: PathBuf,
+    home: PathBuf,
 }
 
 impl OrangeHome {
-    /// The platform default, whether or not it exists yet.
+    /// The real user's home, whether or not anything has been written under it.
     pub fn discover() -> Result<Self> {
         let var = if cfg!(windows) { "USERPROFILE" } else { "HOME" };
         let home = std::env::var_os(var).ok_or(Error::Install(bitwig_install::Error::NoHome))?;
-        Ok(Self { root: Path::new(&home).join(ROOT) })
+        Ok(Self { home: PathBuf::from(home) })
     }
 
-    /// An explicit root. Tests use it to keep off the real one.
-    pub fn at(root: &Path) -> Self {
-        Self { root: root.to_path_buf() }
+    /// A directory standing in for a home. Tests use it to keep off the real one.
+    pub fn at(home: &Path) -> Self {
+        Self { home: home.to_path_buf() }
     }
 
-    pub fn root(&self) -> &Path {
-        &self.root
+    pub fn root(&self) -> PathBuf {
+        self.home.join(ROOT)
     }
 
     /// The entry list. Read by this app and by the prepared installation.
     pub fn entries(&self) -> PathBuf {
-        self.root.join("entries.tsv")
+        self.root().join("entries.tsv")
     }
 
     /// Where preparation keeps a pristine copy of what it replaces, one
     /// directory per Bitwig build.
     pub fn backups(&self) -> PathBuf {
-        self.root.join("backups")
+        self.root().join("backups")
+    }
+
+    /// What a JVM has to be told `user.home` is for the injected class to find
+    /// this entry list. On a real installation that is already true of the JVM
+    /// Bitwig starts, which is why nothing sets it outside verification.
+    pub(crate) fn user_home(&self) -> &Path {
+        &self.home
     }
 }

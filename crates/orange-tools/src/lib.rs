@@ -10,18 +10,25 @@
 //! identities, `bitwig-classfile` edits bytecode, `bitwig-registry` locates
 //! Bitwig's internals, and this crate composes them.
 
+pub mod backup;
 pub mod descriptions;
+mod fs;
+pub mod home;
 pub mod manifest;
 pub mod placement;
+pub mod prepare;
 
 use std::path::PathBuf;
 
 use uuid::Uuid;
 
+pub use backup::Backup;
 pub use bitwig_document::{BitwigVersion, Document, Identity, Kind, Serialization};
 pub use bitwig_install::{AppData, Installation, RunState, UserLibrary, running_state};
 pub use bitwig_registry::{Anchor, Binding, BuildId, Entry, GuardState};
+pub use home::OrangeHome;
 pub use manifest::Manifest;
+pub use prepare::{Plan, Step};
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
@@ -39,6 +46,18 @@ pub enum Error {
     UnrepresentableField { field: &'static str, value: String },
     #[error("malformed entry list at line {line}: {reason}")]
     MalformedManifest { line: usize, reason: &'static str },
+    #[error("this build does not state its version, so a backup could not be named for it")]
+    UnrecognisedBuild,
+    #[error("{0} has already been modified and there is no backup to prepare from")]
+    AlreadyModified(PathBuf),
+    #[error("quit Bitwig Studio before preparing the installation (running: {})", .0.join(", "))]
+    BitwigRunning(Vec<String>),
+    #[error("this installation ships no Java runtime, so the patch cannot be verified")]
+    NoBundledJava,
+    #[error("the patched archive did not load; the installation was left alone:\n{report}")]
+    VerificationFailed { report: String },
+    #[error("the backup at {0} is incomplete")]
+    BackupIncomplete(PathBuf),
 }
 
 pub type Result<T> = std::result::Result<T, Error>;

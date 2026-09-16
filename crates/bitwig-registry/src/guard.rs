@@ -8,8 +8,7 @@
 //! The guard compiles to `<load>; sipush 5000; if_icmple ok`. Replacing the load
 //! with `iconst_0` makes the comparison always take the normal path.
 
-use bitwig_classfile::edit;
-use krakatau2::lib::classfile::code::Instr;
+use bitwig_classfile::edit::{self, Bytecode, Instr};
 
 use crate::{Anchor, Error, Result};
 
@@ -76,7 +75,7 @@ pub fn disarm(class_bytes: &[u8]) -> Result<Vec<u8>> {
 }
 
 /// Index of the value load feeding the guard comparison.
-fn find_guard(code: &krakatau2::lib::classfile::code::Bytecode) -> Option<usize> {
+fn find_guard(code: &Bytecode) -> Option<usize> {
     edit::find_window(code, 3, |w| {
         matches!(
             (&w[1].1, &w[2].1),

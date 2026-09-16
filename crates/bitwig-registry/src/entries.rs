@@ -7,10 +7,8 @@
 
 use std::collections::HashMap;
 
-use bitwig_classfile::edit;
+use bitwig_classfile::edit::{self, Bytecode, Class, Instr};
 use bitwig_document::Kind;
-use krakatau2::lib::classfile::code::Instr;
-use krakatau2::lib::classfile::parse::Class;
 use uuid::Uuid;
 
 use crate::{Anchor, Error, RegistryBinding, Result};
@@ -69,7 +67,7 @@ pub fn read_entries(class_bytes: &[u8], binding: &RegistryBinding) -> Result<Vec
 /// Phase one: `ldc "<uuid>"; invokestatic UUID.fromString; putstatic <field>`.
 fn parse_uuid_fields<'a>(
     class: &'a Class<'_>,
-    clinit: &krakatau2::lib::classfile::code::Bytecode,
+    clinit: &Bytecode,
 ) -> HashMap<&'a str, Uuid> {
     let mut fields = HashMap::new();
     let mut pending: Option<Uuid> = None;

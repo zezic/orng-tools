@@ -11,11 +11,9 @@
 use std::collections::BTreeMap;
 use std::ops::ControlFlow;
 
-use bitwig_classfile::edit::{self, MemberRef};
+use bitwig_classfile::edit::{self, Class, Instr, MemberRef};
 use bitwig_classfile::{Jar, pool};
 use bitwig_document::{BitwigVersion, Kind};
-use krakatau2::lib::classfile::code::Instr;
-use krakatau2::lib::classfile::parse::Class;
 
 use crate::{Anchor, Error, Result};
 

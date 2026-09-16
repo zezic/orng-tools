@@ -5,12 +5,18 @@
 //! branch offsets) instead of asking the caller to keep them consistent.
 
 use krakatau2::lib::classfile::attrs::AttrBody;
-use krakatau2::lib::classfile::code::{Bytecode, Instr};
 use krakatau2::lib::classfile::cpool::Const;
-use krakatau2::lib::classfile::parse::Class;
-use krakatau2::lib::{AssemblerOptions, DisassemblerOptions, ParserOptions, assemble, classfile};
+use krakatau2::lib::{
+    AssemblerOptions, DisassemblerOptions, ParserOptions, assemble as assemble_all, classfile,
+};
 
 use crate::{Error, Result};
+
+// Types this module's own signatures are written in. A caller cannot use
+// `edit_method_code`, `find_window` or `parse` without them, so they are
+// re-exported here rather than making every caller depend on krakatau2.
+pub use krakatau2::lib::classfile::code::{Bytecode, Instr, Pos};
+pub use krakatau2::lib::classfile::parse::Class;
 
 /// Parse, hand the class to `edit`, and serialize the result.
 ///
@@ -42,9 +48,19 @@ pub fn reassemble(class: &Class<'_>) -> Result<Vec<u8>> {
 
     let source =
         std::str::from_utf8(&disassembled).map_err(|e| Error::Assembly(e.to_string()))?;
-    let mut assembled =
-        assemble(source, AssemblerOptions {}).map_err(|e| Error::Assembly(format!("{e:?}")))?;
-    let (_name, data) = assembled.pop().ok_or_else(|| Error::Assembly("empty output".into()))?;
+    assemble(source)
+}
+
+/// Assemble a single class from Krakatau assembly source.
+///
+/// How a class with no counterpart in the archive is built: its source is text
+/// in this repository, so producing it needs no JDK and the bytes that reach an
+/// installation stay reviewable.
+pub fn assemble(source: &str) -> Result<Vec<u8>> {
+    let assembled =
+        assemble_all(source, AssemblerOptions {}).map_err(|e| Error::Assembly(format!("{e:?}")))?;
+    let [(_name, data)] = <[_; 1]>::try_from(assembled)
+        .map_err(|v| Error::Assembly(format!("expected one class, got {}", v.len())))?;
     Ok(data)
 }
 

@@ -9,13 +9,18 @@ const JAVA_DIRS: &[&str] = &["Contents/Java", "bin", "lib/bitwig-studio", "."];
 /// Where the resources directory sits inside an install root.
 const RESOURCE_DIRS: &[&str] = &["Contents/Resources", "resources", "lib/bitwig-studio", "."];
 
-/// Where the bundled JVM sits. macOS ships one bundle per architecture.
-const JVM_DIRS: &[&str] = &[
-    "Contents/PlugIns/JavaVM-arm64.bundle/Contents/Home",
-    "Contents/PlugIns/JavaVM-x64.bundle/Contents/Home",
-    "lib/jre",
-    "jre",
-];
+const MAC_JVM_ARM: &str = "Contents/PlugIns/JavaVM-arm64.bundle/Contents/Home";
+const MAC_JVM_X64: &str = "Contents/PlugIns/JavaVM-x64.bundle/Contents/Home";
+
+/// Where the bundled JVM sits, this build's architecture first.
+///
+/// macOS ships both bundles, so probing by existence alone would find the
+/// foreign one on an Intel machine and fail to execute it -- which, during
+/// verification, would look like a bad patch.
+#[cfg(target_arch = "aarch64")]
+const JVM_DIRS: &[&str] = &[MAC_JVM_ARM, MAC_JVM_X64, "lib/jre", "jre"];
+#[cfg(not(target_arch = "aarch64"))]
+const JVM_DIRS: &[&str] = &[MAC_JVM_X64, MAC_JVM_ARM, "lib/jre", "jre"];
 
 /// A resolved Bitwig Studio installation.
 ///

@@ -13,7 +13,7 @@ use std::path::PathBuf;
 
 use bitwig_document::descriptions_key;
 
-use crate::{Error, Installation, Kind, Registration, Result};
+use crate::{Installation, Kind, Registration, Result, fs};
 
 /// Marks the block this app owns, so its lines can be rewritten without
 /// touching Bitwig's own entries.
@@ -29,11 +29,7 @@ pub fn write_bundle(
     registrations: &[&Registration],
 ) -> Result<PathBuf> {
     let path = install.localization_dir().join(kind.descriptions_bundle());
-    let existing = match std::fs::read_to_string(&path) {
-        Ok(text) => text,
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => String::new(),
-        Err(source) => return Err(Error::Io { path: path.display().to_string(), source }),
-    };
+    let existing = fs::read_to_string_if_exists(&path)?.unwrap_or_default();
 
     let mut out = existing
         .split_once(BLOCK_START)
@@ -53,10 +49,7 @@ pub fn write_bundle(
         out.push('\n');
     }
 
-    std::fs::write(&path, out).map_err(|source| Error::Io {
-        path: path.display().to_string(),
-        source,
-    })?;
+    fs::write(&path, out)?;
     Ok(path)
 }
 

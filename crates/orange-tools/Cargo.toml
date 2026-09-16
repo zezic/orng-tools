@@ -11,3 +11,4 @@ bitwig-classfile.workspace = true
 bitwig-registry.workspace = true
 thiserror.workspace = true
 uuid.workspace = true
+tempfile.workspace = true

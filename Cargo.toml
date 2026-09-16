@@ -29,3 +29,4 @@ uuid = { version = "1", features = ["v4"] }
 indexmap = "2"
 zip = { version = "2", default-features = false, features = ["deflate"] }
 sysinfo = { version = "0.33", default-features = false, features = ["system"] }
+tempfile = "3"

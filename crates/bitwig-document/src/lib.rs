@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Sergey Ukolov
+// SPDX-License-Identifier: MIT OR Apache-2.0
+
 //! Reading and re-identifying Bitwig `.bwdevice`, `.bwmodulator` and
 //! `.bwmodule` documents.
 //!

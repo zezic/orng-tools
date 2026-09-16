@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Sergey Ukolov
+// SPDX-License-Identifier: GPL-3.0-only
+
 //! Resolution against a real installation.
 //!
 //! These are the tests that matter: they prove the anchors find Bitwig's

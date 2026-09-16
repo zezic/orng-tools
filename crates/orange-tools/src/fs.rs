@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Sergey Ukolov
+// SPDX-License-Identifier: GPL-3.0-only
+
 //! Filesystem operations that name the file they failed on.
 //!
 //! Every error this crate reports about a file says which file, because the

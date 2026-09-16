@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Sergey Ukolov
+// SPDX-License-Identifier: GPL-3.0-only
+
 //! Getting a document to where its registered library path resolves.
 //!
 //! A registered path resolves inside the installation's own `Library`. Two ways

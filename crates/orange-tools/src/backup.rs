@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Sergey Ukolov
+// SPDX-License-Identifier: GPL-3.0-only
+
 //! Pristine copies of everything preparation and entry updates overwrite.
 //!
 //! A backup is keyed by the Bitwig build it was taken from, and is written once:

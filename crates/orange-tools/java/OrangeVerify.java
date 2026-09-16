@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Sergey Ukolov
+// SPDX-License-Identifier: GPL-3.0-only
+
 // Authoring source for OrangeVerify.j, which is what the crate actually uses.
 //
 // This class never enters an installation. It is written to a temporary

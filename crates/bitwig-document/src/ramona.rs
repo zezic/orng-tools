@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Sergey Ukolov
+// SPDX-License-Identifier: MIT OR Apache-2.0
+
 //! A scanning reader for Ramona binary v2 objects.
 //!
 //! Only what identity work needs: the top-level fields of one object, with the

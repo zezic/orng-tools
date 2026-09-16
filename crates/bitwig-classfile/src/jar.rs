@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Sergey Ukolov
+// SPDX-License-Identifier: GPL-3.0-only
+
 use std::collections::BTreeMap;
 use std::io::Read;
 use std::ops::ControlFlow;

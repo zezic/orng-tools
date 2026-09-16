@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Sergey Ukolov
+// SPDX-License-Identifier: MIT OR Apache-2.0
+
 //! One contributed item, and how the repository tree maps onto it.
 //!
 //! ```text

@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Sergey Ukolov
+// SPDX-License-Identifier: MIT OR Apache-2.0
+
 //! The published index.
 //!
 //! Generated from the tree on every merge and published as a release asset, so

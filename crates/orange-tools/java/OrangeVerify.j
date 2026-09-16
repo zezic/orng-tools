@@ -1,3 +1,9 @@
+; SPDX-FileCopyrightText: 2026 Sergey Ukolov
+; SPDX-License-Identifier: GPL-3.0-only
+;
+; Generated from OrangeVerify.java; see that file for what this is and how to
+; regenerate it. Assembled at run time by krakatau2, so no JDK is needed to
+; build or use this crate.
 .version 61 0
 .class public final super OrangeVerify
 .super java/lang/Object

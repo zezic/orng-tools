@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Sergey Ukolov
+// SPDX-License-Identifier: MIT OR Apache-2.0
+
 //! The Orange Catalog repository format.
 //!
 //! Orange Catalog is not a file host -- content is tens of kilobytes. It is an

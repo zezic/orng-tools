@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Sergey Ukolov
+// SPDX-License-Identifier: MIT OR Apache-2.0
+
 //! `orange.toml`: what a document cannot say about itself.
 //!
 //! Identity, name, kind, description and category live inside the document and

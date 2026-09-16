@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Sergey Ukolov
+// SPDX-License-Identifier: MIT OR Apache-2.0
+
 //! Locating a Bitwig Studio installation and the user data that belongs to it.
 //!
 //! Three roots are distinct and must not be confused:

@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Sergey Ukolov
+// SPDX-License-Identifier: GPL-3.0-only
+
 //! The directory this project owns, beside the installation it prepares.
 //!
 //! One root holds everything durable: the entry list a prepared installation

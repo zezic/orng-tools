@@ -32,7 +32,7 @@ use bitwig_registry::guard;
 use crate::backup::staging_path;
 use crate::{
     Backup, Binding, BuildId, Error, GuardState, Installation, OrangeHome, Result, RunState,
-    UserLibrary, fs, placement, running_state,
+    UserLibrary, fs, inject, placement, running_state,
 };
 
 /// The class that drives verification, as text rather than a compiled artifact.
@@ -74,6 +74,7 @@ impl Step {
 pub struct Plan {
     install: Installation,
     library: UserLibrary,
+    home: OrangeHome,
     backup: Backup,
     build: BuildId,
     binding: Binding,
@@ -118,20 +119,12 @@ impl Plan {
             return Err(Error::AlreadyModified(install.jar()));
         }
 
-        let mut edits = JarEdits::new();
-        edits.replace(binding.guard_entry.clone(), guard::disarm(&guard_class)?);
-        edits.replace(
-            binding.registry.entry.clone(),
-            pool::make_method_public(
-                &source.entry(&binding.registry.entry)?,
-                &binding.registry.register_method,
-                &binding.registry.register_descriptor,
-            )?,
-        );
+        let edits = archive_edits(&source, &binding, &guard_class)?;
 
         Ok(Plan {
             install: install.clone(),
             library: library.clone(),
+            home: home.clone(),
             backup,
             build,
             binding,
@@ -191,24 +184,31 @@ impl Plan {
         Ok(())
     }
 
-    /// Load every edited class under Bitwig's own JVM.
+    /// Load every edited class, and the injected one, under Bitwig's own JVM.
     ///
     /// Loading links a class, and linking is what runs the verifier, so a patch
     /// that produces an unloadable class fails here rather than at the next
-    /// Bitwig launch. Initialisation is forced too, which on the registry class
-    /// means its several hundred registrations actually run.
+    /// Bitwig launch. Initialisation is forced too, which means the registry's
+    /// several hundred registrations actually run -- and with them the call this
+    /// preparation added, against the entry list it was computed against. A
+    /// retargeted name that resolves to nothing shows up here.
     fn verify(&self, archive: &Path) -> Result<()> {
         let java = self.install.bundled_java().ok_or(Error::NoBundledJava)?;
         let classes = [
             binary_name(&self.binding.registry.class),
             binary_name(&self.binding.entitlement.class),
             binary_name(self.binding.guard_entry.trim_end_matches(".class")),
+            inject::HELPER_CLASS.to_owned(),
         ];
 
         let driver = write_verifier()?;
         let classpath = join_classpath(&[driver.path(), archive, &self.install.libs_jar()]);
 
+        let mut home = std::ffi::OsString::from("-Duser.home=");
+        home.push(self.home.user_home());
+
         let output = Command::new(&java)
+            .arg(home)
             .arg("-cp")
             .arg(&classpath)
             .arg(VERIFIER_CLASS)
@@ -216,14 +216,63 @@ impl Plan {
             .output()
             .map_err(|source| fs::error(&java, source))?;
 
-        if output.status.success() {
-            return Ok(());
-        }
         let mut report = String::from_utf8_lossy(&output.stderr).into_owned();
         report.push_str(&String::from_utf8_lossy(&output.stdout));
+
+        // The injected class catches everything rather than throwing, because a
+        // throw would stop Bitwig starting. That makes a clean exit status weak
+        // evidence on its own: a call that resolved to nothing would be caught,
+        // printed, and exit zero all the same. Verification is the one place
+        // that can still refuse, so it reads what the class had to say.
+        if output.status.success() && !report.contains(inject::HELPER_FAILURE) {
+            return Ok(());
+        }
         Err(Error::VerificationFailed { report: report.trim().to_owned() })
     }
 }
+
+/// Everything preparation changes inside the archive.
+///
+/// Fixed, in the sense that matters: the set of edits is the same whatever is
+/// registered, and only where each lands depends on the build. Nothing here
+/// reads the entry list -- the injected class does that, at every launch.
+fn archive_edits(source: &Jar, binding: &Binding, guard_class: &[u8]) -> Result<JarEdits> {
+    let mut edits = JarEdits::new();
+    edits.add(inject::HELPER_ENTRY, inject::helper_class(binding)?);
+    edits.replace(binding.guard_entry.clone(), guard::disarm(guard_class)?);
+
+    // The registry needs both edits, and they have to be composed rather than
+    // staged separately: one archive entry can only be replaced once.
+    let widened = pool::make_method_public(
+        &source.entry(&binding.registry.entry)?,
+        &binding.registry.register_method,
+        &binding.registry.register_descriptor,
+    )?;
+    edits.replace(
+        binding.registry.entry.clone(),
+        inject::call_from_registry(&widened, &binding.registry)?,
+    );
+
+    let entitlement = source.entry(&binding.entitlement.entry)?;
+    edits.replace(
+        binding.entitlement.entry.clone(),
+        inject::call_from_entitlement(&entitlement, &binding.entitlement)?,
+    );
+
+    // The grant row type is constructed by the injected class, and its
+    // constructor is package-private. Widening it is the same two-byte edit as
+    // the registration method, and for the same reason.
+    let row_entry = format!("{}.class", binding.entitlement.row_class);
+    edits.replace(
+        row_entry.clone(),
+        pool::make_method_public(&source.entry(&row_entry)?, "<init>", ROW_CONSTRUCTOR)?,
+    );
+
+    Ok(edits)
+}
+
+/// The grant row's constructor, taking the identity it grants.
+const ROW_CONSTRUCTOR: &str = "(Ljava/util/UUID;)V";
 
 /// A patched archive written beside the one it replaces, not yet in place.
 ///

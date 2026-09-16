@@ -196,10 +196,25 @@ concepts in it and is independently useful; `bitwig-document` needs no installat
 Preparation is a **fixed edit that does not vary with what is registered**:
 
 - a small class injected into the archive,
-- one call added to the Core Registry's initialiser,
-- one call added to the entitlement constructor,
+- one call added to the Core Registry's initialiser, after its own registrations,
+- one call added to the entitlement constructor, after its grant maps exist,
 - the tamper guard disarmed,
-- the register method's access widened so a direct call verifies.
+- two accesses widened so that direct calls verify: the register method, and the grant row's
+  constructor, which the injected class builds one of per identity.
+
+Both calls go at the very end of a method that is straight-line and ends in a single
+`return`, so the edit cannot change a branch target, invalidate a stack map frame, or run
+before the state it needs exists.
+
+The injected class knows nothing about Bitwig by name. It is compiled against placeholders
+and retargeted at patch time (5.3), and the grant maps are read at the call site and passed
+in as plain `HashMap`s rather than read inside it - so every obfuscated field name stays in
+the class that already knew it.
+
+It must also never throw. It runs inside a class initialiser and a constructor that Bitwig
+cannot start without, so a failure there would cost the application rather than a device.
+It catches everything and prints instead, and preparation refuses if verification sees it
+print (5.4).
 
 At startup the injected class reads the entry list from a file this project owns and
 registers each row. Consequences that matter:
@@ -247,6 +262,12 @@ That class is assembled at run time from Krakatau assembly held in this reposito
 producing it needs no JDK and the bytes are reviewable as text. It takes the class names as
 arguments rather than holding them as constants, which is what keeps it fixed across
 builds - nothing in it is retargeted. It goes in a temporary directory, never the archive.
+
+The class that is injected is verified the same way, and its own initialisation is what
+runs the two calls preparation added. A helper that cannot reach what it was retargeted at
+catches the failure rather than throwing, because at run time it must never stop Bitwig
+starting - so verification reads what it printed as well as how it exited. A clean exit
+with nothing said is the only result that counts as verified.
 
 The order of a preparation follows from this:
 
@@ -409,12 +430,12 @@ Built and tested against a real installation:
   patches, verifies under the bundled JVM, activates and links. Preparing twice is proved
   to produce the same archive, restore is proved to give back the original byte for byte,
   and a patch broken in a way only a JVM can catch is proved not to reach the installation.
+- The injected class and both calls to it. A prepared archive is proved to read the entry
+  list and register every row through Bitwig's own registration method, under Bitwig's own
+  JVM, and to report rather than throw when the list cannot be applied.
 
 Not built yet:
 
-- The injected class and the two calls that reference it. Everything around them is in
-  place: preparation already widens the register method's access, and the archive edit set
-  it would join is one call away.
 - The application.
 - Orange Catalog and its validator.
 

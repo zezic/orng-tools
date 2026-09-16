@@ -28,6 +28,7 @@ pub mod backup;
 pub mod descriptions;
 mod fs;
 pub mod home;
+mod inject;
 pub mod manifest;
 pub mod placement;
 pub mod prepare;
@@ -72,6 +73,12 @@ pub enum Error {
     VerificationFailed { report: String },
     #[error("the backup at {0} is incomplete")]
     BackupIncomplete(PathBuf),
+    #[error("the injected class names {placeholder} {found} times, expected once")]
+    HelperPlaceholder { placeholder: &'static str, found: usize },
+    #[error("{class} has no {method} to add the call to")]
+    NoSuchMethod { class: String, method: String },
+    #[error("the method to add the call to does not end in a plain return")]
+    NotStraightLine,
 }
 
 pub type Result<T> = std::result::Result<T, Error>;

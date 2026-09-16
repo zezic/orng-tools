@@ -34,6 +34,7 @@ use crate::{
     Backup, Binding, BuildId, Error, GuardState, Installation, OrangeHome, Result, RunState,
     UserLibrary, fs, inject, placement, running_state,
 };
+use crate::placement::Strategy;
 
 /// The class that drives verification, as text rather than a compiled artifact.
 /// See `java/OrangeVerify.java` for what it does and how to regenerate this.
@@ -59,9 +60,12 @@ pub enum Step {
 }
 
 impl Step {
-    /// In the order [`Plan::apply`] runs them, so that a step list can be drawn
-    /// before the first one starts. The wording of each is the application's,
-    /// not this crate's.
+    /// Every step there is, in the order [`Plan::apply`] runs them.
+    ///
+    /// Not every plan runs all of them: see [`Plan::steps`]. A step list drawn
+    /// before the run starts wants both, so that a step which will not run shows
+    /// as not run rather than going missing and changing the count under the
+    /// reader. The wording of each is the application's, not this crate's.
     pub const ALL: [Step; 5] =
         [Step::Backup, Step::Patch, Step::Verify, Step::Activate, Step::Link];
 }
@@ -75,6 +79,7 @@ pub struct Plan {
     install: Installation,
     library: UserLibrary,
     home: OrangeHome,
+    placement: Strategy,
     backup: Backup,
     build: BuildId,
     binding: Binding,
@@ -91,6 +96,7 @@ impl Plan {
         install: &Installation,
         library: &UserLibrary,
         home: &OrangeHome,
+        placement: Strategy,
     ) -> Result<Self> {
         let installed = Jar::open(&install.jar())?;
         let binding = Binding::resolve(&installed)?;
@@ -125,6 +131,7 @@ impl Plan {
             install: install.clone(),
             library: library.clone(),
             home: home.clone(),
+            placement,
             backup,
             build,
             binding,
@@ -156,6 +163,25 @@ impl Plan {
         self.backup.exists()
     }
 
+    /// The steps this plan will actually run, in order.
+    ///
+    /// Anything in [`Step::ALL`] that is missing here is a step this placement
+    /// does not need.
+    pub fn steps(&self) -> impl Iterator<Item = Step> + '_ {
+        Step::ALL.into_iter().filter(|step| self.runs(*step))
+    }
+
+    /// Linking is the one step a placement can rule out. Under
+    /// [`Strategy::Copy`] the links would resolve the registered path back into
+    /// the user library, so the documents copied into the installation would
+    /// never be the ones Bitwig loaded -- which is the whole of what Copy is for.
+    fn runs(&self, step: Step) -> bool {
+        match step {
+            Step::Link => self.placement == Strategy::Link,
+            Step::Backup | Step::Patch | Step::Verify | Step::Activate => true,
+        }
+    }
+
     /// Carry it out, reporting each step as it begins.
     ///
     /// Consumes the plan: a plan describes one archive at one moment, and
@@ -179,8 +205,10 @@ impl Plan {
         progress(Step::Activate);
         staging.activate(&target)?;
 
-        progress(Step::Link);
-        placement::ensure_all_links(&self.install, &self.library)?;
+        if self.runs(Step::Link) {
+            progress(Step::Link);
+            placement::ensure_all_links(&self.install, &self.library)?;
+        }
         Ok(())
     }
 

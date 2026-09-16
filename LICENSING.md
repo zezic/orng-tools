@@ -12,6 +12,7 @@ part of it and there is no reason to spread that to the rest.
 | `bitwig-registry` | GPL-3.0-only | Links `bitwig-classfile` |
 | `orange-tools` | GPL-3.0-only | Links `bitwig-classfile` |
 | `orange-registry` | GPL-3.0-only | Links `bitwig-classfile` |
+| `orange-catalog-lint` | MIT OR Apache-2.0 | Reads documents and the catalog format only |
 
 ## What this means for you
 

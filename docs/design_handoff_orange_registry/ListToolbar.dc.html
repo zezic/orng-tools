@@ -26,15 +26,15 @@ a:hover{color:#ff7a45}
     <span style="min-width:0; font-size:11.5px; color:{{ queryColor }}; white-space:nowrap; overflow:hidden; text-overflow:ellipsis">{{ queryText }}</span>
   </div>
   <div style="display:flex; align-items:center; gap:2px; flex:none">
-    <div title="Devices" style="{{ devStyle }}">
+    <div onClick="{{ toggleDevices }}" title="Devices" style="{{ devStyle }}">
       <span>Devices</span>
       <span style="{{ countStyle }}">{{ devices }}</span>
     </div>
-    <div title="Modulators" style="{{ modStyle }}">
+    <div onClick="{{ toggleModulators }}" title="Modulators" style="{{ modStyle }}">
       <span>Modulators</span>
       <span style="{{ countStyle }}">{{ modulators }}</span>
     </div>
-    <div title="Modules" style="{{ grdStyle }}">
+    <div onClick="{{ toggleModules }}" title="Modules" style="{{ grdStyle }}">
       <span>Modules</span>
       <span style="{{ countStyle }}">{{ modules }}</span>
     </div>
@@ -53,10 +53,6 @@ a:hover{color:#ff7a45}
 </x-dc>
 <script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:820,&quot;height&quot;:42},&quot;query&quot;:{&quot;editor&quot;:&quot;text&quot;,&quot;default&quot;:&quot;&quot;,&quot;tsType&quot;:&quot;string&quot;},&quot;devices&quot;:{&quot;editor&quot;:&quot;int&quot;,&quot;default&quot;:5,&quot;tsType&quot;:&quot;number&quot;},&quot;modulators&quot;:{&quot;editor&quot;:&quot;int&quot;,&quot;default&quot;:2,&quot;tsType&quot;:&quot;number&quot;},&quot;modules&quot;:{&quot;editor&quot;:&quot;int&quot;,&quot;default&quot;:2,&quot;tsType&quot;:&quot;number&quot;},&quot;factory&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:false,&quot;tsType&quot;:&quot;boolean&quot;},&quot;narrow&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:false,&quot;tsType&quot;:&quot;boolean&quot;,&quot;section&quot;:&quot;Layout&quot;}}">
 class Component extends DCLogic {
-  state = { factory: null, off: {} };
-  componentDidUpdate(prev) {
-    if (!!prev.factory !== !!this.props.factory) this.setState({ factory: null });
-  }
   chip(on, narrow) {
     return [
       "display:flex", "align-items:center", "gap:6px", "height:26px",
@@ -71,9 +67,9 @@ class Component extends DCLogic {
     const p = this.props;
     const q = p.query ?? "";
     const narrow = !!p.narrow;
-    const factory = this.state.factory === null ? !!p.factory : this.state.factory;
-    const off = this.state.off;
-    const on = k => off[k] !== true;
+    const factory = !!p.factory;
+    const kinds = p.kinds ?? "DEVICE|MODULATOR|MODULE";
+    const on = k => kinds.includes(k);
     return {
       narrow, showLabels: !narrow,
       queryText: q || (narrow ? "Search" : "Search name or UUID"),
@@ -81,14 +77,17 @@ class Component extends DCLogic {
       devices: p.devices ?? 5,
       modulators: p.modulators ?? 2,
       modules: p.modules ?? 2,
-      devStyle: this.chip(on("d"), narrow),
-      modStyle: this.chip(on("m"), narrow),
-      grdStyle: this.chip(on("g"), narrow),
+      devStyle: this.chip(on("DEVICE"), narrow),
+      modStyle: this.chip(on("MODULATOR"), narrow),
+      grdStyle: this.chip(on("MODULE"), narrow),
+      toggleDevices: () => p.onToggleKind && p.onToggleKind("DEVICE"),
+      toggleModulators: () => p.onToggleKind && p.onToggleKind("MODULATOR"),
+      toggleModules: () => p.onToggleKind && p.onToggleKind("MODULE"),
       countStyle: "font-family:'Iosevka Extended',Iosevka,monospace; letter-spacing:-0.05em; font-size:10px; color:var(--ink-3)",
       factoryTextColor: factory ? "var(--ink-2)" : "var(--ink-3)",
       factoryIcon: factory ? "ph-duotone ph-check-square" : "ph-duotone ph-square",
       factoryIconColor: factory ? "var(--accent)" : "var(--ink-3)",
-      toggleFactory: () => this.setState({ factory: !factory })
+      toggleFactory: () => p.onToggleFactory && p.onToggleFactory()
     };
   }
 }

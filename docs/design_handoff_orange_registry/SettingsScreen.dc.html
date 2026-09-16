@@ -23,7 +23,7 @@ a:hover{color:#ff7a45}
 <div style="display:flex; flex-direction:column; width:100%; height:100%; background:var(--bg); font-family:Inter,'Helvetica Neue',Helvetica,sans-serif">
   <div style="display:flex; align-items:center; gap:9px; flex:none; height:44px; padding:0 12px; background:var(--panel)">
     <div onClick="{{ onBack }}" style="display:flex; align-items:center; gap:6px; padding:4px 9px 4px 6px; border-radius:4px; color:var(--ink-2); font-size:11.5px; cursor:pointer" style-hover="background:var(--btn-hover); color:var(--ink)">
-      <i class="ph-duotone ph-arrow-left" style="font-size:16px"></i><span>Entries</span>
+      <i class="ph-duotone ph-arrow-left" style="font-size:16px"></i><span>Local</span>
     </div>
     <div style="width:1px; height:16px; background:var(--line)"></div>
     <i class="ph-duotone ph-gear-six" style="font-size:16px; color:var(--ink-2)"></i>
@@ -51,7 +51,12 @@ a:hover{color:#ff7a45}
           <div style="display:grid; grid-template-columns:128px minmax(0,1fr) auto auto; align-items:center; gap:8px">
             <span style="font-size:11.5px; color:var(--ink-2)">Backups</span>
             <span style="font-family:'Iosevka Extended',Iosevka,'SF Mono',Menlo,monospace; letter-spacing:-0.05em; font-size:10.5px; color:var(--ink); padding:5px 8px; background:var(--field); border-radius:4px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis">~/Library/Application Support/OrangeRegistry/backups</span>
-            <span style="display:flex; align-items:center; gap:5px; font-size:11px; color:var(--ink-2); padding:4px 8px; background:var(--btn); border-radius:4px; cursor:pointer" style-hover="background:var(--btn-hover); color:var(--ink)"><i class="ph-duotone ph-folder-open" style="font-size:16px"></i>Open</span>
+            <sc-if value="{{ hasBackup }}" hint-placeholder-val="{{ true }}">
+              <span onClick="{{ onRestore }}" style="display:flex; align-items:center; gap:5px; font-size:11px; color:var(--ink-2); padding:4px 8px; background:var(--btn); border-radius:4px; cursor:pointer" style-hover="background:var(--btn-hover); color:var(--ink)"><i class="ph-duotone ph-clock-counter-clockwise" style="font-size:16px"></i>Restore&hellip;</span>
+            </sc-if>
+            <sc-if value="{{ noBackup }}" hint-placeholder-val="{{ false }}">
+              <span style="font-size:11px; color:var(--ink-3); white-space:nowrap; justify-self:start">No backup yet</span>
+            </sc-if>
             <span style="width:26px"></span>
           </div>
         </div>
@@ -73,6 +78,17 @@ a:hover{color:#ff7a45}
               <span style="font-size:11.5px; font-weight:400; color:var(--ink)">Copy documents into the installation</span>
               <span style="font-size:10.5px; line-height:1.45; color:{{ copyInk }}">A Bitwig update removes the copies. Everything has to be registered again.</span>
             </div>
+          </div>
+        </div>
+      </div>
+
+      <div style="display:flex; flex-direction:column; gap:7px">
+        <span style="font-size:10.5px; font-weight:600; color:var(--ink-2)">Removing entries</span>
+        <div onClick="{{ toggleDelete }}" style="display:flex; align-items:flex-start; gap:9px; padding:11px 12px; background:var(--panel); border-radius:4px; cursor:pointer">
+          <i class="{{ deleteIcon }}" style="font-size:16px; flex:none; color:{{ deleteIconColor }}; margin-top:1px"></i>
+          <div style="display:flex; flex-direction:column; gap:2px">
+            <span style="font-size:11.5px; color:var(--ink)">Also delete the document file</span>
+            <span style="font-size:10.5px; line-height:1.45; color:var(--ink-3)">Off, removing an entry unregisters it and leaves your document in the library.</span>
           </div>
         </div>
       </div>
@@ -111,9 +127,9 @@ a:hover{color:#ff7a45}
 </div>
 
 </x-dc>
-<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:820,&quot;height&quot;:560},&quot;onBack&quot;:{&quot;editor&quot;:null,&quot;tsType&quot;:&quot;() =&gt; void&quot;},&quot;onAbout&quot;:{&quot;editor&quot;:null,&quot;tsType&quot;:&quot;() =&gt; void&quot;},&quot;onTheme&quot;:{&quot;editor&quot;:null,&quot;tsType&quot;:&quot;(t: string) =&gt; void&quot;}}">
+<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:820,&quot;height&quot;:560},&quot;guard&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;Armed&quot;,&quot;Disarmed&quot;,&quot;Unknown&quot;],&quot;default&quot;:&quot;Disarmed&quot;,&quot;tsType&quot;:&quot;string&quot;,&quot;section&quot;:&quot;Diagnostics&quot;},&quot;backup&quot;:{&quot;editor&quot;:&quot;text&quot;,&quot;default&quot;:&quot;Backup: 14 Sep 2026&quot;,&quot;tsType&quot;:&quot;string&quot;,&quot;section&quot;:&quot;Diagnostics&quot;},&quot;resolved&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:true,&quot;tsType&quot;:&quot;boolean&quot;,&quot;section&quot;:&quot;Diagnostics&quot;},&quot;entryCount&quot;:{&quot;editor&quot;:&quot;int&quot;,&quot;default&quot;:6,&quot;tsType&quot;:&quot;number&quot;,&quot;section&quot;:&quot;Diagnostics&quot;},&quot;onBack&quot;:{&quot;editor&quot;:null,&quot;tsType&quot;:&quot;() =&gt; void&quot;},&quot;onAbout&quot;:{&quot;editor&quot;:null,&quot;tsType&quot;:&quot;() =&gt; void&quot;},&quot;onRestore&quot;:{&quot;editor&quot;:null,&quot;tsType&quot;:&quot;() =&gt; void&quot;},&quot;onTheme&quot;:{&quot;editor&quot;:null,&quot;tsType&quot;:&quot;(t: string) =&gt; void&quot;}}">
 class Component extends DCLogic {
-  state = { place: "link", appearance: "System" };
+  state = { place: "link", appearance: "System", del: false };
   seg(on) {
     return [
       "display:flex", "align-items:center", "gap:5px", "padding:4px 10px", "border-radius:3px",
@@ -128,9 +144,27 @@ class Component extends DCLogic {
     ].join(";");
   }
   renderVals() {
+    const guard = (this.props.guard ?? "Disarmed").toLowerCase();
+    const guardLine = guard === "disarmed" ? "disarmed by orange-registry 0.9.2" : guard === "armed" ? "armed \u00b7 installation not prepared" : "state unknown";
+    const resolved = this.props.resolved ?? true;
+    const entryCount = this.props.entryCount ?? 6;
+    const anchorsLine = resolved
+      ? "registry ok  \u00b7  descriptions ok  \u00b7  library ok"
+      : "registry NOT LOCATED  \u00b7  descriptions ok  \u00b7  library ok";
+    const entriesLine = entryCount > 0
+      ? "Library/orange-registry.json  \u00b7  " + entryCount + " entries"
+      : "Library/orange-registry.json  \u00b7  none recorded";
+    const rawBackup = this.props.backup ?? "Backup: 14 Sep 2026";
+    const hasBackup = /\d/.test(rawBackup);
+    const backupLine = hasBackup
+      ? rawBackup.replace("Backup: ", "") + "  \u00b7  35.1 MB  \u00b7  jar + description bundles"
+      : "none yet \u00b7 written before the installation is prepared";
     const link = this.state.place === "link";
     const a = this.state.appearance;
     return {
+      deleteIcon: this.state.del ? "ph-duotone ph-check-square" : "ph-duotone ph-square",
+      deleteIconColor: this.state.del ? "var(--accent)" : "var(--ink-3)",
+      toggleDelete: () => this.setState({ del: !this.state.del }),
       linkStyle: this.radioRow(link), copyStyle: this.radioRow(!link),
       linkInk: link ? "var(--ink-3-warm)" : "var(--ink-3)",
       copyInk: !link ? "var(--ink-3-warm)" : "var(--ink-3)",
@@ -146,15 +180,18 @@ class Component extends DCLogic {
       pickDark: () => { this.setState({ appearance: "Dark" }); this.props.onTheme && this.props.onTheme("dark"); },
       report: [
         "install    /Applications/Bitwig Studio.app",
-        "version    6.1.4  rev 20260714-1132",
-        "jar        bitwig.jar  238.4 MB  sha 4f9c1ae2",
-        "registry   located  \u00b7  428 factory entries",
-        "guard      disarmed by orange-registry 0.9.2",
-        "locale     Resources/localization  writable",
-        "license    full  \u00b7  entitlement catalog patched",
-        "entries    6 custom  \u00b7  record 6  \u00b7  verified 6"
+        "version    6.1  (94a90411)",
+        "jar        Contents/Resources/bitwig.jar  34 MB",
+        "anchors    " + anchorsLine,
+        "guard      " + guardLine,
+        "backup     " + backupLine,
+        "entries    " + entriesLine,
+        "placement  link into user library",
+        "factory    152 devices  \u00b7  43 modulators  \u00b7  233 modules"
       ].join("\n"),
       onBack: () => this.props.onBack && this.props.onBack(),
+      hasBackup, noBackup: !hasBackup,
+      onRestore: () => this.props.onRestore && this.props.onRestore(),
       onAbout: () => this.props.onAbout && this.props.onAbout()
     };
   }

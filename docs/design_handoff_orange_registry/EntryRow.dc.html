@@ -24,6 +24,9 @@ a:hover{color:#ff7a45}
   <div onMouseEnter="{{ enter }}" onMouseLeave="{{ leave }}" onClick="{{ open }}" style="{{ rowStyle }}">
     <span style="font-size:11px; color:{{ secondaryInk }}; opacity:{{ dimOpacity }}">{{ kindLabel }}</span>
     <div style="display:flex; align-items:baseline; gap:9px; min-width:0; opacity:{{ dimOpacity }}">
+      <sc-if value="{{ fromCatalog }}" hint-placeholder-val="{{ false }}">
+        <i class="ph-duotone ph-package" title="{{ sourceTitle }}" style="font-size:16px; flex:none; color:{{ secondaryInk }}; align-self:center"></i>
+      </sc-if>
       <span style="flex:0 1 auto; min-width:0; font-size:12.5px; font-weight:500; letter-spacing:-0.005em; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; color:{{ nameColor }}; text-decoration:{{ nameDecoration }}">{{ name }}</span>
       <sc-if value="{{ showReason }}" hint-placeholder-val="{{ true }}">
         <span style="flex:0 200 auto; min-width:0; font-size:10.5px; color:{{ secondaryInk }}; white-space:nowrap; overflow:hidden; text-overflow:ellipsis">{{ reason }}</span>
@@ -32,13 +35,12 @@ a:hover{color:#ff7a45}
     <sc-if value="{{ showUuid }}" hint-placeholder-val="{{ true }}">
       <div title="{{ uuid }}" style="display:flex; align-items:center; gap:6px; font-family:'Iosevka Extended',Iosevka,monospace; letter-spacing:-0.05em; font-size:10.5px; color:{{ secondaryInk }}; opacity:{{ dimOpacity }}">
         <span>{{ uuidShort }}</span>
-        <i class="ph-duotone ph-copy" style="font-size:16px; opacity:.5"></i>
+        <sc-if value="{{ showCopy }}" hint-placeholder-val="{{ true }}">
+          <i class="ph-duotone ph-copy" style="font-size:16px; opacity:.5"></i>
+        </sc-if>
       </div>
     </sc-if>
-    <div style="display:flex; align-items:center; gap:7px; min-width:0">
-      <span style="width:5px; height:5px; flex:none; border-radius:50%; background:{{ statusDot }}"></span>
-      <span style="font-size:11px; color:{{ statusFg }}; white-space:nowrap">{{ status }}</span>
-    </div>
+    <span style="font-size:11px; color:{{ statusFg }}; white-space:nowrap; overflow:hidden; text-overflow:ellipsis">{{ status }}</span>
     <div style="{{ actionsStyle }}">
       <sc-if value="{{ showAssign }}" hint-placeholder-val="{{ false }}">
         <div title="Assign new UUID" style="display:flex; align-items:center; justify-content:center; width:22px; height:22px; border-radius:3px; color:var(--ink-2); cursor:pointer" style-hover="background:var(--btn-hover); color:var(--ink)"><i class="ph-duotone ph-fingerprint" style="font-size:16px"></i></div>
@@ -64,15 +66,16 @@ a:hover{color:#ff7a45}
 <script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:796,&quot;height&quot;:36},&quot;kind&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;DEVICE&quot;,&quot;MODULATOR&quot;,&quot;MODULE&quot;],&quot;default&quot;:&quot;DEVICE&quot;,&quot;tsType&quot;:&quot;string&quot;},&quot;entryName&quot;:{&quot;editor&quot;:&quot;text&quot;,&quot;default&quot;:&quot;DISPERSER&quot;,&quot;tsType&quot;:&quot;string&quot;},&quot;uuid&quot;:{&quot;editor&quot;:&quot;text&quot;,&quot;default&quot;:&quot;21882ab0-7c41-4d0b-9a10-ff3e5d2e77a1&quot;,&quot;tsType&quot;:&quot;string&quot;},&quot;status&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;Staged&quot;,&quot;Registered&quot;,&quot;Pending restart&quot;,&quot;Missing file&quot;,&quot;Changed&quot;,&quot;Conflict&quot;,&quot;Rejected&quot;,&quot;Pending removal&quot;,&quot;Factory&quot;],&quot;default&quot;:&quot;Registered&quot;,&quot;tsType&quot;:&quot;string&quot;},&quot;reason&quot;:{&quot;editor&quot;:&quot;text&quot;,&quot;default&quot;:&quot;&quot;,&quot;tsType&quot;:&quot;string&quot;},&quot;narrow&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:false,&quot;tsType&quot;:&quot;boolean&quot;,&quot;section&quot;:&quot;Layout&quot;},&quot;factory&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:false,&quot;tsType&quot;:&quot;boolean&quot;},&quot;forceActions&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:false,&quot;tsType&quot;:&quot;boolean&quot;},&quot;selected&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:false,&quot;tsType&quot;:&quot;boolean&quot;},&quot;onOpen&quot;:{&quot;editor&quot;:null,&quot;tsType&quot;:&quot;(name: string) =&gt; void&quot;}}">
 const KIND = { DEVICE: "Device", MODULATOR: "Modulator", MODULE: "Module" };
 const STATUS = {
-  "Staged": ["var(--accent)", "var(--accent-text)"],
-  "Registered": ["var(--ink-2)", "var(--ink-2)"],
-  "Pending restart": ["var(--accent)", "var(--ink-2)"],
-  "Missing file": ["var(--err)", "var(--err)"],
-  "Changed": ["var(--accent)", "var(--accent-text)"],
-  "Conflict": ["var(--err)", "var(--err)"],
-  "Rejected": ["var(--err)", "var(--ink-3)"],
-  "Pending removal": ["var(--ink-3)", "var(--ink-3)"],
-  "Factory": ["transparent", "var(--ink-3)"]
+  "Staged": "var(--ink-2)",
+  "Registered": "var(--ink-3)",
+  "Pending restart": "var(--ink-2)",
+  "Missing file": "var(--err-text)",
+  "Changed": "var(--accent-text)",
+  "Update available": "var(--accent-text)",
+  "Conflict": "var(--err-text)",
+  "Rejected": "var(--ink-3)",
+  "Pending removal": "var(--ink-3)",
+  "Factory": "var(--ink-3)"
 };
 
 class Component extends DCLogic {
@@ -84,20 +87,26 @@ class Component extends DCLogic {
     const factory = !!p.factory;
     const hot = this.state.hover || !!p.forceActions;
     const uuid = p.uuid ?? "00000000-0000-0000-0000-000000000000";
-    const [statusDot, statusFg] = STATUS[status] || STATUS.Registered;
+    const statusFg = STATUS[status] || STATUS.Registered;
     const selected = !!p.selected;
+    const rejected = status === "Rejected";
     const narrow = !!p.narrow;
 
     return {
       name: p.entryName ?? p.name ?? "UNTITLED",
       reason: p.reason ?? "",
-      uuid, uuidShort: uuid.split("-")[0], showUuid: !narrow, showReason: !narrow,
+      uuid: rejected ? "" : uuid,
+      uuidShort: rejected ? "\u2014" : uuid.split("-")[0],
+      showCopy: !rejected,
+      showUuid: !narrow, showReason: !narrow,
       nameColor: status === "Rejected" ? "var(--ink-2)" : "var(--ink)",
       secondaryInk: selected ? "var(--ink-3-warm)" : "var(--ink-3)",
+      fromCatalog: (p.source ?? "local") === "catalog",
+      sourceTitle: "Orange Catalog \u00b7 " + (p.sourceVersion ?? "1.2.0"),
       nameDecoration: status === "Pending removal" ? "line-through" : "none",
-      status, statusDot, statusFg,
-      kindLabel: KIND[kind] || kind,
-      dimOpacity: factory ? 0.5 : 1,
+      status, statusFg,
+      kindLabel: rejected ? "\u2014" : (KIND[kind] || kind),
+      dimOpacity: 1,
       rowStyle: [
         "display:grid",
         "grid-template-columns:" + (narrow ? "66px minmax(0,1fr) 116px 76px" : "66px minmax(0,1fr) 106px 130px 84px"),
@@ -111,7 +120,7 @@ class Component extends DCLogic {
       actionsStyle: "display:flex; align-items:center; gap:1px; justify-content:flex-end; visibility:" + (hot && !factory ? "visible" : "hidden"),
       showReveal: !["Rejected", "Missing file", "Staged", "Conflict"].includes(status),
       showRemove: !["Rejected", "Pending removal"].includes(status),
-      removeLabel: status === "Staged" || status === "Conflict" ? "Cancel" : "Remove",
+      removeLabel: status === "Staged" || status === "Conflict" ? "Cancel" : "Remove entry \u00b7 the document file is kept",
       showAssign: status === "Staged" || status === "Conflict",
       showLocate: status === "Missing file",
       showUndo: status === "Pending removal",

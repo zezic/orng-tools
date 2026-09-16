@@ -22,12 +22,9 @@ a:hover{color:#ff7a45}
 </helmet>
 <div style="position:relative; display:flex; align-items:center; gap:12px; flex:none; min-height:52px; padding:0 12px; background:var(--panel); font-family:Inter,'Helvetica Neue',Helvetica,sans-serif">
   <div style="display:flex; flex-direction:column; gap:3px; min-width:0; flex:1">
-    <div style="display:flex; align-items:center; gap:8px">
-      <span style="width:5px; height:5px; flex:none; border-radius:50%; background:{{ toneDot }}"></span>
-      <span style="font-size:11.5px; color:{{ summaryColor }}; white-space:nowrap; overflow:hidden; text-overflow:ellipsis">{{ summary }}</span>
-    </div>
+    <span style="font-size:11.5px; color:{{ summaryColor }}; white-space:nowrap; overflow:hidden; text-overflow:ellipsis">{{ summary }}</span>
     <sc-if value="{{ hasNote }}" hint-placeholder-val="{{ false }}">
-      <span style="font-size:10.5px; color:var(--ink-3); padding-left:13px">{{ note }}</span>
+      <span style="font-size:10.5px; color:var(--ink-3)">{{ note }}</span>
     </sc-if>
   </div>
   <sc-if value="{{ hasSecondary }}" hint-placeholder-val="{{ false }}">
@@ -49,11 +46,10 @@ class Component extends DCLogic {
     const disabled = !!p.disabled;
     const tone = p.tone ?? "neutral";
     const mode = p.mode ?? "update";
-    const toneColor = { neutral: "var(--ink-2)", warn: "var(--accent-text)", err: "var(--err)", ok: "var(--ink-2)" }[tone];
-    const toneDot = { neutral: "var(--ink-3)", warn: "var(--accent)", err: "var(--err)", ok: "var(--ink)" }[tone];
+    const toneColor = { neutral: "var(--ink-2)", warn: "var(--accent-text)", err: "var(--err-text)", ok: "var(--ink-2)" }[tone];
     return {
       summary: (p.summary ?? "Nothing pending"),
-      summaryColor: toneColor, toneDot,
+      summaryColor: toneColor,
       note: p.note ?? "", hasNote: !!p.note,
       secondary: p.secondary ?? "", hasSecondary: !!p.secondary,
       secondaryIcon: p.secondaryIcon ?? "ph-duotone ph-arrow-clockwise",

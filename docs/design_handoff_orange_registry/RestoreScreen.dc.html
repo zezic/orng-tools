@@ -23,7 +23,7 @@ a:hover{color:#ff7a45}
 <div style="display:flex; flex-direction:column; width:100%; height:100%; background:var(--bg); font-family:Inter,'Helvetica Neue',Helvetica,sans-serif">
   <div style="display:flex; align-items:center; gap:9px; flex:none; height:44px; padding:0 12px; background:var(--panel)">
     <div onClick="{{ onBack }}" style="display:flex; align-items:center; gap:6px; padding:4px 9px 4px 6px; border-radius:4px; color:var(--ink-2); font-size:11.5px; cursor:pointer" style-hover="background:var(--btn-hover); color:var(--ink)">
-      <i class="ph-duotone ph-arrow-left" style="font-size:16px"></i><span>Entries</span>
+      <i class="ph-duotone ph-arrow-left" style="font-size:16px"></i><span>Local</span>
     </div>
     <div style="width:1px; height:16px; background:var(--line)"></div>
     <i class="ph-duotone ph-clock-counter-clockwise" style="font-size:16px; color:var(--ink-2)"></i>
@@ -32,6 +32,7 @@ a:hover{color:#ff7a45}
     <div style="display:flex; align-items:center; gap:5px; padding:4px 9px; border-radius:4px; background:var(--btn); color:var(--ink-2); font-size:11px; cursor:pointer" style-hover="background:var(--btn-hover); color:var(--ink)"><i class="ph-duotone ph-folder-open" style="font-size:16px"></i><span>Open backups folder</span></div>
   </div>
 
+  <sc-if value="{{ hasBackup }}" hint-placeholder-val="{{ true }}">
   <div style="display:flex; align-items:flex-start; gap:9px; flex:none; margin:12px 12px 0; padding:10px 12px; background:var(--warn-bg); border-radius:4px">
     <i class="ph-duotone ph-warning" style="font-size:16px; color:var(--warn); flex:none; margin-top:1px"></i>
     <div style="display:flex; flex-direction:column; gap:3px">
@@ -60,11 +61,23 @@ a:hover{color:#ff7a45}
       </sc-for>
     </div>
   </div>
+  </sc-if>
+
+  <sc-if value="{{ noBackup }}" hint-placeholder-val="{{ false }}">
+    <div style="display:grid; grid-template-rows:minmax(0,1fr); grid-template-columns:minmax(0,1fr); flex:1; min-height:0">
+      <div style="display:flex; flex-direction:column; align-items:center; justify-content:center; box-sizing:border-box; width:100%; height:100%; padding:20px 34px; text-align:center">
+        <i class="ph-light ph-archive" style="font-size:54px; color:var(--ink-3); margin-bottom:16px"></i>
+        <span style="font-size:16.5px; font-weight:600; color:var(--ink); letter-spacing:-0.02em">Nothing to restore yet</span>
+        <span style="max-width:420px; margin-top:9px; font-size:11.5px; line-height:1.6; color:var(--ink-2); text-wrap:pretty">A backup is written just before the installation is prepared, and this installation has not been prepared. There is nothing here until then.</span>
+        <span style="max-width:400px; margin-top:18px; font-size:10.5px; line-height:1.55; color:var(--ink-3); text-wrap:pretty">Backups hold the jar and the three description bundles &mdash; about 35 MB, not the whole installation.</span>
+      </div>
+    </div>
+  </sc-if>
 
   <div style="display:flex; align-items:center; gap:10px; flex:none; min-height:48px; padding:0 12px; background:var(--panel)">
     <span style="flex:1; font-size:11px; color:var(--ink-3)">{{ footNote }}</span>
     <div onClick="{{ onBack }}" style="display:flex; align-items:center; height:29px; padding:0 12px; border-radius:4px; background:var(--btn); color:var(--ink-2); font-size:11.5px; cursor:pointer" style-hover="background:var(--btn-hover); color:var(--ink)">Cancel</div>
-    <div style="display:flex; align-items:center; gap:7px; height:31px; padding:0 14px; border-radius:4px; background:transparent; border:1px solid var(--err); color:var(--err); font-size:12px; font-weight:700; cursor:pointer">
+    <div style="{{ primaryStyle }}">
       <i class="ph-duotone ph-clock-counter-clockwise" style="font-size:16px"></i><span>Restore this backup</span>
     </div>
   </div>
@@ -73,14 +86,16 @@ a:hover{color:#ff7a45}
 </x-dc>
 <script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:820,&quot;height&quot;:560},&quot;onBack&quot;:{&quot;editor&quot;:null,&quot;tsType&quot;:&quot;() =&gt; void&quot;}}">
 const DATA = [
-  { date: "14 September 2026, 18:42", meta: "Bitwig Studio 6.1.4 \u00b7 rev 20260714-1132 \u00b7 before preparing installation", size: "238.4 MB" },
-  { date: "02 July 2026, 09:17", meta: "Bitwig Studio 6.1.2 \u00b7 rev 20260611-0904 \u00b7 before preparing installation", size: "237.1 MB" },
-  { date: "19 March 2026, 21:05", meta: "Bitwig Studio 6.0.8 \u00b7 rev 20260302-1740 \u00b7 before preparing installation", size: "231.8 MB" }
+  { date: "14 September 2026, 18:42", meta: "Bitwig Studio 6.1 (94a90411) \u00b7 jar + description bundles", size: "35.1 MB" },
+  { date: "02 July 2026, 09:17", meta: "Bitwig Studio 6.1 (2c7f18be) \u00b7 jar + description bundles", size: "34.8 MB" },
+  { date: "19 March 2026, 21:05", meta: "Bitwig Studio 6.0 (a1d34f07) \u00b7 jar + description bundles", size: "33.2 MB" }
 ];
 class Component extends DCLogic {
   state = { sel: 0 };
   renderVals() {
     const sel = this.state.sel;
+    const raw = this.props.backup ?? "Backup: 14 Sep 2026";
+    const hasBackup = /\d/.test(raw);
     return {
       backups: DATA.map((b, i) => ({
         ...b,
@@ -94,7 +109,17 @@ class Component extends DCLogic {
         ].join(";"),
         pick: () => this.setState({ sel: i })
       })),
-      footNote: "Restores " + DATA[sel].date.split(",")[0] + " wholesale. Bitwig Studio must be closed.",
+      hasBackup, noBackup: !hasBackup,
+      footNote: hasBackup
+        ? "Restores " + DATA[sel].date.split(",")[0] + " wholesale. Bitwig Studio must be closed."
+        : "No backup exists for this installation.",
+      primaryStyle: [
+        "display:flex", "align-items:center", "gap:7px", "height:31px", "padding:0 14px",
+        "border-radius:4px", "font-size:12px", "font-weight:700",
+        hasBackup
+          ? "background:transparent; border:1px solid var(--err); color:var(--err); cursor:pointer"
+          : "background:var(--btn); color:var(--ink-3); cursor:default"
+      ].join(";"),
       onBack: () => this.props.onBack && this.props.onBack()
     };
   }

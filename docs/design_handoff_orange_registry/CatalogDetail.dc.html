@@ -1,0 +1,145 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://unpkg.com/@phosphor-icons/web@2.1.1/src/duotone/style.css" />
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;display=swap" />
+<style>
+@font-face{font-family:'Iosevka Extended';src:url('uploads/Iosevka-Extended.ttf') format('truetype');font-weight:400;font-style:normal;font-display:swap}
+html,body{margin:0;padding:0;background:#000}
+a{color:#ff5a1f;text-decoration:none}
+a:hover{color:#ff7a45}
+:root{--page:#000000;--bg:#0a0a0a;--panel:#161616;--panel-2:#1e1e1e;--row:#0a0a0a;--row-alt:#1e1e1e;--row-hover:#262626;--line:#242424;--ink:#f2f2f2;--ink-2:#bcbcbc;--ink-3:#949494;--ink-2-warm:#c6b6aa;--accent:#ff5a1f;--accent-text:#ff7a45;--accent-ink:#0a0a0a;--accent-soft:rgba(255,90,31,.10);--err:#ff4036;--err-text:#ff6259;--err-bg:rgba(255,64,54,.10);--field:#000000;--btn:#282828;--btn-hover:#333333}
+</style>
+</helmet>
+<div style="display:flex; flex-direction:column; width:272px; height:100%; flex:none; background:var(--panel-2); font-family:Inter,'Helvetica Neue',Helvetica,sans-serif; box-shadow:-18px 0 40px rgba(0,0,0,.5)">
+  <div style="display:flex; align-items:center; gap:8px; flex:none; height:40px; padding:0 12px; background:var(--panel)">
+    <span style="font-family:'Iosevka Extended',Iosevka,monospace; letter-spacing:-0.05em; font-size:10px; color:var(--ink-3)">{{ kindLabel }}</span>
+    <span style="flex:1; min-width:0; font-size:12.5px; font-weight:600; color:var(--ink); white-space:nowrap; overflow:hidden; text-overflow:ellipsis">{{ name }}</span>
+    <div onClick="{{ onClose }}" title="Close" style="display:flex; align-items:center; justify-content:center; width:24px; height:24px; border-radius:3px; color:var(--ink-3); cursor:pointer" style-hover="background:var(--btn-hover); color:var(--ink)"><i class="ph-duotone ph-x" style="font-size:16px"></i></div>
+  </div>
+
+  <div style="display:flex; flex-direction:column; gap:13px; flex:1; overflow:auto; padding:13px 12px">
+
+    <sc-if value="{{ isSuperseded }}" hint-placeholder-val="{{ false }}">
+      <div style="display:flex; flex-direction:column; gap:6px; padding:10px 11px; background:var(--accent-soft); border-radius:4px">
+        <span style="font-size:11.5px; font-weight:600; color:var(--ink)">A newer version exists as a separate device</span>
+        <span style="font-size:10.5px; line-height:1.5; color:var(--ink-2-warm)">{{ replacementName }} replaces this one. It has its own identity, so installing it leaves your projects alone and both can be installed at once.</span>
+        <div onClick="{{ onReplacement }}" style="display:flex; align-items:center; align-self:flex-start; gap:6px; height:26px; margin-top:2px; padding:0 10px; border-radius:3px; background:var(--btn); color:var(--ink); font-size:11px; font-weight:500; cursor:pointer">
+          <span>See {{ replacementName }}</span><i class="ph-duotone ph-arrow-right" style="font-size:16px"></i>
+        </div>
+      </div>
+    </sc-if>
+
+    <div style="display:flex; align-items:center; gap:8px">
+      <i class="ph-duotone ph-user" style="font-size:16px; flex:none; color:var(--ink-3)"></i>
+      <span style="flex:1; min-width:0; font-size:11.5px; color:var(--ink); white-space:nowrap; overflow:hidden; text-overflow:ellipsis">{{ author }}</span>
+      <span style="font-family:'Iosevka Extended',Iosevka,monospace; letter-spacing:-0.05em; font-size:10.5px; color:var(--ink-3); flex:none">{{ version }}</span>
+    </div>
+
+    <span style="font-size:11.5px; line-height:1.55; color:var(--ink-2); text-wrap:pretty">{{ description }}</span>
+
+    <div style="display:flex; flex-direction:column; gap:7px">
+      <div style="display:flex; align-items:center; gap:8px">
+        <i class="{{ requiresIcon }}" style="font-size:16px; flex:none; color:{{ requiresColor }}"></i>
+        <span style="font-size:11px; color:{{ requiresColor }}">Requires Bitwig {{ requires }} or newer</span>
+      </div>
+      <div style="display:flex; align-items:center; gap:8px">
+        <i class="ph-duotone ph-scales" style="font-size:16px; flex:none; color:var(--ink-3)"></i>
+        <span style="font-size:11px; color:var(--ink-2)">{{ licence }}</span>
+      </div>
+    </div>
+
+    <div style="display:flex; flex-direction:column; gap:5px">
+      <span style="font-size:10.5px; font-weight:600; color:var(--ink-2)">Search keywords</span>
+      <div style="display:flex; flex-wrap:wrap; gap:4px; padding:5px 6px; background:var(--field); border-radius:4px">
+        <sc-for list="{{ keywords }}" as="kw" hint-placeholder-count="4">
+          <span style="display:flex; align-items:center; padding:2px 6px; border-radius:3px; background:var(--accent); color:var(--accent-ink); font-size:10.5px">{{ kw }}</span>
+        </sc-for>
+      </div>
+      <span style="font-size:10px; line-height:1.4; color:var(--ink-3)">Editable in Local once installed.</span>
+    </div>
+
+    <div style="height:1px; background:var(--line)"></div>
+
+    <div style="display:flex; flex-direction:column; gap:7px">
+      <div onClick="{{ onProvenance }}" style="display:flex; align-items:center; gap:8px; cursor:pointer" style-hover="color:var(--ink)">
+        <i class="ph-duotone ph-git-pull-request" style="font-size:16px; flex:none; color:var(--ink-3)"></i>
+        <span style="flex:1; min-width:0; font-size:11px; color:var(--accent-text)">Reviewed in {{ provenance }}</span>
+      </div>
+      <sc-if value="{{ hasHomepage }}" hint-placeholder-val="{{ true }}">
+        <div style="display:flex; align-items:center; gap:8px; cursor:pointer">
+          <i class="ph-duotone ph-link-simple" style="font-size:16px; flex:none; color:var(--ink-3)"></i>
+          <span style="flex:1; min-width:0; font-size:11px; color:var(--accent-text); white-space:nowrap; overflow:hidden; text-overflow:ellipsis">{{ homepage }}</span>
+        </div>
+      </sc-if>
+      <div style="display:flex; flex-direction:column; gap:3px; margin-top:2px">
+        <span style="font-size:10.5px; font-weight:600; color:var(--ink-2)">UUID</span>
+        <span style="font-family:'Iosevka Extended',Iosevka,monospace; letter-spacing:-0.05em; font-size:10.5px; color:var(--ink-3); word-break:break-all; line-height:1.4">{{ uuid }}</span>
+      </div>
+    </div>
+  </div>
+
+  <div style="display:flex; align-items:center; gap:8px; flex:none; padding:11px 12px; background:var(--panel)">
+    <sc-if value="{{ hasRemove }}" hint-placeholder-val="{{ false }}">
+      <div style="display:flex; align-items:center; height:30px; padding:0 11px; border-radius:3px; background:var(--btn); color:var(--ink-2); font-size:11.5px; cursor:pointer" style-hover="color:var(--err-text)">Remove</div>
+    </sc-if>
+    <div style="flex:1"></div>
+    <sc-if value="{{ hasPrimary }}" hint-placeholder-val="{{ true }}">
+      <div onClick="{{ onPrimary }}" style="{{ primaryStyle }}">{{ primary }}</div>
+    </sc-if>
+  </div>
+</div>
+
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:272,&quot;height&quot;:560},&quot;kind&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;DEVICE&quot;,&quot;MODULATOR&quot;,&quot;MODULE&quot;],&quot;default&quot;:&quot;DEVICE&quot;,&quot;tsType&quot;:&quot;string&quot;},&quot;itemName&quot;:{&quot;editor&quot;:&quot;text&quot;,&quot;default&quot;:&quot;DISPERSER&quot;,&quot;tsType&quot;:&quot;string&quot;},&quot;author&quot;:{&quot;editor&quot;:&quot;text&quot;,&quot;default&quot;:&quot;kirkwood&quot;,&quot;tsType&quot;:&quot;string&quot;},&quot;version&quot;:{&quot;editor&quot;:&quot;text&quot;,&quot;default&quot;:&quot;1.2.0&quot;,&quot;tsType&quot;:&quot;string&quot;},&quot;description&quot;:{&quot;editor&quot;:&quot;text&quot;,&quot;default&quot;:&quot;&quot;,&quot;tsType&quot;:&quot;string&quot;},&quot;status&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;Available&quot;,&quot;Installed&quot;,&quot;Update available&quot;,&quot;Superseded&quot;,&quot;Incompatible&quot;,&quot;Download failed&quot;,&quot;Verification failed&quot;],&quot;default&quot;:&quot;Available&quot;,&quot;tsType&quot;:&quot;string&quot;},&quot;requires&quot;:{&quot;editor&quot;:&quot;text&quot;,&quot;default&quot;:&quot;6.0&quot;,&quot;tsType&quot;:&quot;string&quot;},&quot;compatible&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:true,&quot;tsType&quot;:&quot;boolean&quot;},&quot;licence&quot;:{&quot;editor&quot;:&quot;text&quot;,&quot;default&quot;:&quot;MIT&quot;,&quot;tsType&quot;:&quot;string&quot;},&quot;keywords&quot;:{&quot;editor&quot;:&quot;text&quot;,&quot;default&quot;:&quot;disperser diffusion smear allpass&quot;,&quot;tsType&quot;:&quot;string&quot;},&quot;provenance&quot;:{&quot;editor&quot;:&quot;text&quot;,&quot;default&quot;:&quot;orange-catalog #412&quot;,&quot;tsType&quot;:&quot;string&quot;},&quot;homepage&quot;:{&quot;editor&quot;:&quot;text&quot;,&quot;default&quot;:&quot;github.com/kirkwood/disperser&quot;,&quot;tsType&quot;:&quot;string&quot;},&quot;replacementName&quot;:{&quot;editor&quot;:&quot;text&quot;,&quot;default&quot;:&quot;DISPERSER II&quot;,&quot;tsType&quot;:&quot;string&quot;},&quot;onClose&quot;:{&quot;editor&quot;:null,&quot;tsType&quot;:&quot;() =&gt; void&quot;},&quot;onPrimary&quot;:{&quot;editor&quot;:null,&quot;tsType&quot;:&quot;(action: string) =&gt; void&quot;},&quot;onReplacement&quot;:{&quot;editor&quot;:null,&quot;tsType&quot;:&quot;() =&gt; void&quot;},&quot;onProvenance&quot;:{&quot;editor&quot;:null,&quot;tsType&quot;:&quot;() =&gt; void&quot;}}">
+const KIND = { DEVICE: "Device", MODULATOR: "Modulator", MODULE: "Module" };
+class Component extends DCLogic {
+  renderVals() {
+    const p = this.props;
+    const status = p.status ?? "Available";
+    const compatible = p.compatible ?? true;
+    const kw = p.keywords || "disperser diffusion smear allpass";
+    const primary = { "Available": "Install", "Update available": "Update\u2026", "Installed": "", "Superseded": "", "Incompatible": "", "Download failed": "Retry", "Verification failed": "Copy details" }[status] ?? "Install";
+    return {
+      kindLabel: (KIND[p.kind ?? "DEVICE"] || p.kind).toLowerCase(),
+      name: p.itemName ?? "DISPERSER",
+      author: p.author ?? "kirkwood",
+      version: p.version ?? "1.2.0",
+      description: p.description || "An allpass diffusion network for smearing transients into a wash without the tail of a reverb.",
+      requires: p.requires ?? "6.0",
+      requiresIcon: compatible ? "ph-duotone ph-check-circle" : "ph-duotone ph-warning-circle",
+      requiresColor: compatible ? "var(--ink-2)" : "var(--err-text)",
+      licence: p.licence ?? "MIT",
+      keywords: kw.split(/\s+/).filter(Boolean),
+      provenance: p.provenance ?? "orange-catalog #412",
+      homepage: p.homepage ?? "",
+      hasHomepage: !!p.homepage,
+      uuid: p.uuid ?? "21882ab0-7c41-4d0b-9a10-ff3e5d2e77a1",
+      isSuperseded: status === "Superseded",
+      replacementName: p.replacementName || "a newer device",
+      hasRemove: ["Installed", "Update available", "Superseded"].includes(status),
+      hasPrimary: !!primary,
+      primary,
+      primaryStyle: [
+        "display:flex", "align-items:center", "height:32px", "padding:0 14px", "border-radius:3px",
+        "font-size:12px", "font-weight:600", "letter-spacing:-0.01em", "cursor:pointer",
+        "background:var(--accent)", "color:var(--accent-ink)"
+      ].join(";"),
+      onClose: () => p.onClose && p.onClose(),
+      onPrimary: () => p.onPrimary && p.onPrimary(primary),
+      onReplacement: () => p.onReplacement && p.onReplacement(),
+      onProvenance: () => p.onProvenance && p.onProvenance()
+    };
+  }
+}
+
+</script>
+</body>
+</html>

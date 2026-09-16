@@ -24,6 +24,13 @@ either MIT or Apache-2.0, at your choice.
 anything you distribute that depends on it is a combined work and must be
 GPL-3.0.
 
+## Why `-only` and not `-or-later`
+
+`GPL-3.0-only` is a deliberate choice, not an inherited default. `-or-later` licenses this
+code under terms nobody has read yet, and the move from GPL-2.0 to GPL-3.0 was contentious
+enough to show that a future version can change the bargain rather than restate it. A
+relicence remains possible; it just has to be a decision rather than an automatic one.
+
 ## Why not permissive throughout
 
 Krakatau does the part that is genuinely hard: reassembling a class and

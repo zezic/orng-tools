@@ -1,6 +1,6 @@
 # Registry manager - UI requirements
 
-App name: **Orng Registry** (binary `orng-registry`).
+App name: **ORNG Registry** (binary `orng-registry`).
 
 This document specifies **what must exist in the UI and how it must behave**. It does
 not specify visual design. Layout sketches here are structural hints only; the designer

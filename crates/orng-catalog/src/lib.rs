@@ -1,9 +1,9 @@
 // SPDX-FileCopyrightText: 2026 Sergey Ukolov
 // SPDX-License-Identifier: MIT OR Apache-2.0
 
-//! The Orng Catalog repository format.
+//! The ORNG Catalog repository format.
 //!
-//! Orng Catalog is not a file host -- content is tens of kilobytes. It is an
+//! ORNG Catalog is not a file host -- content is tens of kilobytes. It is an
 //! identity authority: its job is to guarantee that a UUID means one thing,
 //! permanently, across contributors who do not know each other. Every rule in
 //! [`validate`] exists to hold that guarantee.

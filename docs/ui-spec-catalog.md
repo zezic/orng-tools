@@ -1,4 +1,4 @@
-# Orng Catalog - UI requirements (design round 2)
+# ORNG Catalog - UI requirements (design round 2)
 
 Read with `ui-spec.md` (the app as designed so far) and `design-review.md` (corrections to
 round 1, which are still outstanding). This document covers one new feature and only the
@@ -10,8 +10,8 @@ Same rules as before: this says what must exist and how it must behave, not how 
 
 ## 1. What the catalog is
 
-**Orng Catalog** is a public, curated repository of devices, modulators and Grid modules
-contributed by the community. Orng Registry can install from it directly, so a user gets
+**ORNG Catalog** is a public, curated repository of devices, modulators and Grid modules
+contributed by the community. ORNG Registry can install from it directly, so a user gets
 one place to see what exists instead of hunting for downloads, unzipping archives and
 dragging files.
 

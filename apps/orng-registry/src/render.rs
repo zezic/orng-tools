@@ -74,13 +74,6 @@ fn build() -> Option<orng_tools::BuildId> {
     })
 }
 
-/// The date the sample backup was taken, as the session would have formatted it.
-///
-/// A string and not an instant: an instant is rendered in the time zone of
-/// whoever renders it, so a picture of one taken here and a picture taken on a
-/// runner eight hours behind would disagree about the day.
-const BACKUP_TAKEN: &str = "14 Sep 2026";
-
 fn destination(fixture: &std::path::Path) -> Destination {
     Destination {
         install: orng_tools::testing::install(&install_root(fixture)),
@@ -115,14 +108,6 @@ fn running_found(
         condition: Condition { build: build(), helper, guard },
         running,
         entries,
-        backup: match helper {
-            // A prepared installation has been through preparation, and
-            // preparation takes a backup before it writes. A fixed instant, so
-            // the date in the picture is the same on every machine and in every
-            // year.
-            Helper::Present => Some(BACKUP_TAKEN.to_owned()),
-            Helper::Absent => None,
-        },
     }))
 }
 
@@ -182,6 +167,28 @@ fn dropped(root: &std::path::Path, to: &Destination, entries: &Manifest) -> Vec<
 /// out loud - the same discipline `ORNG_SKIP_BITWIG_TESTS` exists for.
 fn look<S>(harness: &mut Harness<'_, S>, name: &str) {
     harness.run();
+    compare(harness, name);
+}
+
+/// The same, for a state egui itself keeps repainting.
+///
+/// `run` is the assertion that the interface has settled, and it is the check
+/// that no timer has crept back in. One state is exempt and only one: egui asks
+/// for an immediate repaint on every pass while `hovered_files` is non-empty,
+/// because a drag is a gesture in progress and the window has to stay live for
+/// it. That is egui's decision, in `InputState::wants_repaint_after`, and not
+/// this application polling - so these draw a fixed number of passes instead of
+/// waiting for a quiet that cannot come.
+fn look_while_dragging<S>(harness: &mut Harness<'_, S>, name: &str) {
+    harness.run_steps(SETTLING_PASSES);
+    compare(harness, name);
+}
+
+/// Enough passes for a layout to settle and for the named font family to bind,
+/// which takes the pass after the one that installed it.
+const SETTLING_PASSES: usize = 3;
+
+fn compare<S>(harness: &mut Harness<'_, S>, name: &str) {
     let skipping = std::env::var_os("ORNG_SKIP_RENDER_SNAPSHOTS")
         .is_some_and(|value| !value.is_empty());
     if skipping {
@@ -198,13 +205,13 @@ fn shot_applying(name: &str, applying: Applying) {
     let mut app: Option<App> = None;
     let mut session = Some(session);
     let mut applying = Some(applying);
-    let mut harness = Harness::builder().with_size(SIZE).build(move |ctx| {
+    let mut harness = Harness::builder().with_size(SIZE).build_ui(move |ui| {
         let app = app.get_or_insert_with(|| {
-            let mut app = App::with(ctx, session.take().expect("built once"));
+            let mut app = App::with(ui.ctx(), session.take().expect("built once"));
             app.set_applying(applying.take().expect("built once"));
             app
         });
-        app.draw(ctx);
+        app.draw(ui);
     });
     look(&mut harness, name);
 }
@@ -220,13 +227,13 @@ fn shot_staged(name: &str, helper: Helper, guard: GuardState) {
     let mut app: Option<App> = None;
     let mut session = Some(session);
     let mut staged = Some(staged);
-    let mut harness = Harness::builder().with_size(SIZE).build(move |ctx| {
+    let mut harness = Harness::builder().with_size(SIZE).build_ui(move |ui| {
         let app = app.get_or_insert_with(|| {
-            let mut app = App::with(ctx, session.take().expect("built once"));
+            let mut app = App::with(ui.ctx(), session.take().expect("built once"));
             app.set_staged(staged.take().expect("built once"));
             app
         });
-        app.draw(ctx);
+        app.draw(ui);
     });
     look(&mut harness, name);
 }
@@ -247,15 +254,15 @@ fn shot_dragging(name: &str, over: &[&str]) {
 
     let mut app: Option<App> = None;
     let mut session = Some(session);
-    let mut harness = Harness::builder().with_size(SIZE).build(move |ctx| {
-        let app = app.get_or_insert_with(|| App::with(ctx, session.take().expect("built once")));
-        app.draw(ctx);
+    let mut harness = Harness::builder().with_size(SIZE).build_ui(move |ui| {
+        let app = app.get_or_insert_with(|| App::with(ui.ctx(), session.take().expect("built once")));
+        app.draw(ui);
     });
     harness.input_mut().hovered_files = over
         .iter()
         .map(|file| egui::HoveredFile { path: Some(drop.join(file)), ..Default::default() })
         .collect();
-    look(&mut harness, name);
+    look_while_dragging(&mut harness, name);
 }
 
 /// Render the catalog view with a fetch held still.
@@ -265,14 +272,14 @@ fn shot_catalog(name: &str, fetching: Fetching) {
     let mut app: Option<App> = None;
     let mut session = Some(session);
     let mut fetching = Some(fetching);
-    let mut harness = Harness::builder().with_size(SIZE).build(move |ctx| {
+    let mut harness = Harness::builder().with_size(SIZE).build_ui(move |ui| {
         let app = app.get_or_insert_with(|| {
-            let mut app = App::with(ctx, session.take().expect("built once"));
+            let mut app = App::with(ui.ctx(), session.take().expect("built once"));
             app.set_catalog(fetching.take().expect("built once"));
             app.show_view(View::Catalog);
             app
         });
-        app.draw(ctx);
+        app.draw(ui);
     });
     look(&mut harness, name);
 }
@@ -281,12 +288,12 @@ fn shot_catalog(name: &str, fetching: Fetching) {
 fn shot(name: &str, session: Session, view: View, dark: bool) {
     let mut app: Option<App> = None;
     let mut session = Some(session);
-    let mut harness = Harness::builder().with_size(SIZE).build(move |ctx| {
+    let mut harness = Harness::builder().with_size(SIZE).build_ui(move |ui| {
         let app = app
-            .get_or_insert_with(|| App::with(ctx, session.take().expect("built once")));
-        app.set_theme(dark, ctx);
+            .get_or_insert_with(|| App::with(ui.ctx(), session.take().expect("built once")));
+        app.set_theme(dark, ui.ctx());
         app.show_view(view);
-        app.draw(ctx);
+        app.draw(ui);
     });
     look(&mut harness, name);
 }
@@ -316,7 +323,7 @@ fn nothing_installed() {
     shot(
         "no-installation",
         Session::NoInstallation {
-            searched: "searched /Applications/Bitwig Studio.app".to_owned(),
+            searched: "/Applications, ~/Applications and /opt/bitwig-studio".to_owned(),
         },
         View::Local,
         true,
@@ -437,13 +444,13 @@ fn the_filters_match_nothing() {
     let session = found(&root, Helper::Present, GuardState::Disarmed);
     let mut app: Option<App> = None;
     let mut session = Some(session);
-    let mut harness = Harness::builder().with_size(SIZE).build(move |ctx| {
+    let mut harness = Harness::builder().with_size(SIZE).build_ui(move |ui| {
         let app = app.get_or_insert_with(|| {
-            let mut app = App::with(ctx, session.take().expect("built once"));
+            let mut app = App::with(ui.ctx(), session.take().expect("built once"));
             app.set_query("wavesh");
             app
         });
-        app.draw(ctx);
+        app.draw(ui);
     });
     look(&mut harness, "no-match");
 }

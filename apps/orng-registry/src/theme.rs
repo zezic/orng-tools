@@ -241,7 +241,16 @@ pub mod font {
     /// A count or a build revision, which sit beside text rather than in it.
     pub const MONO_TIGHT: f32 = 10.0;
     /// An empty state's headline.
-    pub const HEADING: f32 = 17.0;
+    pub const HEADING: f32 = 16.5;
+    /// The headline of a minor empty state, which is a sentence and not a
+    /// heading.
+    pub const SUBHEADING: f32 = 13.0;
+    /// An icon, which the design sizes with the text it sits beside.
+    pub const ICON: f32 = 16.0;
+    /// The one icon a screen is built around.
+    pub const ICON_LARGE: f32 = 54.0;
+    /// The icon of a minor empty state.
+    pub const ICON_SMALL: f32 = 36.0;
 
     pub fn plain(size: f32) -> FontId {
         FontId::new(size, FontFamily::Proportional)
@@ -258,8 +267,17 @@ pub mod font {
     /// render harness happens inside a pass. Asking for a family that is not
     /// bound panics, so the answer is the regular face until it is.
     pub fn emphasis(ctx: &egui::Context, size: f32) -> FontId {
-        let bound = ctx.fonts(|fonts| fonts.families().iter().any(|f| *f == super::emphasis()));
-        if bound { FontId::new(size, super::emphasis()) } else { plain(size) }
+        named(ctx, super::emphasis(), size)
+    }
+
+    /// An icon from the design's set, at the size of the text it sits beside.
+    pub fn icon(ctx: &egui::Context, size: f32) -> FontId {
+        named(ctx, super::icons(), size)
+    }
+
+    fn named(ctx: &egui::Context, family: FontFamily, size: f32) -> FontId {
+        let bound = ctx.fonts(|fonts| fonts.families().contains(&family));
+        if bound { FontId::new(size, family) } else { plain(size) }
     }
 }
 
@@ -309,11 +327,37 @@ pub fn install_fonts(ctx: &egui::Context) {
     // what the empty state once did, so `font::emphasis` asks first.
     family(&mut fonts, FontFamily::Name(EMPHASIS.into()), &["inter-medium", "iosevka-medium"]);
 
+    // The design's own icon set, drawn as text. Phosphor is MIT licensed, and
+    // Light is the weight the design asks for by name on its largest icons. It
+    // draws the small ones in `duotone`, which is two overlapping glyphs in two
+    // colours and has no single-colour font to be drawn from; light is the
+    // nearest single weight there is.
+    //
+    // A family of its own, with nothing in front of it, and that is the whole
+    // point. Phosphor lives in the Private Use Area - and so does InterDisplay,
+    // which carries 745 glyphs there for its stylistic alternates. Adding the
+    // icons to the proportional family as a fallback puts them behind Inter,
+    // which then answers for every codepoint the two happen to share: the
+    // folder became an r-acute, the overflow an o-ogonek, and the tray an
+    // e-circumflex, while the magnifying glass and the tick came out right
+    // because Inter does not claim those two.
+    let icons = egui_phosphor::Variant::Light.font_bytes();
+    fonts.font_data.insert("phosphor".to_owned(), Arc::new(FontData::from_static(icons)));
+    family(&mut fonts, FontFamily::Name(ICONS.into()), &["phosphor"]);
+
     ctx.set_fonts(fonts);
 }
 
 /// The heavier of the two weights the design uses.
 const EMPHASIS: &str = "emphasis";
+
+/// The design's icon set, alone in a family so that nothing can answer for it.
+const ICONS: &str = "icons";
+
+/// That set as a family, for the one call that has to name it.
+pub fn icons() -> FontFamily {
+    FontFamily::Name(ICONS.into())
+}
 
 /// That weight as a family, for the one call that has to name it.
 pub fn emphasis() -> FontFamily {
@@ -322,8 +366,14 @@ pub fn emphasis() -> FontFamily {
 
 /// Apply the whole theme to a context. Called once at startup.
 pub fn apply(ctx: &egui::Context, palette: Palette) {
-    let mut style = (*ctx.style()).clone();
+    // Every theme egui keeps, not just the current one. This application picks
+    // its own palette and never follows the system, so leaving the other theme
+    // at egui's defaults would mean a control drawn from it arrived in the
+    // wrong colours.
+    ctx.all_styles_mut(|style| apply_to(style, palette));
+}
 
+fn apply_to(style: &mut egui::Style, palette: Palette) {
     // What egui draws for itself - the text inside a `Button`, a tooltip - in
     // the sizes the design gives the same things. Everything this application
     // draws by hand names a `font::` role instead.
@@ -384,13 +434,21 @@ pub fn apply(ctx: &egui::Context, palette: Palette) {
     w.open.fg_stroke = Stroke::new(metric::HAIRLINE, palette.ink);
     w.open.corner_radius = radius;
 
+    // egui grows a widget by a pixel when it is hovered and again when it is
+    // pressed. The design does neither: hovering changes the fill and nothing
+    // else, and a control that changes size under the pointer makes a bar full
+    // of them twitch as the pointer crosses it.
+    for state in
+        [&mut w.noninteractive, &mut w.inactive, &mut w.hovered, &mut w.active, &mut w.open]
+    {
+        state.expansion = 0.0;
+    }
+
     let spacing = &mut style.spacing;
     spacing.item_spacing = egui::vec2(metric::TIGHT, metric::TIGHT);
     spacing.button_padding = egui::vec2(10.0, 5.0);
     spacing.menu_margin = egui::Margin::same(6);
-    spacing.interact_size.y = 24.0;
-
-    ctx.set_style(style);
+    spacing.interact_size.y = metric::CONTROL;
 }
 
 #[cfg(test)]

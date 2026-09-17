@@ -12,7 +12,7 @@ orng-tools.workspace = true
 # that fails to start on a machine whose graphics are fine. eframe's default
 # features are kept because they are what supply wgpu's platform backends;
 # turning them off builds a wgpu with no backend and panics on the first frame.
-eframe = { version = "0.33", features = ["wgpu"] }
+eframe = { version = "0.36", features = ["wgpu"] }
 orng-catalog.workspace = true
 
 # Blocking, which is what suits a fetch already running on a worker thread, and
@@ -23,9 +23,10 @@ ureq = { version = "3", default-features = false, features = ["rustls"] }
 # only way in, and a file dialog is the platform's to draw. The XDG portal
 # rather than GTK on Linux: the portal is a D-Bus call to whatever the desktop
 # already runs, so nothing here links a toolkit and no runner has to install
-# one to build this.
-rfd = { version = "0.15", default-features = false, features = ["xdg-portal", "tokio"] }
-jiff = { version = "0.2.37", default-features = false, features = ["std", "tz-system"] }
+# one to build this. Named rather than left to the default, because the default
+# is what would quietly become GTK again.
+rfd = { version = "0.17", default-features = false, features = ["xdg-portal"] }
+egui-phosphor = { version = "0.14", default-features = false, features = ["light"] }
 
 # Rendering the interface headlessly, so a change can be looked at rather than
 # reasoned about. egui places widgets in ways that are hard to predict from the
@@ -35,5 +36,5 @@ jiff = { version = "0.2.37", default-features = false, features = ["std", "tz-sy
 # The synthetic document fixture, so that what a test drops is built by the
 # crate that knows the format rather than by a second copy of its header.
 orng-tools = { workspace = true, features = ["testing"] }
-egui_kittest = { version = "0.33", features = ["wgpu", "snapshot"] }
+egui_kittest = { version = "0.36", features = ["wgpu", "snapshot"] }
 tempfile.workspace = true

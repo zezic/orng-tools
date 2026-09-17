@@ -27,8 +27,7 @@ orng-tools = { path = "crates/orng-tools", version = "0.1.0" }
 krakatau2 = { git = "https://github.com/zezic/Krakatau.git", rev = "dc7840619881edd7979eb952c7752e78fd7f1f26" }
 thiserror = "2"
 uuid = { version = "1", features = ["v4"] }
-indexmap = "2"
-zip = { version = "2", default-features = false, features = ["deflate"] }
-sysinfo = { version = "0.33", default-features = false, features = ["system"] }
+zip = { version = "8", default-features = false, features = ["deflate"] }
+sysinfo = { version = "0.39", default-features = false, features = ["system"] }
 tempfile = "3"
 clap = { version = "4", features = ["derive"] }

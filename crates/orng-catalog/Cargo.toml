@@ -12,7 +12,7 @@ thiserror.workspace = true
 uuid = { workspace = true, features = ["serde"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
-toml = "0.9"
+toml = "1"
 sha2 = "0.11"
 # BSD-3-Clause, pure Rust, and four crates deep: curve25519-dalek, ed25519,
 # sha2 and subtle. Permissive, so it does not change what this crate may be

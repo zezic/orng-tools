@@ -99,10 +99,49 @@ pub fn filter_chip(ui: &mut Ui, palette: Palette, label: &str, count: usize, on:
     .on_hover_cursor(egui::CursorIcon::PointingHand)
 }
 
+/// An icon and a label as one run of text.
+///
+/// The icon font is a fallback inside the proportional family, so an icon is a
+/// character; what it is not is the same size as the words beside it, which is
+/// why this is a job and not a string.
+fn with_icon(
+    ui: &Ui,
+    icon: &str,
+    label: &str,
+    size: f32,
+    ink: Color32,
+    icon_ink: Color32,
+) -> egui::WidgetText {
+    let mut job = egui::text::LayoutJob::default();
+    job.append(
+        icon,
+        0.0,
+        egui::TextFormat {
+            font_id: font::icon(ui.ctx(), font::ICON),
+            color: icon_ink,
+            valign: Align::Center,
+            ..Default::default()
+        },
+    );
+    if !label.is_empty() {
+        job.append(
+            label,
+            metric::TIGHT,
+            egui::TextFormat {
+                font_id: font::plain(size),
+                color: ink,
+                valign: Align::Center,
+                ..Default::default()
+            },
+        );
+    }
+    job.into()
+}
+
 /// A quiet control in a bar: `Change install`, `Add files...`.
-pub fn small_button(ui: &mut Ui, palette: Palette, label: &str) -> Response {
+pub fn small_button(ui: &mut Ui, palette: Palette, icon: &str, label: &str) -> Response {
     ui.add(
-        egui::Button::new(RichText::new(label).font(font::plain(font::CHIP)).color(palette.ink))
+        egui::Button::new(with_icon(ui, icon, label, font::CHIP, palette.ink, palette.ink_2))
             .fill(palette.btn)
             .stroke(Stroke::NONE)
             .corner_radius(CornerRadius::same(metric::RADIUS))
@@ -152,12 +191,37 @@ pub fn primary_button(
     ui: &mut Ui,
     palette: Palette,
     label: &str,
+    icon: &str,
     enabled: bool,
     reason: &str,
 ) -> Response {
     let (fill, ink) =
         if enabled { (palette.accent, palette.accent_ink) } else { (palette.btn, palette.ink_3) };
-    let text = RichText::new(label).font(font::emphasis(ui.ctx(), font::ACTION)).color(ink);
+    // The label first and the icon after it, as the design has it: the words
+    // say what will happen and the arrow says only that something will.
+    let mut text = egui::text::LayoutJob::default();
+    text.append(
+        label,
+        0.0,
+        egui::TextFormat {
+            font_id: font::emphasis(ui.ctx(), font::ACTION),
+            color: ink,
+            valign: Align::Center,
+            ..Default::default()
+        },
+    );
+    if !icon.is_empty() {
+        text.append(
+            icon,
+            metric::TOOL_GAP,
+            egui::TextFormat {
+                font_id: font::icon(ui.ctx(), font::ICON),
+                color: ink,
+                valign: Align::Center,
+                ..Default::default()
+            },
+        );
+    }
     let button = egui::Button::new(text)
         .fill(fill)
         .stroke(Stroke::NONE)
@@ -172,34 +236,44 @@ pub fn primary_button(
     }
 }
 
-/// The three dots of the overflow control. Small enough to read as punctuation
-/// rather than as content, which is what the control is.
-const DOT_RADIUS: f32 = 1.3;
-const DOT_SPACING: f32 = 4.0;
-
 /// The overflow control, and the menu behind it.
-///
-/// Three dots painted rather than set in an icon font: the design's icon set is
-/// not redistributable with this application, and a glyph borrowed from
-/// somewhere else would be the one thing on screen that is not the design's.
 pub fn overflow(ui: &mut Ui, palette: Palette, menu: impl FnOnce(&mut Ui)) {
     let response = ui.add(
-        egui::Button::new("")
-            .fill(Color32::TRANSPARENT)
-            .stroke(Stroke::NONE)
-            .corner_radius(CornerRadius::same(metric::RADIUS))
-            .min_size(vec2(metric::CONTROL, metric::CONTROL)),
+        egui::Button::new(
+            RichText::new(icon::OVERFLOW).font(font::icon(ui.ctx(), font::ICON)).color(palette.ink_2),
+        )
+        .fill(Color32::TRANSPARENT)
+        .stroke(Stroke::NONE)
+        .corner_radius(CornerRadius::same(metric::RADIUS))
+        .min_size(vec2(metric::CONTROL, metric::CONTROL)),
     );
-    let colour = if response.hovered() { palette.ink } else { palette.ink_2 };
-    let centre = response.rect.center();
-    for step in [-1.0f32, 0.0, 1.0] {
-        ui.painter().circle_filled(
-            egui::pos2(centre.x, centre.y + step * DOT_SPACING),
-            DOT_RADIUS,
-            colour,
-        );
-    }
     response.on_hover_cursor(egui::CursorIcon::PointingHand).context_menu(menu);
+}
+
+/// The icons the design names, by the job each does here rather than by the
+/// shape it happens to be. One list, so a screen never reaches into the icon
+/// crate and picks a different glyph for the same idea.
+pub mod icon {
+    use egui_phosphor::light;
+
+    pub const OVERFLOW: &str = light::DOTS_THREE_OUTLINE_VERTICAL;
+    pub const CHANGE_INSTALL: &str = light::FOLDER_OPEN;
+    pub const ADD_FILES: &str = light::FILE_PLUS;
+    pub const SEARCH: &str = light::MAGNIFYING_GLASS;
+    pub const SETTINGS: &str = light::GEAR_SIX;
+    pub const RESTORE: &str = light::CLOCK_COUNTER_CLOCKWISE;
+    pub const ABOUT: &str = light::INFO;
+    pub const COPY: &str = light::COPY;
+    /// On the primary action: an arrow when the press leads somewhere, a tick
+    /// when it simply does the thing.
+    pub const PREPARE: &str = light::ARROW_RIGHT;
+    pub const APPLY: &str = light::CHECK;
+    /// The one icon an empty state is built around.
+    pub const DROP: &str = light::TRAY_ARROW_DOWN;
+    pub const NO_INSTALL: &str = light::FOLDER_DASHED;
+    pub const UNREADABLE: &str = light::QUESTION;
+    pub const NO_MATCH: &str = light::FUNNEL_X;
+    pub const CATALOG: &str = light::PACKAGE;
 }
 
 /// Wide enough for the longest item the menu carries, so the menu does not
@@ -207,9 +281,9 @@ pub fn overflow(ui: &mut Ui, palette: Palette, menu: impl FnOnce(&mut Ui)) {
 const MENU_WIDTH: f32 = 176.0;
 
 /// One line of the overflow menu.
-pub fn menu_item(ui: &mut Ui, palette: Palette, label: &str) -> Response {
+pub fn menu_item(ui: &mut Ui, palette: Palette, icon: &str, label: &str) -> Response {
     ui.add(
-        egui::Button::new(RichText::new(label).font(font::plain(font::CONTROL)).color(palette.ink))
+        egui::Button::new(with_icon(ui, icon, label, font::CONTROL, palette.ink, palette.ink_3))
             .fill(Color32::TRANSPARENT)
             .stroke(Stroke::NONE)
             .min_size(vec2(MENU_WIDTH, 0.0)),
@@ -382,20 +456,147 @@ pub fn banner(ui: &mut Ui, palette: Palette, tone: Tone, title: &str, body: &str
         });
 }
 
-/// A view with nothing in it, or nothing that can be shown.
+/// A screen with nothing on it, as the design writes one.
 ///
-/// Centred, quiet, and always two lines: what the situation is, and what to do
-/// about it. A heading with no second line reads as an error even when it is
-/// only an empty list.
-pub fn empty_state(ui: &mut Ui, palette: Palette, heading: &str, detail: &str) {
+/// Every field here is a field the design's `EmptyState` has, and every string
+/// that fills one is the design's own. The copy is the part of an empty state
+/// that does the work - it is the only thing on screen - and it had already been
+/// written down.
+pub struct Empty<'a> {
+    pub icon: &'a str,
+    /// The accent is for the state that is an invitation. Everything else is
+    /// quiet, because nothing here is wrong.
+    pub inviting: bool,
+    pub title: &'a str,
+    pub body: &'a str,
+    /// The three extensions a drop accepts, in monospace under the body.
+    pub extensions: bool,
+    pub aside: Option<&'a str>,
+    pub action: Option<&'a str>,
+    /// Whether the action is the accent-filled one. A filter matching nothing
+    /// offers a way out, not a thing to do, and the design draws it quietly.
+    pub action_is_primary: bool,
+    pub alt: Option<&'a str>,
+    pub foot: Option<&'a str>,
+    /// A filter matching nothing is a smaller event than an installation that
+    /// cannot be read, and the design draws it smaller.
+    pub minor: bool,
+}
+
+/// Which of an empty state's two controls was pressed, if either was.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Pressed {
+    Nothing,
+    Action,
+    Alt,
+}
+
+/// How far the corner marks sit in, and how long their arms are.
+const MARK_INSET: f32 = 16.0;
+const MARK_ARM: f32 = 11.0;
+/// How wide the body is allowed to run before it wraps. Prose set the full
+/// width of a window is prose nobody finishes.
+const BODY_WIDTH: f32 = 430.0;
+
+pub fn empty_state(ui: &mut Ui, palette: Palette, empty: &Empty<'_>) -> Pressed {
+    let region = ui.available_rect_before_wrap();
+    if !empty.minor {
+        corner_marks(ui, palette, region);
+    }
+
+    let mut pressed = Pressed::Nothing;
+    let title_size = if empty.minor { font::SUBHEADING } else { font::HEADING };
+    let icon_size = if empty.minor { font::ICON_SMALL } else { font::ICON_LARGE };
+    let icon_ink = if empty.inviting { palette.accent } else { palette.ink_3 };
+
     ui.vertical_centered(|ui| {
-        ui.add_space(ui.available_height() * 0.3);
+        ui.add_space(region.height() * 0.24);
+        ui.label(RichText::new(empty.icon).font(font::icon(ui.ctx(), icon_size)).color(icon_ink));
+        ui.add_space(metric::GAP);
         ui.label(
-            RichText::new(heading).font(font::emphasis(ui.ctx(), font::HEADING)).color(palette.ink),
+            RichText::new(empty.title)
+                .font(font::emphasis(ui.ctx(), title_size))
+                .color(palette.ink),
         );
         ui.add_space(metric::TIGHT);
-        ui.label(RichText::new(detail).font(font::plain(font::CONTROL)).color(palette.ink_3));
+        ui.allocate_ui_with_layout(
+            vec2(BODY_WIDTH, 0.0),
+            Layout::top_down(Align::Center),
+            |ui| {
+                ui.label(
+                    RichText::new(empty.body).font(font::plain(font::CONTROL)).color(palette.ink_2),
+                );
+                if empty.extensions {
+                    ui.add_space(metric::GAP);
+                    ui.label(
+                        RichText::new(".bwdevice    .bwmodulator    .bwmodule")
+                            .font(font::mono(font::MONO))
+                            .color(palette.ink_3),
+                    );
+                }
+                if let Some(aside) = empty.aside {
+                    ui.add_space(metric::GAP);
+                    ui.label(
+                        RichText::new(aside).font(font::plain(font::CHIP)).color(palette.ink_3),
+                    );
+                }
+            },
+        );
+
+        if empty.action.is_some() || empty.alt.is_some() {
+            ui.add_space(metric::GAP);
+            ui.horizontal(|ui| {
+                // Centred as a block. A row laid out left to right inside a
+                // centred column still starts at the left edge of it.
+                let controls = empty.action.iter().chain(empty.alt.iter());
+                let width: f32 = controls
+                    .map(|label| label.len() as f32 * BUTTON_WIDTH_PER_CHAR + BUTTON_PADDING)
+                    .sum::<f32>()
+                    + metric::TOOL_GAP;
+                ui.add_space((ui.available_width() - width) / 2.0);
+                if let Some(action) = empty.action {
+                    let hit = if empty.action_is_primary {
+                        primary_button(ui, palette, action, "", true, "").clicked()
+                    } else {
+                        small_button(ui, palette, "", action).clicked()
+                    };
+                    if hit {
+                        pressed = Pressed::Action;
+                    }
+                }
+                if let Some(alt) = empty.alt
+                    && small_button(ui, palette, "", alt).clicked()
+                {
+                    pressed = Pressed::Alt;
+                }
+            });
+        }
+        if let Some(foot) = empty.foot {
+            ui.add_space(metric::GAP);
+            ui.label(RichText::new(foot).font(font::plain(font::NOTE)).color(palette.ink_3));
+        }
     });
+    pressed
+}
+
+/// Roughly how wide a character of button text is, for centring a pair of them
+/// before either has been laid out. An estimate, and only ever used to centre:
+/// being a few pixels out moves the block, it does not break it.
+const BUTTON_WIDTH_PER_CHAR: f32 = 6.2;
+const BUTTON_PADDING: f32 = 40.0;
+
+/// The four corner marks the design puts around a full-region empty state.
+fn corner_marks(ui: &Ui, palette: Palette, region: Rect) {
+    let stroke = Stroke::new(metric::HAIRLINE, palette.line);
+    let inner = region.shrink(MARK_INSET);
+    let painter = ui.painter();
+    for (x, dx) in [(inner.left(), 1.0), (inner.right(), -1.0)] {
+        for (y, dy) in [(inner.top(), 1.0f32), (inner.bottom(), -1.0)] {
+            let corner = egui::pos2(x, y);
+            painter.line_segment([corner, egui::pos2(x + dx * MARK_ARM, y)], stroke);
+            painter.line_segment([corner, egui::pos2(x, y + dy * MARK_ARM)], stroke);
+        }
+    }
 }
 
 /// One step of a preparation, as a row of the progress list.

@@ -13,11 +13,9 @@
 //! or a build number while there is no installation to have one - the case the
 //! interface has an empty state for.
 
-use std::time::SystemTime;
-
 use orng_tools::{
-    Backup, Condition, Destination, GuardState, Helper, Installation, Manifest, RunState, Strategy,
-    prepare, running_state,
+    Condition, Destination, GuardState, Helper, InstallError, Installation, Manifest, RunState,
+    Strategy, prepare, running_state,
 };
 
 /// Where documents go until there is a setting for it.
@@ -52,13 +50,6 @@ pub struct Found {
     pub running: RunState,
     /// Everything this app has registered.
     pub entries: Manifest,
-    /// The date the most recent backup was taken, if there has ever been one.
-    ///
-    /// Formatted here, where it is read, and not where it is drawn. A timestamp
-    /// rendered at the point of drawing is rendered in the drawing machine's
-    /// time zone, which makes what is on screen a function of who is looking -
-    /// and makes a rendered picture of it unreproducible off this continent.
-    pub backup: Option<String>,
 }
 
 impl Session {
@@ -66,7 +57,7 @@ impl Session {
     pub fn read() -> Session {
         let install = match Installation::discover() {
             Ok(install) => install,
-            Err(e) => return Session::NoInstallation { searched: e.to_string() },
+            Err(e) => return Session::NoInstallation { searched: searched_in(&e) },
         };
         Session::at(install)
     }
@@ -97,7 +88,6 @@ impl Session {
 
         Session::Found(Box::new(Found {
             running: running_state(&to.install),
-            backup: latest_backup(&to),
             condition,
             to,
             entries,
@@ -105,16 +95,16 @@ impl Session {
     }
 }
 
-/// The date of the most recent backup, across every build that has one.
+/// The places that were looked at, without the sentence wrapped around them.
 ///
-/// A directory that cannot be read, or one whose date cannot be, is treated as
-/// no backup: the indicator states presence, and a presence it cannot prove is
-/// one it must not claim.
-fn latest_backup(to: &Destination) -> Option<String> {
-    let taken: SystemTime =
-        Backup::list(&to.home).ok()?.iter().filter_map(|backup| backup.taken_at().ok()).max()?;
-    let stamp = jiff::Timestamp::try_from(taken).ok()?;
-    Some(stamp.to_zoned(jiff::tz::TimeZone::system()).strftime("%-d %b %Y").to_string())
+/// The interface puts this inside a sentence of its own, so it wants the list
+/// and not the library's phrasing - otherwise the two read as one sentence
+/// containing two.
+fn searched_in(error: &InstallError) -> String {
+    match error {
+        InstallError::NoInstallation { searched } => searched.clone(),
+        other => other.to_string(),
+    }
 }
 
 /// What the install bar's badge says about the registry.
@@ -235,7 +225,6 @@ mod tests {
             condition: condition(guard, helper),
             running: RunState::Clear,
             entries: Manifest::parse(entries).expect("the sample list parses"),
-            backup: None,
         }
     }
 

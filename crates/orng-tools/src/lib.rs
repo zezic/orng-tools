@@ -43,6 +43,8 @@ pub use bitwig_document::{BitwigVersion, Document, Identity, Kind, Serialization
 /// Why a document could not be read, in enough detail for an application to say
 /// so in its own words rather than repeat this crate's.
 pub use bitwig_document::Error as DocumentError;
+/// Why an installation could not be found, for the same reason.
+pub use bitwig_install::Error as InstallError;
 pub use bitwig_install::{AppData, Installation, RunState, UserLibrary, running_state};
 pub use bitwig_registry::{Anchor, Binding, BuildId, Entry, GuardState};
 pub use entries::Update;

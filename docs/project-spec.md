@@ -5,8 +5,9 @@ is. Where this document and another disagree, this one is wrong and should be fi
 meant to be the thing that keeps the vision from drifting, not a record of a past plan.
 
 Companion documents: `docs/design_handoff_orng_registry/` (the design bundle, and **the
-authority for what the interface looks like**), `design-review.md` (what was checked against
-it and what came back), `AGENTS.md` (how code in this repo is written).
+authority for what the interface looks like**), `interface-notes.md` (how to check the window
+against it, and the traps that have cost a session each), `design-review.md` (what was checked
+against it and what came back), `AGENTS.md` (how code in this repo is written).
 
 `ui-spec.md` is no longer followed. It was written before there was a design and its
 structural sketch is a hint that was taken for a layout - the install bar grew a second line

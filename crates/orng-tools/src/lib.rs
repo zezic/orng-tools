@@ -26,26 +26,34 @@
 
 pub mod backup;
 pub mod descriptions;
+pub mod entries;
 mod fs;
 pub mod home;
 mod inject;
 pub mod manifest;
 pub mod placement;
 pub mod prepare;
+#[cfg(any(test, feature = "testing"))]
+pub mod testing;
 
 use std::path::PathBuf;
 
-use uuid::Uuid;
-
 pub use backup::Backup;
 pub use bitwig_document::{BitwigVersion, Document, Identity, Kind, Serialization};
+/// Why a document could not be read, in enough detail for an application to say
+/// so in its own words rather than repeat this crate's.
+pub use bitwig_document::Error as DocumentError;
 pub use bitwig_install::{AppData, Installation, RunState, UserLibrary, running_state};
 pub use bitwig_registry::{Anchor, Binding, BuildId, Entry, GuardState};
+pub use entries::Update;
 pub use home::OrngHome;
 pub use orng_catalog::manifest::ItemVersion;
 pub use placement::{Placement, Strategy};
 pub use manifest::Manifest;
 pub use prepare::{Condition, Helper, Plan, Step};
+/// The identity type a [`Registration`] carries. Re-exported because that field
+/// is public, and a caller cannot use it without being able to name its type.
+pub use uuid::Uuid;
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
@@ -81,9 +89,51 @@ pub enum Error {
     NoSuchMethod { class: String, method: String },
     #[error("the method to add the call to does not end in a plain return")]
     NotStraightLine,
+    #[error("{path} already holds a different document, so registering this one would replace it")]
+    PathOccupied { path: String },
 }
 
 pub type Result<T> = std::result::Result<T, Error>;
+
+/// Everything a write needs to know about this machine: which installation is
+/// being registered with, where the user keeps their own content, where this
+/// project keeps its own, and which placement strategy is in force.
+///
+/// One value rather than four arguments because the two operations that write -
+/// preparing an installation and updating its entries - need exactly these and
+/// must not be told different things. Linking the library folders under
+/// [`Strategy::Link`] and then placing documents under [`Strategy::Copy`] would
+/// leave every document in a folder that resolves back out of the installation,
+/// which is the contradiction decision 6.3 exists to prevent; passing the
+/// strategy to each operation separately is what would allow it.
+///
+/// Leaf modules still take what they need. This is the facade's shape, where the
+/// four are obtained from one place, and not a bundle to thread downwards.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Destination {
+    pub install: Installation,
+    pub library: UserLibrary,
+    pub home: OrngHome,
+    pub placement: Strategy,
+}
+
+impl Destination {
+    /// Read this machine: the installation, the user library and this project's
+    /// own directory, all where the platform puts them.
+    pub fn discover(placement: Strategy) -> Result<Self> {
+        Self::at(Installation::discover()?, placement)
+    }
+
+    /// The same, against an installation the user has pointed at.
+    pub fn at(install: Installation, placement: Strategy) -> Result<Self> {
+        Ok(Destination {
+            install,
+            library: UserLibrary::discover()?,
+            home: OrngHome::discover()?,
+            placement,
+        })
+    }
+}
 
 /// A library path relative to the installation's `Library` directory, in the
 /// form Bitwig's registry stores: `devices/My Devices/NAME.bwdevice`.

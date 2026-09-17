@@ -186,7 +186,7 @@ Layered bottom-up; each knows nothing of the layers above.
 | `bitwig-classfile` | Class-file and archive surgery. Constant pool scanning and rewriting, bytecode editing, archive rewriting. No knowledge of Bitwig. |
 | `bitwig-registry` | Locating Bitwig's internals structurally; reading the Core Registry; the tamper guard. |
 | `orng-catalog` | The catalog repository format: manifests, the index, the ownership and identity rules. No knowledge of installations. |
-| `orng-tools` | The facade: registrations, the entry list, description bundles, document placement, the transaction. |
+| `orng-tools` | The facade: registrations, the entry list, description bundles, document placement, and the two operations that write - preparing an installation, and updating its entries. |
 | `orng-registry` | The application. |
 
 The split is by what each layer knows, not by convenience. `bitwig-classfile` has no Bitwig
@@ -336,6 +336,15 @@ is the user asking for entry changes to write into the installation, which is th
 this decision protects, so opting out of it opts out of the link as well.
 
 **6.4 Entitlement: grant entries, never the flag.** Section 4.2.
+
+**6.13 A document is never written over unless its identity says it is the same
+content.** Under the linking strategy a document is placed in the folder Bitwig's
+own "Save device..." writes into, and a registered library path is derived from a
+file name, so what is already at the target is as likely to be the user's own
+work as an older copy of what is being registered. A matching UUID is what
+licenses a replacement; a different one, or a file that cannot be read as a
+document at all, is refused by name. The same check answers before the write, so
+the interface states the collision on the row rather than after a press.
 
 **6.5 Identity is never reassigned implicitly.** A UUID is how a saved project finds its
 device. Reassigning one already in use silently breaks every project referencing it, so it
@@ -581,23 +590,45 @@ Known gaps:
   verified against one before it is trusted.
 - Preparation writes inside the installation, which on Windows is under `Program Files` and
   needs elevation. Detecting that and asking for it is the application's, and unbuilt.
+- **Updating entries writes inside the installation too**, and the interface says it does
+  not. The description bundles live in the installation's `localization` directory (4.4)
+  and are rewritten on every entry change, so on Windows the cheap mode reaches the same
+  directory as the expensive one and can be refused for the same reason. Nothing else
+  about the mode changes - no archive work, no backup, Bitwig may stay open - and the
+  write is ordered before the entry list so a refusal registers nothing. Whatever answers
+  elevation for preparation has to answer it here, and until it does the honest statement
+  is "no part of the *archive*" rather than "no part of the installation".
 
 The catalog repository's own continuous integration, which checks a pull request, decides
 whether it may auto-merge, and on merge regenerates the index, signs it and publishes both
 assets. The published index verifies against the published key.
 
+Updating entries as one operation rather than three loose calls: a change to the list
+carries the documents it names, places them, rewrites all three description bundles from
+the whole list, and writes the list last - so a failure part way leaves files nothing
+points at rather than entries pointing at nothing. Every write in it is idempotent, which
+is what makes recovering from one a second press rather than a repair.
+
 The application, as far as: reading what the machine has, listing what is registered,
-preparing an installation, and reading the catalog. It draws in the design's palette and
-typefaces, and every state it can be in renders headlessly into `apps/orng-registry/tests/
-snapshots` so a change to the interface can be looked at rather than reasoned about.
+registering documents the user drops on it, preparing an installation, and reading the
+catalog. It draws in the design's palette and typefaces, and every state it can be in
+renders headlessly into `apps/orng-registry/tests/snapshots` so a change to the interface
+can be looked at rather than reasoned about.
+
+The whole window is a drop target; a dropped folder is read one level deep; each file
+resolves off the drawing thread to `Staged`, `Conflict` or `Rejected` with the reason on
+the row; and `Add files...` is there because drag and drop may not be the only way in. One
+press runs both modes when both are pending, which is also what puts the description
+bundles back after a Bitwig update has replaced them.
 
 Not built yet:
 
-- Registering a document the user drops in, which is the other half of the Local view.
 - Installing from the catalog: fetching a document by path, checking it against the digest
   the index carries, and registering it.
+- Removing an entry, and the choice of whether its document goes with it.
+- The plan confirmation the Prepare install mode is supposed to show before it runs.
 - Everything else the design draws: Settings, About, Restore, the inspector, the update
-  modal.
+  modal, search and the kind filters.
 
 ---
 

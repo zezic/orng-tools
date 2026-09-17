@@ -4,6 +4,13 @@ version.workspace = true
 edition.workspace = true
 license = "GPL-3.0-only"
 
+# Fixtures for tests in crates above this one. Off by default: nothing a user
+# installs needs a synthetic Bitwig document, and the knowledge of what one
+# looks like should exist once in this workspace rather than once per test
+# module that wants one.
+[features]
+testing = []
+
 [dependencies]
 bitwig-install.workspace = true
 bitwig-document.workspace = true

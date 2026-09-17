@@ -15,8 +15,9 @@ use bitwig_classfile::{Jar, JarEdits};
 use bitwig_document::Kind;
 use bitwig_registry::{Binding, guard};
 use orng_tools::{
-    Backup, Error, GuardState, Helper, Installation, LibraryPath, Manifest, OrngHome,
-    Placement, Plan, Provenance, Registration, Step, Strategy, UserLibrary, placement, prepare,
+    Backup, Destination, Document, Error, GuardState, Helper, Installation, LibraryPath, Manifest,
+    OrngHome, Placement, Plan, Provenance, Registration, Step, Strategy, UserLibrary, placement,
+    prepare,
 };
 
 /// A copy of the installed Bitwig that a test may destroy.
@@ -26,9 +27,10 @@ use orng_tools::{
 /// and the JVM bundles are 300 MB between them, and are read, never modified.
 struct Mirror {
     _temp: tempfile::TempDir,
-    install: Installation,
-    library: UserLibrary,
-    home: OrngHome,
+    /// The mirror, its throwaway user library and its throwaway home, as one
+    /// value - so a test cannot hand preparation one installation and placement
+    /// another.
+    to: Destination,
 }
 
 impl Mirror {
@@ -76,9 +78,12 @@ impl Mirror {
 
         let install = Installation::at(&root).expect("the mirror is not a valid installation");
         Some(Mirror {
-            library: UserLibrary::at(&temp.path().join("Library")),
-            home: OrngHome::at(temp.path()),
-            install,
+            to: Destination {
+                install,
+                library: UserLibrary::at(&temp.path().join("Library")),
+                home: OrngHome::at(temp.path()),
+                placement: Strategy::Link,
+            },
             _temp: temp,
         })
     }
@@ -87,14 +92,17 @@ impl Mirror {
         self.plan_with(Strategy::Link)
     }
 
-    fn plan_with(&self, strategy: Strategy) -> Plan {
-        Plan::compute(&self.install, &self.library, &self.home, strategy)
-            .expect("planning failed")
+    fn plan_with(&self, placement: Strategy) -> Plan {
+        Plan::compute(&self.destination(placement)).expect("planning failed")
+    }
+
+    fn destination(&self, placement: Strategy) -> Destination {
+        Destination { placement, ..self.to.clone() }
     }
 
     /// The installation's folder for `kind`, as it is on disk.
     fn library_folder(&self, kind: Kind) -> PathBuf {
-        self.install
+        self.to.install
             .library_dir()
             .join(kind.library_subdir())
             .join(kind.user_folder())
@@ -108,30 +116,30 @@ impl Mirror {
     }
 
     fn binding(&self) -> Binding {
-        Binding::resolve(&Jar::open(&self.install.jar()).unwrap()).unwrap()
+        Binding::resolve(&Jar::open(&self.to.install.jar()).unwrap()).unwrap()
     }
 
     fn guard_state(&self) -> GuardState {
-        let jar = Jar::open(&self.install.jar()).unwrap();
+        let jar = Jar::open(&self.to.install.jar()).unwrap();
         guard::inspect(&jar.entry(&self.binding().guard_entry).unwrap()).unwrap()
     }
 
     /// Put an entry list where the injected class will look for it.
     fn write_entries(&self, entries: &str) {
-        let path = self.home.entries();
+        let path = self.to.home.entries();
         std::fs::create_dir_all(path.parent().unwrap()).unwrap();
         std::fs::write(path, entries).unwrap();
     }
 
     fn archive(&self) -> Vec<u8> {
-        std::fs::read(self.install.jar()).unwrap()
+        std::fs::read(self.to.install.jar()).unwrap()
     }
 
     /// Replace the mirror's archive with one holding `edits`.
     fn rewrite_archive(&self, edits: &JarEdits) {
-        let staged = self.install.jar().with_extension("rewritten");
-        Jar::open(&self.install.jar()).unwrap().rewrite(&staged, edits).unwrap();
-        std::fs::rename(&staged, self.install.jar()).unwrap();
+        let staged = self.to.install.jar().with_extension("rewritten");
+        Jar::open(&self.to.install.jar()).unwrap().rewrite(&staged, edits).unwrap();
+        std::fs::rename(&staged, self.to.install.jar()).unwrap();
     }
 }
 
@@ -186,7 +194,7 @@ fn prepares_a_real_installation_and_the_result_loads() {
     assert_eq!(plan.guard(), GuardState::Armed, "a stock archive should be armed");
     assert!(!plan.backup_exists(), "nothing has been prepared yet");
     let backup_dir = plan.backup_directory().to_path_buf();
-    assert!(backup_dir.starts_with(mirror.home.backups()));
+    assert!(backup_dir.starts_with(mirror.to.home.backups()));
 
     // Every step, in order. Verification happens inside this call under Bitwig's
     // own JVM, so reaching Activate means the patched archive loaded and ran the
@@ -228,9 +236,9 @@ fn restoring_puts_the_original_back() {
     mirror.apply(mirror.plan());
     assert_ne!(original, mirror.archive());
 
-    let backups = Backup::list(&mirror.home).unwrap();
+    let backups = Backup::list(&mirror.to.home).unwrap();
     let [backup] = backups.as_slice() else { panic!("expected one backup, got {backups:?}") };
-    backup.restore(&mirror.install).unwrap();
+    backup.restore(&mirror.to.install).unwrap();
 
     assert_eq!(original, mirror.archive());
     assert_eq!(mirror.guard_state(), GuardState::Armed);
@@ -243,9 +251,8 @@ fn a_modified_installation_with_no_backup_is_refused() {
 
     // Losing the backup is the case that matters: without it there is no
     // pristine archive to patch, and patching the patched one would stack.
-    std::fs::remove_dir_all(mirror.home.backups()).unwrap();
-    let refused =
-        Plan::compute(&mirror.install, &mirror.library, &mirror.home, Strategy::Link);
+    std::fs::remove_dir_all(mirror.to.home.backups()).unwrap();
+    let refused = Plan::compute(&mirror.destination(Strategy::Link));
     assert!(matches!(refused, Err(Error::AlreadyModified(_))), "{refused:?}");
 }
 
@@ -260,7 +267,7 @@ fn a_patch_that_does_not_verify_never_reaches_the_installation() {
     let mut edits = JarEdits::new();
     edits.replace(
         binding.registry.entry.clone(),
-        unverifiable(&Jar::open(&mirror.install.jar()).unwrap().entry(&binding.registry.entry).unwrap(), &binding),
+        unverifiable(&Jar::open(&mirror.to.install.jar()).unwrap().entry(&binding.registry.entry).unwrap(), &binding),
     );
     mirror.rewrite_archive(&edits);
     let broken = mirror.archive();
@@ -325,7 +332,7 @@ fn the_injected_class_registers_the_entry_list() {
 fn an_installation_reports_what_has_been_done_to_it() {
     let mirror = mirror_or_skip!();
 
-    let before = prepare::inspect(&mirror.install).expect("could not read the mirror");
+    let before = prepare::inspect(&mirror.to.install).expect("could not read the mirror");
     assert!(before.is_stock(), "a fresh mirror is not stock: {before:?}");
     assert!(!before.is_prepared());
     assert_eq!(before.helper, Helper::Absent);
@@ -333,7 +340,7 @@ fn an_installation_reports_what_has_been_done_to_it() {
 
     mirror.apply(mirror.plan());
 
-    let after = prepare::inspect(&mirror.install).expect("could not read the prepared mirror");
+    let after = prepare::inspect(&mirror.to.install).expect("could not read the prepared mirror");
     assert!(after.is_prepared(), "not prepared after preparing: {after:?}");
     assert!(!after.is_stock());
     assert_eq!(after.helper, Helper::Present);
@@ -357,7 +364,7 @@ fn our_class_with_the_guard_still_armed_is_not_prepared() {
     edits.add("OrngRegistry.class", b"not a class, and does not need to be".to_vec());
     mirror.rewrite_archive(&edits);
 
-    let half = prepare::inspect(&mirror.install).expect("could not read the mirror");
+    let half = prepare::inspect(&mirror.to.install).expect("could not read the mirror");
     assert_eq!(half.helper, Helper::Present);
     assert_eq!(half.guard, GuardState::Armed);
     assert!(!half.is_prepared(), "an armed guard with our class in it is not prepared");
@@ -425,8 +432,9 @@ fn copying_documents_keeps_them_inside_the_installation() {
 
     // The document has to be reachable at its registered path and be a real file
     // inside the installation, not a link out of it.
+    let document = a_real_device();
     let registration = Registration {
-        uuid: uuid::Uuid::new_v4(),
+        uuid: document.identity().uuid,
         kind: Kind::Device,
         name: "ORNG COPIED".into(),
         library_path: LibraryPath::for_document(Kind::Device, "ORNG COPIED.bwdevice").unwrap(),
@@ -434,30 +442,44 @@ fn copying_documents_keeps_them_inside_the_installation() {
         keywords: Vec::new(),
         provenance: Provenance::Local,
     };
-    let written = placement::place(
-        &mirror.install,
-        &mirror.library,
-        &registration,
-        b"not a real document",
-        Strategy::Copy,
-    )
-    .unwrap();
+    let written =
+        placement::place(&mirror.destination(Strategy::Copy), &registration, &document).unwrap();
 
-    assert!(written.starts_with(mirror.install.root()), "{written:?} is outside the installation");
+    assert!(written.starts_with(mirror.to.install.root()), "{written:?} is outside the installation");
     assert!(
-        !written.starts_with(mirror.library.root()),
+        !written.starts_with(mirror.to.library.root()),
         "{written:?} landed in the user library, so Copy did nothing"
     );
     assert!(matches!(
-        placement::inspect(&mirror.install, &registration),
+        placement::inspect(&mirror.to.install, &registration),
         Placement::Copied(_)
     ));
+}
+
+/// A real device document, out of the installation these tests already need.
+///
+/// Placement reads whatever is at its target and compares identities before it
+/// writes, so the handful of bytes a test would otherwise invent is refused -
+/// and rightly, because it cannot be proved to be an older copy of anything.
+fn a_real_device() -> Document {
+    let install = Installation::discover().expect("these tests already need an installation");
+    let mut found: Vec<PathBuf> = std::fs::read_dir(install.library_dir().join("devices"))
+        .expect("the installation has no device library")
+        .flatten()
+        .map(|entry| entry.path())
+        .filter(|path| Kind::from_path(path).is_some())
+        .collect();
+    // Sorted, so the document is the same one on every run and a failure names
+    // a file somebody can go and open.
+    found.sort();
+    let path = found.first().expect("the installation ships no devices");
+    Document::read(path).unwrap_or_else(|e| panic!("{}: {e}", path.display()))
 }
 
 /// Where `prepare` stages a replacement archive. Named here rather than exposed,
 /// because what matters to a caller is that nothing is left behind.
 fn staging_path(mirror: &Mirror) -> PathBuf {
-    let mut name = mirror.install.jar().into_os_string();
+    let mut name = mirror.to.install.jar().into_os_string();
     name.push(".orng-part");
     PathBuf::from(name)
 }

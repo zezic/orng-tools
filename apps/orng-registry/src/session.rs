@@ -13,7 +13,16 @@
 //! or a build number while there is no installation to have one - the case the
 //! interface has an empty state for.
 
-use orng_tools::{Condition, Installation, Manifest, OrngHome, RunState, prepare, running_state};
+use orng_tools::{
+    Condition, Destination, Installation, Manifest, RunState, Strategy, prepare, running_state,
+};
+
+/// Where documents go until there is a setting for it.
+///
+/// The design's default, and the one that survives a Bitwig update: documents
+/// stay in the user library and the installation's folders are linked to it, so
+/// an update costs one preparation rather than the documents.
+const PLACEMENT: Strategy = Strategy::Link;
 
 /// Everything the interface draws from.
 #[derive(Debug)]
@@ -30,7 +39,10 @@ pub enum Session {
 /// An installation, and what is true of it right now.
 #[derive(Debug)]
 pub struct Found {
-    pub install: Installation,
+    /// The installation, the user library, this project's own directory and the
+    /// placement strategy - resolved once, here, so that nothing further in can
+    /// resolve them again and get a different answer.
+    pub to: Destination,
     /// Which Bitwig this is, and what has been done to its archive.
     pub condition: Condition,
     /// Whether Bitwig is running, which preparation needs it not to be.
@@ -60,11 +72,11 @@ impl Session {
             Err(e) => return Session::Unreadable { root, why: e.to_string() },
         };
 
-        let home = match OrngHome::discover() {
-            Ok(home) => home,
+        let to = match Destination::at(install, PLACEMENT) {
+            Ok(to) => to,
             Err(e) => return Session::Unreadable { root, why: e.to_string() },
         };
-        let entries = match Manifest::load(&home.entries()) {
+        let entries = match Manifest::load(&to.home.entries()) {
             Ok(entries) => entries,
             // A list that does not parse is this app's own state being wrong,
             // not the installation's. Say so against the installation rather
@@ -74,9 +86,9 @@ impl Session {
         };
 
         Session::Found(Box::new(Found {
-            running: running_state(&install),
+            running: running_state(&to.install),
             condition,
-            install,
+            to,
             entries,
         }))
     }

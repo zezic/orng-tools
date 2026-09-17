@@ -14,7 +14,11 @@
 
 use std::path::{Path, PathBuf};
 
-use crate::{Installation, Kind, Registration, Result, UserLibrary, fs};
+use uuid::Uuid;
+
+use crate::{
+    Destination, Document, Error, Installation, Kind, Registration, Result, UserLibrary, fs,
+};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Strategy {
@@ -65,21 +69,75 @@ pub fn inspect(install: &Installation, registration: &Registration) -> Placement
 ///
 /// Returns where the document ended up. Under [`Strategy::Link`] that is inside
 /// the user library; the link itself is installed by [`ensure_link`].
+///
+/// **Refuses to write over a document that is not this one.** Under the linking
+/// strategy the destination is the folder Bitwig's own "Save device..." writes
+/// into, so a file already sitting there is as likely to be the user's work as
+/// an older copy of what is being registered. Only a matching identity licenses
+/// a replacement; anything else is refused by name, because the library path is
+/// derived from a file name and two unrelated documents can easily share one.
 pub fn place(
-    install: &Installation,
-    library: &UserLibrary,
+    to: &Destination,
     registration: &Registration,
-    document: &[u8],
-    strategy: Strategy,
+    document: &Document,
 ) -> Result<PathBuf> {
-    let destination = match strategy {
-        Strategy::Link => library
+    let destination = target(to, registration);
+    if let Some(occupied) = would_replace(to, registration)? {
+        return Err(Error::PathOccupied { path: occupied.display().to_string() });
+    }
+    fs::write_new(&destination, document.bytes())?;
+    Ok(destination)
+}
+
+/// Where this registration's document goes.
+pub fn target(to: &Destination, registration: &Registration) -> PathBuf {
+    match to.placement {
+        Strategy::Link => to
+            .library
             .folder(registration.kind.user_folder())
             .join(registration.library_path.file_name()),
-        Strategy::Copy => registration.library_path.resolve(install),
+        Strategy::Copy => registration.library_path.resolve(&to.install),
+    }
+}
+
+/// Whether placing this registration would write over a document that is not it,
+/// and if so, which file.
+///
+/// The check [`place`] makes, offered on its own so the interface can say so
+/// before the user presses anything rather than after. One implementation and
+/// two callers, because a second one would be free to drift.
+pub fn would_replace(to: &Destination, registration: &Registration) -> Result<Option<PathBuf>> {
+    let destination = target(to, registration);
+    Ok(match occupant_of(&destination)? {
+        Occupant::Vacant => None,
+        // The same identity is this content, at whatever revision was there
+        // before. Replacing it is the point of re-applying an edited document.
+        Occupant::Document(uuid) if uuid == registration.uuid => None,
+        Occupant::Document(_) | Occupant::Foreign => Some(destination),
+    })
+}
+
+/// What is already where a document is about to be written.
+enum Occupant {
+    /// Nothing is there, so nothing can be lost.
+    Vacant,
+    /// A document, and the identity it carries.
+    Document(Uuid),
+    /// Something that is not a readable document. It has no identity to compare,
+    /// and proving a file is an older copy of this content is the only thing
+    /// that licenses replacing it - so an unreadable one is never replaced.
+    Foreign,
+}
+
+fn occupant_of(path: &Path) -> Result<Occupant> {
+    let Some(raw) = fs::read_if_exists(path)? else {
+        return Ok(Occupant::Vacant);
     };
-    fs::write_new(&destination, document)?;
-    Ok(destination)
+    let kind = Kind::from_path(path).expect("a placement target ends in a document extension");
+    Ok(match Document::parse(kind, raw) {
+        Ok(document) => Occupant::Document(document.identity().uuid),
+        Err(_) => Occupant::Foreign,
+    })
 }
 
 /// Link all three kinds, whether or not anything of that kind is registered.
@@ -190,26 +248,25 @@ fn remove_link(link: &Path) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{Error, LibraryPath, Provenance};
+    use crate::testing::{self, document};
+    use crate::{Error, LibraryPath, OrngHome, Provenance};
     use uuid::Uuid;
 
-    /// An installation only as far as linking cares about one: `ensure_link`
-    /// wants somewhere to put a link, and `Installation::at` wants a jar and a
-    /// `Library` beside it to agree that a directory is one.
-    ///
     /// Synthetic on purpose, so this runs on every platform. Linking is the one
     /// part of preparation that differs between them, and the difference is
     /// invisible to whoever is not running the platform that has it.
     fn fake_install(root: &Path) -> Installation {
-        std::fs::create_dir_all(root.join("Contents/Java")).unwrap();
-        std::fs::write(root.join("Contents/Java/bitwig.jar"), b"").unwrap();
-        std::fs::create_dir_all(root.join("Contents/Resources/Library")).unwrap();
-        // Both content directories, because resolving an installation now
-        // insists on finding each of them rather than assuming one sits beside
-        // the other. Where they sit differs by platform; that they exist does
-        // not.
-        std::fs::create_dir_all(root.join("Contents/Resources/localization")).unwrap();
-        Installation::at(root).unwrap()
+        testing::install(root)
+    }
+
+    /// A machine to place documents on, under `placement`.
+    fn machine(temp: &Path, placement: Strategy) -> Destination {
+        Destination {
+            install: fake_install(&temp.join("install")),
+            library: UserLibrary::at(&temp.join("library")),
+            home: OrngHome::at(temp),
+            placement,
+        }
     }
 
     fn link_of(install: &Installation, kind: Kind) -> PathBuf {
@@ -298,6 +355,91 @@ mod tests {
             assert!(link.is_dir(), "a real directory was destroyed");
             assert!(!link.symlink_metadata().unwrap().file_type().is_symlink());
         }
+    }
+
+    fn registration_for(document: &Document, file_name: &str) -> Registration {
+        Registration::from_document(document, file_name).unwrap()
+    }
+
+    /// The linking strategy writes into the folder Bitwig's own "Save device..."
+    /// writes into, so what is already at the target is as likely to be the
+    /// user's work as an older copy of what is being registered. Two unrelated
+    /// documents sharing a file name is not a contrived case: the library path
+    /// is derived from the file name.
+    #[test]
+    fn a_document_belonging_to_something_else_is_never_written_over() {
+        let temp = tempfile::tempdir().unwrap();
+        let to = machine(temp.path(), Strategy::Link);
+
+        let theirs = document(Kind::Device, Uuid::new_v4(), "THEIRS");
+        let mine = document(Kind::Device, Uuid::new_v4(), "MINE");
+        let occupied = registration_for(&theirs, "SHARED.bwdevice");
+        let colliding = registration_for(&mine, "SHARED.bwdevice");
+
+        let at = place(&to, &occupied, &theirs).unwrap();
+        // Said before the write is attempted as well as by refusing it, because
+        // the interface has to be able to state the collision on the row rather
+        // than as a failure after the press.
+        assert_eq!(would_replace(&to, &colliding).unwrap().as_deref(), Some(at.as_path()));
+        let refused = place(&to, &colliding, &mine);
+        assert!(matches!(refused, Err(Error::PathOccupied { .. })), "{refused:?}");
+        assert_eq!(std::fs::read(&at).unwrap(), theirs.bytes(), "the other document was replaced");
+    }
+
+    /// Re-applying an edited document is the case placing has to stay open to,
+    /// and it is exactly the one where the target already holds something: the
+    /// previous revision of the same identity.
+    #[test]
+    fn the_same_identity_is_replaced_rather_than_refused() {
+        let temp = tempfile::tempdir().unwrap();
+        let to = machine(temp.path(), Strategy::Link);
+
+        let uuid = Uuid::new_v4();
+        let first = document(Kind::Device, uuid, "DISPERSER");
+        let edited = document(Kind::Device, uuid, "DISPERSER MK2");
+        let registration = registration_for(&first, "DISPERSER.bwdevice");
+
+        place(&to, &registration, &first).unwrap();
+        assert_eq!(would_replace(&to, &registration).unwrap(), None);
+        let at = place(&to, &registration, &edited).expect("the same identity was refused");
+        assert_eq!(std::fs::read(&at).unwrap(), edited.bytes());
+    }
+
+    /// A file that cannot be read as a document has no identity to compare, and
+    /// being able to prove the target is an older copy of this content is the
+    /// only thing that licenses replacing it.
+    #[test]
+    fn a_file_that_is_not_a_document_is_not_assumed_to_be_ours() {
+        let temp = tempfile::tempdir().unwrap();
+        let to = machine(temp.path(), Strategy::Link);
+
+        let mine = document(Kind::Device, Uuid::new_v4(), "MINE");
+        let registration = registration_for(&mine, "MINE.bwdevice");
+        let occupied = target(&to, &registration);
+        fs::write_new(&occupied, b"not a document at all").unwrap();
+
+        let refused = place(&to, &registration, &mine);
+        assert!(matches!(refused, Err(Error::PathOccupied { .. })), "{refused:?}");
+        assert_eq!(std::fs::read(&occupied).unwrap(), b"not a document at all");
+    }
+
+    /// Copying writes inside the installation and linking writes into the user
+    /// library. Getting that backwards is silent: both produce a file, and only
+    /// the wrong one disappears with the next Bitwig update.
+    #[test]
+    fn the_strategy_decides_which_of_the_two_libraries_is_written() {
+        let temp = tempfile::tempdir().unwrap();
+        let mine = document(Kind::Device, Uuid::new_v4(), "MINE");
+        let registration = registration_for(&mine, "MINE.bwdevice");
+
+        let linked = machine(&temp.path().join("linked"), Strategy::Link);
+        let at = place(&linked, &registration, &mine).unwrap();
+        assert!(at.starts_with(linked.library.root()), "{at:?}");
+
+        let copied = machine(&temp.path().join("copied"), Strategy::Copy);
+        let at = place(&copied, &registration, &mine).unwrap();
+        assert!(at.starts_with(copied.install.root()), "{at:?}");
+        assert_eq!(at, registration.library_path.resolve(&copied.install));
     }
 
     #[test]

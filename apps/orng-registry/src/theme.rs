@@ -73,6 +73,9 @@ pub struct Palette {
     pub field: Color32,
     pub btn: Color32,
     pub btn_hover: Color32,
+    /// Laid over everything when the window is a drop target, so what is behind
+    /// it reads as out of reach rather than merely dimmed.
+    pub scrim: Color32,
 }
 
 impl Palette {
@@ -102,6 +105,7 @@ impl Palette {
         field: hex(0x000000),
         btn: hex(0x282828),
         btn_hover: hex(0x333333),
+        scrim: hexa(0x000000, 189),
     };
 
     /// Drawn, and not yet reachable from the interface. Kept here because a
@@ -132,6 +136,7 @@ impl Palette {
         field: hex(0xececec),
         btn: hex(0xe2e2e2),
         btn_hover: hex(0xd8d8d8),
+        scrim: hexa(0xffffff, 168),
     };
 }
 

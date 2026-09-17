@@ -19,9 +19,20 @@ orng-catalog.workspace = true
 # rustls so there is no system TLS library to depend on across three platforms.
 ureq = { version = "3", default-features = false, features = ["rustls"] }
 
+# The native file picker behind `Add files...`. Drag and drop must never be the
+# only way in, and a file dialog is the platform's to draw. The XDG portal
+# rather than GTK on Linux: the portal is a D-Bus call to whatever the desktop
+# already runs, so nothing here links a toolkit and no runner has to install
+# one to build this.
+rfd = { version = "0.15", default-features = false, features = ["xdg-portal", "tokio"] }
+
 # Rendering the interface headlessly, so a change can be looked at rather than
 # reasoned about. egui places widgets in ways that are hard to predict from the
 # code alone - margins, baselines and available width especially - and a picture
 # is the only honest check.
 [dev-dependencies]
+# The synthetic document fixture, so that what a test drops is built by the
+# crate that knows the format rather than by a second copy of its header.
+orng-tools = { workspace = true, features = ["testing"] }
 egui_kittest = { version = "0.33", features = ["wgpu", "snapshot"] }
+tempfile.workspace = true

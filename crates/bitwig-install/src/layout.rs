@@ -160,10 +160,14 @@ pub struct AppData {
 impl AppData {
     pub fn discover() -> Result<Self> {
         let home = home()?;
+        // Windows is Local, not Roaming. There is no Roaming directory at all:
+        // Bitwig keeps prefs, caches and its logs under Local, which is also
+        // where it says it writes them on startup. Verified on 6.1; the Linux
+        // path has not been.
         let root = if cfg!(target_os = "macos") {
             home.join("Library/Application Support/Bitwig/Bitwig Studio")
         } else if cfg!(windows) {
-            home.join("AppData/Roaming/Bitwig Studio")
+            home.join("AppData/Local/Bitwig Studio")
         } else {
             home.join(".BitwigStudio")
         };

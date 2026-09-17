@@ -89,10 +89,14 @@ pub struct Fetching {
 }
 
 impl Fetching {
-    pub fn start() -> Fetching {
+    pub fn start(ctx: eframe::egui::Context) -> Fetching {
         let (tx, result) = std::sync::mpsc::channel();
         std::thread::spawn(move || {
             let _ = tx.send(fetch());
+            // Wake the window rather than leaving it to notice. Nothing else is
+            // going to happen on this thread, and nothing is coming from the
+            // user that would redraw it.
+            ctx.request_repaint();
         });
         Fetching { result, outcome: None }
     }

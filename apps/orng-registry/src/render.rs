@@ -86,10 +86,7 @@ fn shot_preparing(name: &str, preparing: Preparing) {
         });
         app.draw(ctx);
     });
-    // A fixed number of frames, not "until it settles". A preparation in flight
-    // asks for a repaint every hundred milliseconds because it is waiting on
-    // another thread, so it never settles and never will.
-    harness.run_steps(3);
+    harness.run();
     harness.snapshot(name);
 }
 
@@ -109,7 +106,7 @@ fn shot_catalog(name: &str, fetching: Fetching) {
         });
         app.draw(ctx);
     });
-    harness.run_steps(3);
+    harness.run();
     harness.snapshot(name);
 }
 

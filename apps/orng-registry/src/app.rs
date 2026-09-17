@@ -98,7 +98,7 @@ impl App {
     /// Separate from [`eframe::App::update`] so that it can be driven without a
     /// window, which is how it gets looked at.
     pub fn draw(&mut self, ctx: &egui::Context) {
-        self.pump(ctx);
+        self.pump();
 
         egui::TopBottomPanel::top("views")
             .exact_height(metric::BAR_HEIGHT)
@@ -131,7 +131,9 @@ impl App {
                     }
                     View::Local => local(ui, self.palette, found),
                     View::Catalog => {
-                        let catalog = self.catalog.get_or_insert_with(Fetching::start);
+                        let catalog = self
+                            .catalog
+                            .get_or_insert_with(|| Fetching::start(ui.ctx().clone()));
                         published(ui, self.palette, catalog);
                     }
                 },
@@ -148,25 +150,31 @@ impl eframe::App for App {
 impl App {
     /// Take whatever the worker has said, and re-read the machine once it is
     /// done, because what was true before a preparation is not true after one.
-    fn pump(&mut self, ctx: &egui::Context) {
+    /// Take whatever the workers have said.
+    ///
+    /// Drawing happens from `self`, so anything a worker produced has to be
+    /// moved into `self` before the frame is built - which is why this is the
+    /// first thing `draw` does rather than the last. Polling afterwards would
+    /// render the previous frame's state and always trail by one.
+    ///
+    /// No timer. A worker wakes the window when it has something to say, so a
+    /// frame that gets here has a reason to have been drawn, and an idle
+    /// preparation costs nothing at all.
+    fn pump(&mut self) {
         if let Some(catalog) = &mut self.catalog {
-            if catalog.poll() {
-                ctx.request_repaint();
-            } else if catalog.is_running() {
-                ctx.request_repaint_after(std::time::Duration::from_millis(100));
+            catalog.poll();
+        }
+        if let Some(preparing) = &mut self.preparing {
+            preparing.poll();
+            // What was true of the machine before a preparation is not true
+            // after one. Read once, not every frame: the answer costs seconds.
+            if !preparing.is_running()
+                && preparing.outcome.as_ref().is_some_and(Result::is_ok)
+                && !self.reread
+            {
+                self.reread = true;
+                self.session = Session::read();
             }
-        }
-        let Some(preparing) = &mut self.preparing else { return };
-        if preparing.poll() {
-            ctx.request_repaint();
-        }
-        if preparing.is_running() {
-            // Nothing has happened this frame, but something will, and no input
-            // is coming to wake the window up.
-            ctx.request_repaint_after(std::time::Duration::from_millis(100));
-        } else if preparing.outcome.as_ref().is_some_and(Result::is_ok) && !self.reread {
-            self.reread = true;
-            self.session = Session::read();
         }
     }
 
@@ -294,6 +302,7 @@ impl App {
                         UserLibrary::discover().expect("a library that was found a moment ago"),
                         OrngHome::discover().expect("a home that was found a moment ago"),
                         Strategy::Link,
+                        ui.ctx().clone(),
                     ));
                 }
             }

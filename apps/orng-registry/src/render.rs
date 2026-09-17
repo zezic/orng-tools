@@ -204,16 +204,12 @@ fn compare<S>(harness: &mut Harness<'_, S>, name: &str) {
 fn shot_applying(name: &str, applying: Applying) {
     let root = fixture(name);
     let session = found(&root, Helper::Absent, GuardState::Armed);
-    let mut app: Option<App> = None;
     let mut session = Some(session);
     let mut applying = Some(applying);
-    let mut harness = Harness::builder().with_size(SIZE).build_ui(move |ui| {
-        let app = app.get_or_insert_with(|| {
-            let mut app = App::with(ui.ctx(), session.take().expect("built once"));
-            app.set_applying(applying.take().expect("built once"));
-            app
-        });
-        app.draw(ui);
+    let mut harness = Harness::builder().with_size(SIZE).build_eframe(move |cc| {
+        let mut app = App::with(&cc.egui_ctx, session.take().expect("built once"));
+        app.set_applying(applying.take().expect("built once"));
+        app
     });
     look(&mut harness, name);
 }
@@ -226,16 +222,12 @@ fn shot_staged(name: &str, helper: Helper, guard: GuardState) {
     let staged = dropped(&root, &to, &entries);
     let session = found_with(&root, helper, guard, entries);
 
-    let mut app: Option<App> = None;
     let mut session = Some(session);
     let mut staged = Some(staged);
-    let mut harness = Harness::builder().with_size(SIZE).build_ui(move |ui| {
-        let app = app.get_or_insert_with(|| {
-            let mut app = App::with(ui.ctx(), session.take().expect("built once"));
-            app.set_staged(staged.take().expect("built once"));
-            app
-        });
-        app.draw(ui);
+    let mut harness = Harness::builder().with_size(SIZE).build_eframe(move |cc| {
+        let mut app = App::with(&cc.egui_ctx, session.take().expect("built once"));
+        app.set_staged(staged.take().expect("built once"));
+        app
     });
     look(&mut harness, name);
 }
@@ -254,11 +246,9 @@ fn shot_dragging(name: &str, over: &[&str]) {
         std::fs::write(drop.join(file), b"the drag does not read it").expect("could not write");
     }
 
-    let mut app: Option<App> = None;
     let mut session = Some(session);
-    let mut harness = Harness::builder().with_size(SIZE).build_ui(move |ui| {
-        let app = app.get_or_insert_with(|| App::with(ui.ctx(), session.take().expect("built once")));
-        app.draw(ui);
+    let mut harness = Harness::builder().with_size(SIZE).build_eframe(move |cc| {
+        App::with(&cc.egui_ctx, session.take().expect("built once"))
     });
     harness.input_mut().hovered_files = over
         .iter()
@@ -271,31 +261,25 @@ fn shot_dragging(name: &str, over: &[&str]) {
 fn shot_catalog(name: &str, fetching: Fetching) {
     let root = fixture(name);
     let session = found(&root, Helper::Present, GuardState::Disarmed);
-    let mut app: Option<App> = None;
     let mut session = Some(session);
     let mut fetching = Some(fetching);
-    let mut harness = Harness::builder().with_size(SIZE).build_ui(move |ui| {
-        let app = app.get_or_insert_with(|| {
-            let mut app = App::with(ui.ctx(), session.take().expect("built once"));
-            app.set_catalog(fetching.take().expect("built once"));
-            app.show_view(View::Catalog);
-            app
-        });
-        app.draw(ui);
+    let mut harness = Harness::builder().with_size(SIZE).build_eframe(move |cc| {
+        let mut app = App::with(&cc.egui_ctx, session.take().expect("built once"));
+        app.set_catalog(fetching.take().expect("built once"));
+        app.show_view(View::Catalog);
+        app
     });
     look(&mut harness, name);
 }
 
 /// Render one state and write it out under `name`.
 fn shot(name: &str, session: Session, view: View, dark: bool) {
-    let mut app: Option<App> = None;
     let mut session = Some(session);
-    let mut harness = Harness::builder().with_size(SIZE).build_ui(move |ui| {
-        let app = app
-            .get_or_insert_with(|| App::with(ui.ctx(), session.take().expect("built once")));
-        app.set_theme(dark, ui.ctx());
+    let mut harness = Harness::builder().with_size(SIZE).build_eframe(move |cc| {
+        let mut app = App::with(&cc.egui_ctx, session.take().expect("built once"));
+        app.set_theme(dark, &cc.egui_ctx);
         app.show_view(view);
-        app.draw(ui);
+        app
     });
     look(&mut harness, name);
 }
@@ -444,15 +428,11 @@ fn a_guard_this_build_does_not_recognise() {
 fn the_filters_match_nothing() {
     let root = fixture("no-match");
     let session = found(&root, Helper::Present, GuardState::Disarmed);
-    let mut app: Option<App> = None;
     let mut session = Some(session);
-    let mut harness = Harness::builder().with_size(SIZE).build_ui(move |ui| {
-        let app = app.get_or_insert_with(|| {
-            let mut app = App::with(ui.ctx(), session.take().expect("built once"));
-            app.set_query("wavesh");
-            app
-        });
-        app.draw(ui);
+    let mut harness = Harness::builder().with_size(SIZE).build_eframe(move |cc| {
+        let mut app = App::with(&cc.egui_ctx, session.take().expect("built once"));
+        app.set_query("wavesh");
+        app
     });
     look(&mut harness, "no-match");
 }
@@ -519,5 +499,6 @@ fn a_catalog_that_does_not_verify() {
         Fetching::frozen(Err("the signature does not match this index under this key".to_owned())),
     );
 }
+
 
 

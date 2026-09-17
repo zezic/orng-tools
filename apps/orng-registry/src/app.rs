@@ -368,6 +368,10 @@ impl App {
     /// a second line carrying them was this application's invention.
     fn install_bar(&mut self, ui: &mut egui::Ui) {
         let palette = self.palette;
+        // The gaps in a bar are the design's, stated one by one. egui would
+        // otherwise add its own between every pair on top of them, which is six
+        // pixels the bundle does not have and which compounds along the row.
+        ui.spacing_mut().item_spacing.x = 0.0;
         ui.horizontal_centered(|ui| {
             for (view, label) in [(View::Local, "Local"), (View::Catalog, "Catalog")] {
                 if widget::view_tab(ui, palette, label, self.view == view).clicked() {
@@ -502,6 +506,7 @@ impl App {
     /// Above the list: what to show of it, and the other way in.
     fn list_toolbar(&mut self, ui: &mut egui::Ui) {
         let palette = self.palette;
+        ui.spacing_mut().item_spacing.x = 0.0;
         let Session::Found(found) = &self.session else { return };
         let counts: Vec<(Kind, usize)> = Kind::ALL
             .into_iter()
@@ -733,6 +738,7 @@ impl App {
     /// Region three: what one press would do, and the press.
     fn action_bar(&mut self, ui: &mut egui::Ui) {
         let palette = self.palette;
+        ui.spacing_mut().item_spacing.x = 0.0;
         ui.horizontal_centered(|ui| {
             // The action is placed first, from the right. Laying the summary out
             // first leaves the button whatever width is left over, and a summary

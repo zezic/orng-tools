@@ -212,8 +212,9 @@ pub mod metric {
     pub const KIND_COLUMN: f32 = 66.0;
     pub const UUID_COLUMN: f32 = 106.0;
     pub const STATUS_COLUMN: f32 = 130.0;
-    /// The search field, which gives way before the filters do.
-    pub const SEARCH_WIDTH: f32 = 200.0;
+    /// The search field, measured across the whole box - the glyph, the gap and
+    /// the text - because that is what the bundle's is measured across.
+    pub const SEARCH_FIELD: f32 = 216.0;
 }
 
 /// Where a piece of text sits in the hierarchy.

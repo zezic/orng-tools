@@ -9,8 +9,14 @@ use crate::{ENV_APP, ENV_JAR, ENV_RESOURCES, Error, Result, env_path, home, prob
 /// verified macOS layout; the rest are probed by existence, never assumed.
 const JAVA_DIRS: &[&str] = &["Contents/Java", "bin", "lib/bitwig-studio", "."];
 
-/// Where the resources directory sits inside an install root.
-const RESOURCE_DIRS: &[&str] = &["Contents/Resources", "resources", "lib/bitwig-studio", "."];
+/// Where content directories sit inside an install root.
+///
+/// Probed once per directory that is wanted, not once for all of them. `Library`
+/// and `localization` are siblings on macOS and Linux and are *not* on Windows,
+/// where the library sits at the install root and localization under
+/// `resources`. Assuming one parent for both resolved localization to a path
+/// that does not exist there.
+const CONTENT_DIRS: &[&str] = &["Contents/Resources", "resources", "lib/bitwig-studio", "."];
 
 const MAC_JVM_ARM: &str = "Contents/PlugIns/JavaVM-arm64.bundle/Contents/Home";
 const MAC_JVM_X64: &str = "Contents/PlugIns/JavaVM-x64.bundle/Contents/Home";
@@ -32,7 +38,10 @@ const JVM_DIRS: &[&str] = &[MAC_JVM_X64, MAC_JVM_ARM, "lib/jre", "jre"];
 pub struct Installation {
     root: PathBuf,
     java_dir: PathBuf,
-    resources_dir: PathBuf,
+    /// Factory content. Not necessarily beside `localization`.
+    library_dir: PathBuf,
+    /// Description and keyword bundles. Not necessarily beside `Library`.
+    localization_dir: PathBuf,
 }
 
 impl Installation {
@@ -62,12 +71,18 @@ impl Installation {
             None => probe(root, JAVA_DIRS, |d| d.join("bitwig.jar").is_file())
                 .ok_or_else(|| Error::NotAnInstallation(root.into(), "bitwig.jar"))?,
         };
-        let resources_dir = match env_path(ENV_RESOURCES) {
-            Some(dir) => dir,
-            None => probe(root, RESOURCE_DIRS, |d| d.join("Library").is_dir())
-                .ok_or_else(|| Error::NotAnInstallation(root.into(), "Library"))?,
+        // Each content directory is found by looking for itself. The override
+        // still names one parent, because the only thing that sets it is a test
+        // building a mirror, and a mirror is built with them side by side.
+        let content = |what: &'static str| match env_path(ENV_RESOURCES) {
+            Some(dir) => Ok(dir.join(what)),
+            None => probe(root, CONTENT_DIRS, |d| d.join(what).is_dir())
+                .map(|dir| dir.join(what))
+                .ok_or_else(|| Error::NotAnInstallation(root.into(), what)),
         };
-        Ok(Self { root: root.to_path_buf(), java_dir, resources_dir })
+        let library_dir = content("Library")?;
+        let localization_dir = content("localization")?;
+        Ok(Self { root: root.to_path_buf(), java_dir, library_dir, localization_dir })
     }
 
     pub fn root(&self) -> &Path {
@@ -86,12 +101,12 @@ impl Installation {
 
     /// Factory content: `devices/`, `modulators/`, `modules/`, `presets/`.
     pub fn library_dir(&self) -> PathBuf {
-        self.resources_dir.join("Library")
+        self.library_dir.clone()
     }
 
     /// Browser descriptions and search keywords live here, as properties files.
     pub fn localization_dir(&self) -> PathBuf {
-        self.resources_dir.join("localization")
+        self.localization_dir.clone()
     }
 
     /// Bitwig ships a JRE. It can run a class against the patched jar, which is
@@ -203,16 +218,44 @@ fn searched_hint() -> String {
 mod tests {
     use super::*;
 
-    /// Skips rather than fails when no Bitwig is installed, so the suite stays
-    /// green on machines that only build the library.
+    /// Skips only when told to. Absent that, a missing installation fails:
+    /// this test returning quietly is how a layout that was wrong on Windows
+    /// stayed wrong, on every machine that did not have Bitwig to check it
+    /// against.
     #[test]
     fn discovers_a_real_installation() {
-        let Ok(install) = Installation::discover() else {
-            eprintln!("no Bitwig Studio installed, skipping");
-            return;
+        let install = match Installation::discover() {
+            Ok(install) => install,
+            Err(_) if std::env::var_os("ORNG_SKIP_BITWIG_TESTS").is_some() => {
+                eprintln!("no Bitwig Studio installed, skipping");
+                return;
+            }
+            Err(e) => panic!("{e}; set ORNG_SKIP_BITWIG_TESTS=1 to skip these tests"),
         };
         assert!(install.jar().is_file(), "jar missing at {:?}", install.jar());
-        assert!(install.library_dir().join("devices").is_dir());
-        assert!(install.localization_dir().is_dir());
+        assert!(install.libs_jar().is_file(), "libs missing at {:?}", install.libs_jar());
+
+        // The two content directories are found separately because they are not
+        // always siblings: on Windows the library is at the install root and
+        // localization is under `resources`.
+        let library = install.library_dir();
+        assert!(library.join("devices").is_dir(), "no devices under {library:?}");
+        assert!(library.join("modulators").is_dir(), "no modulators under {library:?}");
+        assert!(library.join("modules").is_dir(), "no modules under {library:?}");
+
+        let localization = install.localization_dir();
+        assert!(localization.is_dir(), "no localization at {localization:?}");
+        assert!(
+            std::fs::read_dir(&localization)
+                .into_iter()
+                .flatten()
+                .flatten()
+                .any(|e| e.file_name().to_string_lossy().ends_with(".properties")),
+            "no properties bundles under {localization:?}"
+        );
+
+        // The bundled JRE is what verifies a patch before it is activated, so
+        // an installation without one cannot be prepared.
+        assert!(install.bundled_java().is_some_and(|j| j.is_file()), "no bundled JVM");
     }
 }

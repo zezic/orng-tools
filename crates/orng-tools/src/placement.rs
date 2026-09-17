@@ -204,6 +204,11 @@ mod tests {
         std::fs::create_dir_all(root.join("Contents/Java")).unwrap();
         std::fs::write(root.join("Contents/Java/bitwig.jar"), b"").unwrap();
         std::fs::create_dir_all(root.join("Contents/Resources/Library")).unwrap();
+        // Both content directories, because resolving an installation now
+        // insists on finding each of them rather than assuming one sits beside
+        // the other. Where they sit differs by platform; that they exist does
+        // not.
+        std::fs::create_dir_all(root.join("Contents/Resources/localization")).unwrap();
         Installation::at(root).unwrap()
     }
 

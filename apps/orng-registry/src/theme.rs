@@ -12,7 +12,11 @@
 //! properties rather than eyeballed from a screenshot. Dark is `:root` there and
 //! so is the default here; light is the same set under `data-theme="light"`.
 
-use eframe::egui::{self, Color32, CornerRadius, FontFamily, FontId, Stroke, TextStyle};
+use std::sync::Arc;
+
+use eframe::egui::{
+    self, Color32, CornerRadius, FontData, FontDefinitions, FontFamily, FontId, Stroke, TextStyle,
+};
 
 /// A colour as the design writes one, so the two can be compared by eye.
 const fn hex(rgb: u32) -> Color32 {
@@ -152,6 +156,43 @@ pub mod metric {
     /// The underline marking the current view, which is the one line that is
     /// meant to be seen rather than merely to divide.
     pub const UNDERLINE: f32 = 2.0;
+}
+
+/// Load the design's faces.
+///
+/// Called once. The families are lists and egui walks them in order, and the
+/// order matters for the mono face: the Iosevka here is a subset of about four
+/// hundred glyphs, so Inter sits behind it and answers for anything it does not
+/// carry.
+///
+/// Not for our own text, which is ASCII by house rule - an arrow is written
+/// `->`. It is for text this application does not choose. A device name and a
+/// library path come out of a document somebody else made, and either may hold
+/// anything Unicode allows; without a face behind Iosevka those draw as boxes,
+/// in the one column a user is most likely to be reading carefully.
+pub fn install_fonts(ctx: &egui::Context) {
+    const INTER: &[u8] = include_bytes!("../../../assets/fonts/InterDisplay-Regular.ttf");
+    const MONO: &[u8] = include_bytes!("../../../assets/fonts/subset-Iosevka-Regular-Extended.ttf");
+
+    let mut fonts = FontDefinitions::default();
+    for (name, bytes) in [("inter", INTER), ("iosevka", MONO)] {
+        fonts.font_data.insert(name.to_owned(), Arc::new(FontData::from_static(bytes)));
+    }
+
+    let family = |fonts: &mut FontDefinitions, key: FontFamily, faces: &[&str]| {
+        let list = fonts.families.entry(key).or_default();
+        for (at, face) in faces.iter().enumerate() {
+            list.insert(at, (*face).to_owned());
+        }
+    };
+    // Only the two families egui binds itself. A `FontFamily::Name` is not bound
+    // until the frame after `set_fonts`, so anything drawn in the first frame
+    // that asked for one would panic - which is exactly what the empty state,
+    // the only thing here with a heading in it, did.
+    family(&mut fonts, FontFamily::Proportional, &["inter"]);
+    family(&mut fonts, FontFamily::Monospace, &["iosevka", "inter"]);
+
+    ctx.set_fonts(fonts);
 }
 
 /// Where a piece of text sits in the hierarchy.

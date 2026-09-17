@@ -517,3 +517,5 @@ fn a_catalog_that_does_not_verify() {
         Fetching::frozen(Err("the signature does not match this index under this key".to_owned())),
     );
 }
+
+

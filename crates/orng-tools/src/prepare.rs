@@ -70,6 +70,59 @@ impl Step {
         [Step::Backup, Step::Patch, Step::Verify, Step::Activate, Step::Link];
 }
 
+/// Whether the class preparation injects is in the archive.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Helper {
+    Present,
+    Absent,
+}
+
+/// What an installation's archive currently is.
+///
+/// Two facts, reported separately because they are separately true and the
+/// interface shows them as two. Collapsing them into "prepared or not" would
+/// lose the states that actually need explaining: an archive carrying the class
+/// with the guard still armed is a preparation that stopped between patching
+/// and activating, and Bitwig would degrade audio in every project rather than
+/// simply ignore the entry list.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Condition {
+    pub helper: Helper,
+    pub guard: GuardState,
+}
+
+impl Condition {
+    /// Whether this installation will read the entry list at startup.
+    ///
+    /// Both halves or neither: the class does the reading, and the guard would
+    /// punish the edit that put it there.
+    pub fn is_prepared(&self) -> bool {
+        self.helper == Helper::Present && self.guard == GuardState::Disarmed
+    }
+
+    /// Whether this is an archive as Bitwig shipped it.
+    pub fn is_stock(&self) -> bool {
+        self.helper == Helper::Absent && self.guard == GuardState::Armed
+    }
+}
+
+/// Read what state an installation is in, without writing anything.
+///
+/// Cheaper than computing a [`Plan`], which also works out the edit. This is
+/// what a window asks on opening, and what it asks again after preparing.
+pub fn inspect(install: &Installation) -> Result<Condition> {
+    let jar = Jar::open(&install.jar())?;
+    // The class is added under a name of ours, so its presence is the question
+    // answered directly rather than inferred from the guard.
+    let helper = match jar.entry(inject::HELPER_ENTRY) {
+        Ok(_) => Helper::Present,
+        Err(_) => Helper::Absent,
+    };
+    let binding = Binding::resolve(&jar)?;
+    let guard = guard::inspect(&jar.entry(&binding.guard_entry)?)?;
+    Ok(Condition { helper, guard })
+}
+
 /// What preparation will do, decided without writing anything.
 ///
 /// Computing one reads the archive and resolves every anchor, so a build that

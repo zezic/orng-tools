@@ -354,6 +354,15 @@ instead of stacking a second copy of every edit, and restore always has an unmod
 original. An installation that is already modified with no backup to work from is refused,
 because there is then nothing pristine to patch.
 
+**6.10 Three platforms, and the differences live in two places.** ORNG Registry targets
+macOS, Windows and Linux. Everything platform-shaped is already confined to
+`bitwig-install`, which knows where an installation, a user library and a settings
+directory sit on each, and to one function in `orng-tools` that links a folder. Nothing
+above those two knows what it is running on, and nothing new should.
+
+Continuous integration builds and tests all three, because the two-thirds of that code
+nobody exercises locally is exactly the two-thirds that rots.
+
 **6.9 `ORNG` in user-facing text, `orng` in machine identifiers.** The product names are
 **ORNG Registry** and **ORNG Catalog**; the binary, the paths, the packages, the domain and
 the repositories are lowercase `orng`. Read as an abbreviation rather than a word, which is
@@ -516,6 +525,13 @@ Built and tested against a real installation:
   version and source in the entry list (5.2, 7.6). The entry list's format marker is now
   checked on read rather than only written, and a list written before the catalog existed
   still loads, as local content.
+
+Known gaps:
+
+- **Linking on Windows is wrong.** `placement.rs` creates a symbolic link, which needs
+  `SeCreateSymbolicLinkPrivilege` or Developer Mode, so preparation's link step fails for an
+  ordinary account. Its own comment says it makes a directory junction, which is what it
+  should do and what std cannot express. Nothing here has ever run on Windows.
 
 Not built yet:
 

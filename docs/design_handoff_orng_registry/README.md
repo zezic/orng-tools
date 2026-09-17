@@ -1,6 +1,35 @@
 # Handoff: Orange Registry — custom content manager for Bitwig Studio
 
-> **Revision 4.** Adds the Orange Catalog feature (per `ui-spec-catalog.md`), the
+> **Revision 6.** Identical to revision 5 in every design value — no mockup changed. The one
+> difference is the **project rename** described in *Naming* immediately below: the binary,
+> the dot-folder and the guard string are now `orng-registry`. If you hold an earlier copy of
+> this bundle, the rename is the only thing to pick up.
+
+## Naming
+
+The project was renamed **orange-registry → orng-registry**, because `orng.tools` was
+available as a domain. What that does and does not change:
+
+| | |
+|---|---|
+| Binary / package name | `orng-registry` |
+| Config + backup root | `~/.orng-registry/` — entry list `~/.orng-registry/entries.tsv`, backups `~/.orng-registry/backups/<version>-<short revision>/` |
+| Guard string written into the installation | `disarmed by orng-registry 0.9.2` |
+| Window title strip (stand-in for native chrome) | `orng-registry` |
+| About's mono identity line | `0.9.2 · orng-registry · macOS arm64` |
+| Domain | `orng.tools` |
+| **Product display name** | **unchanged — "Orange Registry"** (About heading, prose, documentation) |
+
+So the user-visible name is still the two words; only the machine identifier shortened. Two
+consequences for implementation: the guard string is what the app looks for to decide whether
+an installation is already prepared, so an installation prepared by an `orange-registry`
+build will not be recognised by an `orng-registry` build unless you accept both; and the
+config root moved, so either migrate `~/.orange-registry/` on first launch or accept both
+paths. Neither is a design question — nothing in the UI reports the old name — but both are
+states the UI has to describe correctly (`guard armed · installation not prepared`,
+`entries … · none recorded`) if you do not migrate.
+
+> **Revision 5.** Adds the Orange Catalog feature (per `ui-spec-catalog.md`), the
 > `Local`/`Catalog` switch, a single-row install bar, and dot-free status treatment.
 > Supersedes the two-row install bar, the `ViewSwitch` strip and the "Entries" name
 > described in earlier revisions. See **For this audit round** immediately below for what
@@ -8,14 +37,14 @@
 
 ## Overview
 
-Orange Registry (binary `orange-registry`) is a desktop utility that registers user-made
+Orange Registry (binary `orng-registry`) is a desktop utility that registers user-made
 devices, modulators and Grid modules with a Bitwig Studio installation, so that projects
 recall them reliably. It reads each document's identity (UUID), records it, modifies the
 installation so it loads that entry list at startup, places the documents in the user
 library, and writes descriptions and search keywords so the devices are findable in
 Bitwig's browser.
 
-This bundle documents the **UI** for that app: **30 states** across two primary views
+This bundle documents the **UI** for that app: **31 states** across two primary views
 (`Local` and `Catalog`), three full-window secondary screens, two modals and a drag
 overlay, in dark and light appearance.
 
@@ -46,7 +75,31 @@ Two consequences worth stating plainly:
   detection, and the transitions between states are not the app's real transitions. Do not
   infer navigation from how the gallery switches states.
 
-## For this audit round
+## Applied from round three
+
+`design-round-2-changes.md`, all five items:
+
+1. **Three paths corrected** — entry list `~/.orng-registry/entries.tsv` (outside the
+   installation, so a Bitwig update cannot replace it, and tab-separated because the injected
+   class parses it with `split("\t")` at every launch); backups
+   `~/.orng-registry/backups/<version>-<short revision>/`; archive
+   `Contents/Java/bitwig.jar`, not `Contents/Resources`.
+2. **The transaction is five steps, reordered** so nothing in the installation changes until
+   the patched archive verifies. Cancel copy and the failure message follow from it.
+3. **Provenance keys on UUID**, not display name.
+4. **Kept as drawn**, pending index and entry-list additions: the per-item link to the merged
+   change, and the two version fields the update modal needs.
+5. **No change** — the design's assumption that preparation skips the link step under `Copy`
+   placement was right, and the implementation now matches it.
+
+## Still invented
+
+Everything else in the data is now confirmed by the implementation team: 35 MB backup, 34 MB
+archive, 428 factory entries as 152 / 43 / 233, and `6.1 (94a90411)` as the build-string
+shape. What remains fictional is the sample content itself — the nine catalog items, their
+authors and review references, the eleven local entries, and the three backup timestamps.
+
+## For the previous audit round
 
 Revision 4. Since the last audit the app gained the **Orange Catalog** (a second primary
 view, ten new states, four new components) and lost a good deal of chrome. The corrections
@@ -106,7 +159,7 @@ written by a technical writer), and icon choices beyond those named below.
 
 - Logical window **820 × 560**, resizable is untested — every state was designed at this size.
 - Window corner radius 12px; no window border (the shell separates from the desktop by tone and shadow).
-- A 30px title strip at the top of the prototype (`orange-registry`, centred, three dots at
+- A 30px title strip at the top of the prototype (`orng-registry`, centred, three dots at
   left) stands in for **native window chrome** — do not build it, use the platform's.
 - **Left gutter: 12px.** Everything aligns to it: install-bar content, toolbar, list rows,
   section bands, action bar, and all three secondary screens.
@@ -168,7 +221,9 @@ colours differently, preserve the *steps*, not the literal hex.
 | `--ink-3` | `#949494` | `#5e5e5e` | Tertiary: kind, UUID, reason, counts, paths, metadata |
 
 Tinted variants exist so that grey text never sits on a coloured ground. Each holds the
-neutral's luminance and pulls hue toward its background:
+neutral's luminance and pulls hue toward its background. **They are only for tinted grounds**
+— on a neutral surface they read as a hue with no cause, and the app's own grading rule
+applies instead: `--ink-2` for emphasis, `--accent-text` only when a decision is pending.
 
 | Token | Dark | Light |
 |---|---|---|
@@ -387,7 +442,7 @@ Body (`--panel-2`, 12px gutter, 14px between groups, scrolls):
   reading "Not read. This file is not a Bitwig document, so it has no UUID and nothing was
   placed in the library." A rejected file has neither, so showing an all-zeros UUID and a
   path states two things that are not true
-- `Placement` — pill: `linked` (`ph-link`, ok), `copied` (`ph-copy-simple`, info), `unresolved` (`ph-link-break`, err)
+- `Placement` — pill: `linked` (`ph-link`, ok), `copied` (`ph-copy-simple`, info), `unresolved` (`ph-link-break`, err). **Shown only for entries that have actually been placed** — a `Staged` or `Conflict` document has not been placed at all yet (its path row says "Will be placed at"), so reporting a placement would state a settled fact that is not one, and would contradict the current placement setting whenever they differ. Registered entries keep their real historical value, which legitimately varies per entry.
 - separator
 - Actions: `ph-folder-open` Reveal file · `ph-fingerprint` Assign new UUID… (**staged and
   conflicting entries only**, same restriction as the row) · `ph-trash` Remove entry (in
@@ -405,7 +460,7 @@ from the entry's status:
 | `Registered`, `Pending restart`, `Changed`, `Update available` | `Registered library path` | Reveal file · Remove entry |
 | `Staged`, `Conflict` | **`Will be placed at`**, in `--ink-3`, plus "Nothing is written until Apply runs." | Assign new UUID… · Remove entry |
 | `Missing file` | `Registered library path` | **`Locate file…`** (in `--accent-text`) · Remove entry — no Reveal, because the file cannot be found |
-| `Rejected` | replaced by the `Identity` row; **Description and Search keywords are dropped too** | Remove entry |
+| `Rejected` | replaced by the `Identity` row; **Description and Search keywords are dropped too**; no `Placement` | Remove entry |
 
 Getting this wrong is not cosmetic: during design the panel offered `Reveal file` on a
 missing file (the one action that cannot work) while omitting `Locate file` (the one that
@@ -498,18 +553,45 @@ Then nine steps, 27px each: mono ordinal · 5px state dot · label (600 when act
 right-aligned mono meta. Footer: 2px progress track (`--line` with an accent fill) ·
 percentage in mono · `Cancel`.
 
-The nine steps: Back up the jar and description bundles (35 MB) · Read the Core Registry
-(428 entries) · Prepare the installation · Neutralise the tamper guard · Place documents
-(6 files) · Link library folders · Write descriptions and search keywords · Verify ·
-Activate.
+The five steps: **Back up the archive and the description bundles** (35 MB) · **Prepare the
+installation** · **Verify** · **Activate** · **Link library folders**.
 
-Only `bitwig.jar` (34 MB) and the three description bundles are copied — never the ~957 MB
-installation. **The step count is derived, not fixed:** "Link library folders" does not run
-under the *copy documents into the installation* placement setting, and renders with an
-em-dash ordinal and "not run" while the header and percentage fall back to eight steps.
+Only `Contents/Java/bitwig.jar` (34 MB) and the three description bundles are copied — never
+the ~957 MB installation, and the backup goes to
+`~/.orng-registry/backups/<version>-<short revision>/`, outside the installation so a
+Bitwig update cannot reach it.
 
-Cancel is offered up to Activate. Update mode shows **none** of this — it is a transient
-line in the action bar.
+**The order is the property the transaction exists to provide.** The patched archive is
+written beside the original, verified under Bitwig's own JVM, and moved into place by a
+single rename. Nothing in the installation changes until it verifies, so a failure anywhere
+earlier leaves an installation that was never touched. Two consequences the copy must carry:
+
+- **Cancel is genuinely clean** up to Activate — "Nothing in the installation has changed
+  yet, so Cancel leaves it untouched: there is nothing to undo." An earlier draft ordered
+  document placement before Verify, which meant a cancelled run had already copied the
+  user's documents and rewritten Bitwig's description bundles.
+- **A failure restores nothing**, because nothing was touched: "Your installation was not
+  changed." Restore stays what it is on its own screen — something the user asks for, to undo
+  a preparation that succeeded.
+
+Placing documents and writing descriptions are **not in the transaction** — they are *Update
+entries* work, touching no part of the archive and unable to disturb the tamper seal. Reading
+the registry is not a step either: it happens while the plan is computed, before the user has
+agreed to anything.
+
+**The step count is derived, not fixed:** "Link library folders" does not run under the *copy
+documents into the installation* placement setting (a linked folder would resolve straight
+back out into the user library, making the setting meaningless), and renders with an em-dash
+ordinal and "not run" while the header and percentage fall back to four steps.
+
+**Cancel is offered up to Activate, and removed at it.** Up to that point the note reads
+"Nothing in the installation has changed yet, so Cancel leaves it untouched — there is
+nothing to undo"; at Activate the control is **gone** and the note reads "The verified
+archive has been moved into place, so there is nothing left to cancel. Undoing a completed
+preparation means Restore." A live Cancel button beside a caption saying cancelling is no
+longer possible is worse than no button.
+
+Update mode shows **none** of this — it is a transient line in the action bar.
 
 ### 8. Settings (full window)
 
@@ -524,19 +606,30 @@ Body, 12px gutter, max 620px, sections 15px apart, each with a 10.5px/600 `--ink
 - **Document placement** — two radio rows (`ph-radio-button` / `ph-circle`), the selected
   one on an accent-tinted ground with warm-tinted description ink. Link (documents survive
   a Bitwig update) vs copy (an update removes them).
+
+  **This setting is app state, not screen state**, and three surfaces derive from it: the
+  diagnostics `placement` line, the plan's placement line, and whether the transaction runs
+  four steps or five. Held in the root and passed down, like the kind filters and the install
+  filter — a placement control that only tints its own row is the defect this design hit
+  three times in review.
 - **Appearance** — System / Light / Dark segmented control on a `--field` ground with
   `ph-desktop` / `ph-sun` / `ph-moon`.
 - **Removing entries** — a `ph-square` checkbox "Also delete the document file", **off by
   default**, with the consequence spelled out: removing an entry unregisters it and leaves
   the document in the library. This is the only home for that choice (see decision 9).
+
+  Like placement, this is **app state held in the root**, and both remove affordances name
+  the setting in force: the row's trash tooltip reads "Remove entry · the document file is
+  kept" or "…is deleted too", and the inspector's Remove matches. A fixed tooltip would
+  promise the opposite of the setting half the time.
 - **Diagnostics** — one line of explanation, `Copy report` button, and a mono report block
-  in a `--field` well: install path, version and build, jar path and size, which anchors
+  in a `--field` well: install path, version and build, archive path and size, which anchors
   resolved, **guard state**, **backup date and size**, entry-list location and count,
   placement strategy, factory breakdown.
 
   **Every variable line derives from the installation the screen was opened from** — none of
   it is fixed text. From a prepared install: `anchors registry ok · descriptions ok · library
-  ok`, `guard disarmed by orange-registry 0.9.2`, `backup 14 Sep 2026 · 35.1 MB`,
+  ok`, `guard disarmed by orng-registry 0.9.2`, `backup 14 Sep 2026 · 35.1 MB`,
   `entries … · 6 entries`. From a stock one: `guard armed · installation not prepared`,
   `backup none yet`, `entries … · none recorded`. From `Unknown build`:
   `anchors registry NOT LOCATED`, `guard state unknown`. This matters more here than
@@ -581,7 +674,7 @@ report. When resolution fails, Version and Build render as `—` and Resolution 
 state where the install bar deliberately suppresses one.
 
 52px accent-filled mark with `ph-light ph-package` in `--accent-ink`; product name
-(19px/600) and a mono line `0.9.2 · orange-registry · macOS arm64`; two sentences of
+(19px/600) and a mono line `0.9.2 · orng-registry · macOS arm64`; two sentences of
 description, the second stating that the app finds what it needs by structure rather than
 by version; a **Detected installation** card with three rows — **Version** (`6.1`),
 **Build** (`94a90411`) and **Resolution**, a dot plus "All anchors located" in `--accent`
@@ -653,6 +746,10 @@ one. UUID last, secondary. Primary action, plus `Remove` when installed.
 
 ### Install, update, supersede
 
+The plan's placement line **derives from the staged items' kinds** — "1 to devices/My
+Devices, 1 to modules/My Modules" — because one kind folder cannot hold documents of two
+kinds, and the inspector states the same per-kind destination one panel away.
+
 - **Install** is one click. On a prepared installation it is *Update entries* work: no
   backup, no confirmation, Bitwig may stay open, takes effect next launch.
 - **Update confirms**, and installs do not. Bitwig resolves a device by identity, so
@@ -696,9 +793,22 @@ one. UUID last, secondary. Primary action, plus `Remove` when installed.
   (tooltip `Orange Catalog · <version>`) and a **Source** block in the inspector with the
   review link. Local-file entries show `Local file`.
 
-  **Provenance is derived, never listed.** An entry is catalog-sourced when a catalog item of
-  the same name reports an installed-ish status (`Installed`, `Superseded` or
-  `Update available`) — so the two views cannot disagree about what is installed. Building
+  **The sample data must not collide on UUID.** Only four pairs share an identity, each a
+  local entry and its own catalog item: DISPERSER, CURVECOMP, BREATH FOLLOWER and
+  SLEW LIMITER. Three accidental collisions in an earlier revision (a Device sharing a
+  Modulator's UUID, and so on) were invisible only because the colliding catalog items were
+  not installed — one status flip would have attributed another author's version and review
+  link to an unrelated entry, and a staged document duplicating a catalog identity should
+  have rendered as `Conflict` rather than a clean `Staged`. If you regenerate fixtures,
+  check uniqueness rather than eyeballing them.
+
+  **Provenance is derived, and keyed on UUID.** An entry is catalog-sourced when a catalog
+  item **with the same UUID** reports an installed-ish status (`Installed`, `Superseded` or
+  `Update available`) — so the two views cannot disagree about what is installed. It must not
+  key on the display name: names are allowed to collide in the repository and the app renames
+  entries when they do, precisely because the name is not the identity. A UUID is exact, is
+  already in both records, and cannot be renamed — name matching would eventually mark the
+  wrong row, and would do it first to the user who hit the rename path. Building
   this from a hand-maintained name list means Local and Catalog drift apart the first time a
   catalog status changes, which is exactly what happened during design: the catalog claimed
   an item was installed that the Local list did not contain, and a superseded item lost its
@@ -822,7 +932,7 @@ browser; child files also render standalone.
 
 | File | Contents |
 |---|---|
-| `Orange Registry.dc.html` | Root: window shell, all 30 states, state picker, theme toggle, drag overlay, plan/progress/update modals, banner |
+| `Orange Registry.dc.html` | Root: window shell, all 31 states, state picker, theme toggle, drag overlay, plan/progress/update modals, banner |
 | `EntryRow.dc.html` | One Local row: 10 statuses, 3 kinds, hover/selected/factory/narrow, catalog provenance marker |
 | `InstallBar.dc.html` | Single-row install bar: Local/Catalog switch, conditional state chip, catalog freshness, overflow menu |
 | `ListToolbar.dc.html` | Local toolbar: search, kind filters with counts, factory toggle, Add files |
@@ -837,7 +947,7 @@ browser; child files also render standalone.
 | `AboutScreen.dc.html` | About |
 | `support.js` | Prototype runtime — **not part of the design**, required only to open the HTML |
 
-Open `Orange Registry.dc.html` and use the picker above the window to reach any of the 30 states; the
+Open `Orange Registry.dc.html` and use the picker above the window to reach any of the 31 states; the
 `Dark`/`Light` toggle beside the title switches appearance. The child files are the same
 components in isolation, each with editable properties.
 

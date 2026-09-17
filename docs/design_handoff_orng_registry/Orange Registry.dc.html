@@ -28,7 +28,7 @@ a:hover{color:#ff7a45}
     <div style="display:flex; align-items:flex-end; gap:16px; flex-wrap:wrap">
       <div style="display:flex; flex-direction:column; gap:5px; flex:1; min-width:240px">
         <span style="font-size:21px; font-weight:600; color:var(--ink); letter-spacing:-0.025em">Orange Registry</span>
-        <span style="font-family:'Iosevka Extended',Iosevka,monospace; letter-spacing:-0.05em; font-size:11px; color:var(--ink-3)">Desktop UI &middot; 820&times;560 &middot; 30 states</span>
+        <span style="font-family:'Iosevka Extended',Iosevka,monospace; letter-spacing:-0.05em; font-size:11px; color:var(--ink-3)">Desktop UI &middot; 820&times;560 &middot; 31 states</span>
       </div>
       <div style="display:flex; gap:2px; padding:3px; background:var(--panel); border-radius:4px">
         <div onClick="{{ setDark }}" style="{{ darkBtn }}">Dark</div>
@@ -60,13 +60,13 @@ a:hover{color:#ff7a45}
             <div style="width:8px; height:8px; border-radius:50%; background:var(--line)"></div>
             <div style="width:8px; height:8px; border-radius:50%; background:var(--line)"></div>
           </div>
-          <span style="flex:1; text-align:center; font-family:'Iosevka Extended',Iosevka,monospace; letter-spacing:-0.05em; font-size:10.5px; color:var(--ink-3)">orange-registry</span>
+          <span style="flex:1; text-align:center; font-family:'Iosevka Extended',Iosevka,monospace; letter-spacing:-0.05em; font-size:10.5px; color:var(--ink-3)">orng-registry</span>
           <div style="width:34px"></div>
           
         </div>
 
         <sc-if value="{{ isSettings }}" hint-placeholder-val="{{ false }}">
-          <div style="display:grid; grid-template-rows:minmax(0,1fr); grid-template-columns:minmax(0,1fr); flex:1; min-height:0"><dc-import name="SettingsScreen" guard="{{ guard }}" backup="{{ backup }}" resolved="{{ resolved }}" entryCount="{{ entryCount }}" onBack="{{ goMain }}" onAbout="{{ goAbout }}" onRestore="{{ goRestore }}" onTheme="{{ setTheme }}" hint-size="100%,100%"></dc-import></div>
+          <div style="display:grid; grid-template-rows:minmax(0,1fr); grid-template-columns:minmax(0,1fr); flex:1; min-height:0"><dc-import name="SettingsScreen" placement="{{ placement }}" onPlacement="{{ onPlacement }}" deleteFile="{{ deleteFile }}" onToggleDelete="{{ onToggleDelete }}" guard="{{ guard }}" backup="{{ backup }}" resolved="{{ resolved }}" entryCount="{{ entryCount }}" onBack="{{ goMain }}" onAbout="{{ goAbout }}" onRestore="{{ goRestore }}" onTheme="{{ setTheme }}" hint-size="100%,100%"></dc-import></div>
         </sc-if>
         <sc-if value="{{ isRestore }}" hint-placeholder-val="{{ false }}">
           <div style="display:grid; grid-template-rows:minmax(0,1fr); grid-template-columns:minmax(0,1fr); flex:1; min-height:0"><dc-import name="RestoreScreen" backup="{{ backup }}" onBack="{{ goMain }}" hint-size="100%,100%"></dc-import></div>
@@ -117,7 +117,7 @@ a:hover{color:#ff7a45}
                         <span style="font-family:'Iosevka Extended',Iosevka,monospace; letter-spacing:-0.05em; font-size:10.5px; color:var(--ink-3)">{{ stagedCount }}</span>
                       </div>
                       <sc-for list="{{ staged }}" as="r" hint-placeholder-count="3">
-                        <dc-import name="EntryRow" kind="{{ r.kind }}" entry-name="{{ r.name }}" uuid="{{ r.uuid }}" status="{{ r.status }}" reason="{{ r.reason }}" narrow="{{ inspectorOpen }}" forceActions="{{ r.forceActions }}" onOpen="{{ openInspector }}" hint-size="100%,36px"></dc-import>
+                        <dc-import name="EntryRow" deleteFile="{{ deleteFile }}" kind="{{ r.kind }}" entry-name="{{ r.name }}" uuid="{{ r.uuid }}" status="{{ r.status }}" reason="{{ r.reason }}" narrow="{{ inspectorOpen }}" forceActions="{{ r.forceActions }}" onOpen="{{ openInspector }}" hint-size="100%,36px"></dc-import>
                       </sc-for>
                     </sc-if>
                     <div style="display:flex; align-items:center; gap:9px; height:26px; padding:0 12px; background:var(--row-alt); position:sticky; top:0; z-index:2">
@@ -126,7 +126,7 @@ a:hover{color:#ff7a45}
                       <span style="font-family:'Iosevka Extended',Iosevka,monospace; letter-spacing:-0.05em; font-size:10.5px; color:var(--ink-3)">{{ countPad }}</span>
                     </div>
                     <sc-for list="{{ userRows }}" as="r" hint-placeholder-count="7">
-                      <dc-import name="EntryRow" kind="{{ r.kind }}" entry-name="{{ r.name }}" uuid="{{ r.uuid }}" status="{{ r.status }}" reason="{{ r.reason }}" source="{{ r.source }}" selected="{{ r.selected }}" narrow="{{ inspectorOpen }}" factory="{{ r.factory }}" forceActions="{{ r.forceActions }}" onOpen="{{ openInspector }}" hint-size="100%,36px"></dc-import>
+                      <dc-import name="EntryRow" deleteFile="{{ deleteFile }}" kind="{{ r.kind }}" entry-name="{{ r.name }}" uuid="{{ r.uuid }}" status="{{ r.status }}" reason="{{ r.reason }}" source="{{ r.source }}" selected="{{ r.selected }}" narrow="{{ inspectorOpen }}" factory="{{ r.factory }}" forceActions="{{ r.forceActions }}" onOpen="{{ openInspector }}" hint-size="100%,36px"></dc-import>
                     </sc-for>
                     <sc-if value="{{ hasFactory }}" hint-placeholder-val="{{ false }}">
                       <div style="display:flex; align-items:center; gap:9px; height:26px; padding:0 12px; background:var(--row-alt); position:sticky; top:0; z-index:3">
@@ -135,7 +135,7 @@ a:hover{color:#ff7a45}
                         <span style="font-family:'Iosevka Extended',Iosevka,monospace; letter-spacing:-0.05em; font-size:10.5px; color:var(--ink-3)">{{ factoryCount }}</span>
                       </div>
                       <sc-for list="{{ factoryRows }}" as="r" hint-placeholder-count="2">
-                        <dc-import name="EntryRow" kind="{{ r.kind }}" entry-name="{{ r.name }}" uuid="{{ r.uuid }}" status="{{ r.status }}" narrow="{{ inspectorOpen }}" factory="{{ r.factory }}" hint-size="100%,36px"></dc-import>
+                        <dc-import name="EntryRow" deleteFile="{{ deleteFile }}" kind="{{ r.kind }}" entry-name="{{ r.name }}" uuid="{{ r.uuid }}" status="{{ r.status }}" narrow="{{ inspectorOpen }}" factory="{{ r.factory }}" hint-size="100%,36px"></dc-import>
                       </sc-for>
                     </sc-if>
                   </div>
@@ -158,7 +158,7 @@ a:hover{color:#ff7a45}
               </div>
 
               <sc-if value="{{ inspectorOpen }}" hint-placeholder-val="{{ false }}">
-                <dc-import name="Inspector" kind="{{ inspKind }}" registered="{{ inspRegistered }}" entry-name="{{ inspName }}" status="{{ inspStatus }}" uuid="{{ inspUuid }}" description="{{ inspDescription }}" keywords="{{ inspKeywords }}" libpath="{{ inspLibpath }}" placement="{{ inspPlacement }}" source="{{ inspSource }}" sourceVersion="{{ inspSourceVersion }}" provenance="{{ inspProvenance }}" onClose="{{ closeInspector }}" hint-size="272px,100%"></dc-import>
+                <dc-import name="Inspector" kind="{{ inspKind }}" deleteFile="{{ deleteFile }}" registered="{{ inspRegistered }}" entry-name="{{ inspName }}" status="{{ inspStatus }}" uuid="{{ inspUuid }}" description="{{ inspDescription }}" keywords="{{ inspKeywords }}" libpath="{{ inspLibpath }}" placement="{{ inspPlacement }}" source="{{ inspSource }}" sourceVersion="{{ inspSourceVersion }}" provenance="{{ inspProvenance }}" onClose="{{ closeInspector }}" hint-size="272px,100%"></dc-import>
               </sc-if>
               <sc-if value="{{ detailOpen }}" hint-placeholder-val="{{ false }}">
                 <dc-import name="CatalogDetail" item-name="{{ detailName }}" kind="{{ detailKind }}" status="{{ detailStatus }}" author="{{ detailAuthor }}" version="{{ detailVersion }}" description="{{ detailDescription }}" keywords="{{ detailKeywords }}" licence="{{ detailLicence }}" provenance="{{ detailProvenance }}" homepage="{{ detailHomepage }}" uuid="{{ detailUuid }}" requires="{{ detailRequires }}" compatible="{{ detailCompatible }}" replacementName="{{ detailReplacement }}" onClose="{{ closeDetail }}" onPrimary="{{ detailPrimary }}" onReplacement="{{ openReplacement }}" hint-size="272px,100%"></dc-import>
@@ -280,13 +280,17 @@ a:hover{color:#ff7a45}
                   </div>
                 </sc-for>
               </div>
+              <div style="display:flex; flex:none; padding:0 14px 11px">
+                <span style="font-size:10.5px; line-height:1.5; color:var(--ink-3); text-wrap:pretty">{{ cancelNote }}</span>
+              </div>
               <div style="position:relative; display:flex; align-items:center; gap:10px; flex:none; padding:12px 14px; background:var(--bg)">
-                
                 <div style="flex:1; height:2px; background:var(--line)">
                   <div style="width:{{ progressPct }}; height:100%; background:var(--accent)"></div>
                 </div>
                 <span style="font-family:'Iosevka Extended',Iosevka,monospace; letter-spacing:-0.05em; font-size:10px; color:var(--ink-3); flex:none">{{ progressPct }}</span>
-                <div onClick="{{ goMain }}" style="display:flex; align-items:center; height:28px; padding:0 12px; flex:none; border-radius:3px; background:var(--btn); color:var(--ink-2); font-size:11.5px; cursor:pointer" style-hover="background:var(--btn-hover); color:var(--ink)">Cancel</div>
+                <sc-if value="{{ showCancel }}" hint-placeholder-val="{{ true }}">
+                  <div onClick="{{ goMain }}" style="display:flex; align-items:center; height:28px; padding:0 12px; flex:none; border-radius:3px; background:var(--btn); color:var(--ink-2); font-size:11.5px; cursor:pointer" style-hover="background:var(--btn-hover); color:var(--ink)">Cancel</div>
+                </sc-if>
               </div>
             </div>
           </div>
@@ -330,10 +334,10 @@ a:hover{color:#ff7a45}
 const REGISTERED = [
   { kind: "DEVICE", name: "DISPERSER", uuid: "21882ab0-7c41-4d0b-9a10-ff3e5d2e77a1", status: "Registered" },
   { kind: "DEVICE", name: "CURVECOMP", uuid: "7c41d0b2-9a10-4ff3-8e5d-2e77a1c0de44", status: "Registered" },
-  { kind: "DEVICE", name: "TAPE DRIVE", uuid: "3e90b1c4-5d2e-4771-a1c0-de4419e11c93", status: "Pending restart", reason: "Bitwig is open" },
+  { kind: "DEVICE", name: "TAPE DRIVE", uuid: "c93b7f10-4e26-4a88-b1d5-0f7a9c2e4471", status: "Pending restart", reason: "Bitwig is open" },
   { kind: "MODULATOR", name: "SHAPER", uuid: "c0de4419-e11c-4930-9f88-b4a20188b4a2", status: "Missing file", reason: "Not found in the user library" },
   { kind: "MODULATOR", name: "BREATH FOLLOWER", uuid: "5d2e77a1-c0de-4441-9e11-c930f88b4a20", status: "Update available", reason: "Catalog has 2.1.0" },
-  { kind: "MODULE", name: "FOLD BACK", uuid: "e11c930f-88b4-4a20-9188-b4a201e11c93", status: "Changed", reason: "File on disk differs" },
+  { kind: "MODULE", name: "FOLD BACK", uuid: "a7d419e2-33c8-4b57-9f10-6e2b8d40cc93", status: "Changed", reason: "File on disk differs" },
   { kind: "DEVICE", name: "OLD REVERB", uuid: "88b4a201-e11c-4930-9f88-b4a2015d2e77", status: "Pending removal" }
 ];
 const DETAIL = {
@@ -352,7 +356,7 @@ const DETAIL = {
 };
 
 const STAGED = [
-  { kind: "DEVICE", name: "WAVESHAPER ALPHA", uuid: "9a10ff3e-5d2e-4771-a1c0-de4419e11c93", status: "Staged" },
+  { kind: "DEVICE", name: "WAVESHAPER ALPHA", uuid: "1f6c85d4-9a02-47be-83c1-d5e70b14a629", status: "Staged" },
   { kind: "MODULE", name: "SLEW LIMITER", uuid: "4b71c8d9-21f0-4ab3-8c77-1e9b0d4a6f22", status: "Conflict", reason: "UUID already used by a factory module" },
   { kind: "DEVICE", name: "notes.txt", uuid: "00000000-0000-0000-0000-000000000000", status: "Rejected", reason: "Not a Bitwig device document" }
 ];
@@ -373,23 +377,19 @@ const CATALOG = [
 ];
 
 const STEP_LABELS = [
-  ["Back up the jar and description bundles", "35 MB"],
-  ["Read the Core Registry", "428 entries"],
+  ["Back up the archive and the description bundles", "35 MB"],
   ["Prepare the installation", ""],
-  ["Neutralise the tamper guard", ""],
-  ["Place documents", "6 files"],
-  ["Link library folders", "", true],
-  ["Write descriptions and search keywords", ""],
   ["Verify", ""],
-  ["Activate", ""]
+  ["Activate", ""],
+  ["Link library folders", "", true]
 ];
 const PLAN = [
-  { color: "var(--ink-3)", text: "The jar and description bundles are backed up first to ~/Library/Application Support/OrangeRegistry/backups." },
-  { color: "var(--accent-text)", text: "The installation at /Applications/Bitwig Studio.app is modified so it loads your entry list at startup." },
+  { color: "var(--ink-3)", text: "The archive and the description bundles are backed up first to ~/.orng-registry/backups/6.1-94a90411/." },
+  { color: "var(--accent-text)", text: "The patched archive is written beside the original, verified under Bitwig's own JVM, then moved into place by a single rename. Nothing in the installation changes until it verifies." },
   { color: "var(--ink-3)", text: "2 entries registered: WAVESHAPER ALPHA, SLEW LIMITER." },
   { color: "var(--ink-3)", text: "1 entry removed: OLD REVERB." },
-  { color: "var(--ink-3)", text: "2 documents copied to ~/Documents/Bitwig Studio/Library/devices/My Devices." },
-  { color: "var(--ink-3)", text: "1 library link created inside the installation's Library folder." }
+  { color: "var(--ink-3)", placement: true },
+  { color: "var(--ink-3)", text: "1 library link created inside the installation's Library folder, after the transaction completes." }
 ];
 
 const SCREENS = {
@@ -508,13 +508,18 @@ const SCREENS = {
     action: { summary: "2 to add, 1 to remove", primary: "Prepare installation", mode: "prepare" }
   },
   progress: {
-    caption: ["Apply progress", "Prepare install is a transaction with nameable steps. Cancel is allowed up to Activate."],
-    list: true, staged: true, progress: 4, installState: "Stock", count: 0, guard: "Armed", backup: "No backup yet",
+    caption: ["Apply progress", "Prepare install is a transaction with nameable steps, and nothing in the installation changes until the patched archive verifies \u2014 so Cancel up to Activate leaves it untouched, with nothing to undo."],
+    list: true, staged: true, progress: 2, installState: "Stock", count: 0, guard: "Armed", backup: "No backup yet",
     action: { summary: "Preparing the installation\u2026", primary: "Prepare installation", mode: "prepare", disabled: true, disabledReason: "In progress" }
+  },
+  activate: {
+    caption: ["Activate", "The single rename that moves the verified archive into place. Cancel is gone \u2014 from here the installation has changed, and undoing it means Restore, not cancelling."],
+    view: "entries", list: true, staged: true, progress: 3, installState: "Stock", count: 0, guard: "Armed", backup: "No backup yet",
+    action: { summary: "Activating\u2026", primary: "Prepare installation", mode: "prepare", disabled: true, disabledReason: "In progress" }
   },
   auth: {
     caption: ["Authorisation requested", "macOS and Linux may ask for permission to write into the installation. The step list waits rather than failing."],
-    list: true, staged: true, progress: 2, auth: true, installState: "Stock", count: 0, guard: "Armed", backup: "No backup yet",
+    list: true, staged: true, progress: 1, auth: true, installState: "Stock", count: 0, guard: "Armed", backup: "No backup yet",
     action: { summary: "Waiting for authorisation\u2026", primary: "Prepare installation", mode: "prepare", disabled: true, disabledReason: "In progress" }
   },
   success: {
@@ -532,7 +537,7 @@ const SCREENS = {
   failure: {
     caption: ["Failure", "Which step failed, what the app did about it, and a technical report to attach to a bug report. Never a raw error as the primary message."],
     list: true, staged: true, installState: "Stock", count: 0, guard: "Armed", backup: "Backup: 15 Sep 2026",
-    banner: { tone: "err", title: "Verification failed. The Core Registry did not match what was written.", body: "Your installation was restored from backup. Nothing was changed.", btn: "Copy details", dismiss: true },
+    banner: { tone: "err", title: "Verification failed. The Core Registry did not match what was written.", body: "Your installation was not changed. The patched archive never reached it \u2014 it is written beside the original and only moved into place once it verifies.", btn: "Copy details", dismiss: true },
     action: { summary: "2 to add, 1 to remove", tone: "err", note: "Prepare install \u00b7 failed at the verify step", primary: "Try again", mode: "prepare" }
   }
 };
@@ -540,7 +545,7 @@ const SCREENS = {
 const GROUPS = [
   { label: "List", keys: ["main", "hover", "inspector", "factory", "nomatch"] },
   { label: "First run", keys: ["onboarding", "noinstall", "unknownbuild", "drag"] },
-  { label: "Apply", keys: ["confirm", "progress", "auth", "success", "restart", "failure", "running"] },
+  { label: "Apply", keys: ["confirm", "progress", "auth", "activate", "success", "restart", "failure", "running"] },
   { label: "Catalog", keys: ["catalog", "catalogdetail", "catalogupdate", "catalogupdateconfirm", "catalogsuperseded", "catalogincompatible"] },
   { label: "Catalog \u00b7 network", keys: ["catalogstale", "catalognever", "catalogverify", "catalognomatch"] },
   { label: "Screens", keys: ["reapply", "settings", "restore", "about"] }
@@ -548,7 +553,7 @@ const GROUPS = [
 const CHIP = {
   main: "Entry list", hover: "Row hover", inspector: "Inspector", factory: "Factory shown", nomatch: "No match",
   onboarding: "Nothing registered", noinstall: "No install", unknownbuild: "Unknown build", drag: "Drag over",
-  confirm: "Confirm plan", progress: "Progress", auth: "Authorisation", success: "Success",
+  confirm: "Confirm plan", progress: "Progress", auth: "Authorisation", activate: "Activate", success: "Success",
   restart: "Restart needed", failure: "Failure", running: "Bitwig running",
   catalog: "Browse", catalogdetail: "Item detail", catalogupdate: "Update available",
   catalogupdateconfirm: "Update confirm", catalogsuperseded: "Replacement", catalogincompatible: "Incompatible",
@@ -562,7 +567,7 @@ const FULL = {
 };
 
 class Component extends DCLogic {
-  state = { theme: "dark", screen: "main", from: "main", menuOpen: false, detailItem: null, inspectorItem: null, catalogFilter: null, factoryOn: null, kinds: null };
+  state = { theme: "dark", screen: "main", from: "main", menuOpen: false, detailItem: null, inspectorItem: null, catalogFilter: null, factoryOn: null, kinds: null, placement: null, deleteFile: false };
 
   chipStyle(on) {
     return [
@@ -604,7 +609,8 @@ class Component extends DCLogic {
     const bannerBg = { warn: "var(--warn-bg)", err: "var(--err-bg)", ok: "var(--ok-bg)", info: "var(--info-bg)" }[tone] || "transparent";
 
     const progress = s.progress;
-    const placementCopy = !!s.placementCopy;
+    const placement = this.state.placement ?? (s.placementCopy ? "copy" : "link");
+    const placementCopy = placement === "copy";
     let n = 0;
     const steps = STEP_LABELS.map(([label, meta, skippable], i) => {
       const skipped = !!skippable && placementCopy;
@@ -634,15 +640,15 @@ class Component extends DCLogic {
     };
     const libpathOf = e => { const [dir, ext] = LIB[e.kind] || LIB.DEVICE; return dir + e.name + ext; };
     const INSTALLED_STATES = ["Installed", "Superseded", "Update available"];
-    const catalogSource = name => CATALOG.find(i => i.name === name && INSTALLED_STATES.includes(i.status)) || null;
+    const catalogSource = uuid => CATALOG.find(i => i.uuid === uuid && INSTALLED_STATES.includes(i.status)) || null;
     const openEntry = this.state.inspectorItem ?? s.selected ?? null;
     const entry = STAGED.concat(REGISTERED).concat(FACTORY).find(x => x.name === openEntry) || REGISTERED[0];
     const stagedRows = STAGED.filter(x => kindOn(x.kind)).map(x => ({ ...x, forceActions: false }));
     const rows = [];
     REGISTERED.filter(x => kindOn(x.kind)).forEach((r, i) => rows.push({
       ...r,
-      source: catalogSource(r.name) ? "catalog" : "local",
-      sourceVersion: (catalogSource(r.name) || {}).installed ?? (catalogSource(r.name) || {}).version ?? "",
+      source: catalogSource(r.uuid) ? "catalog" : "local",
+      sourceVersion: (catalogSource(r.uuid) || {}).installed ?? (catalogSource(r.uuid) || {}).version ?? "",
       selected: openEntry === r.name,
       forceActions: s.hoverRow === i,
       factory: false
@@ -664,6 +670,10 @@ class Component extends DCLogic {
     const facet = k => installFiltered.filter(i => i.kind === k).length;
     const entryPool = (s.staged === false ? [] : STAGED).concat(REGISTERED).concat(factoryOn ? FACTORY : []);
     const entryFacet = k => entryPool.filter(i => i.kind === k).length;
+    const stagedDirs = {};
+    STAGED.filter(x => x.status !== "Rejected").forEach(x => { const d = (LIB[x.kind] || LIB.DEVICE)[0]; stagedDirs[d] = (stagedDirs[d] || 0) + 1; });
+    const placementLine = (placementCopy ? "Copied into the installation: " : "Placed in the user library: ")
+      + Object.entries(stagedDirs).map(([d, c]) => c + " to " + d.replace(/\/$/, "")).join(", ") + ".";
     const emptyVariant = liveEmpty ? (s.view === "catalog" ? "nocatalogmatch" : "nomatch") : (s.empty ?? "onboarding");
     const filteredSummary = s.view === "catalog"
       ? "Catalog \u00b7 " + catalogItems.length + " of " + CATALOG.length + " items shown"
@@ -768,6 +778,10 @@ class Component extends DCLogic {
       onToggleKind: k => this.setState({ kinds: kinds.includes(k) ? kinds.split("|").filter(x => x !== k).join("|") : kinds + "|" + k }),
       onToggleFactory: () => this.setState({ factoryOn: !factoryOn }),
       onCatalogFilter: v => this.setState({ catalogFilter: v }),
+      placement,
+      onPlacement: v => this.setState({ placement: v }),
+      deleteFile: this.state.deleteFile,
+      onToggleDelete: () => this.setState({ deleteFile: !this.state.deleteFile }),
 
       hasStaged: listWithStaged,
       staged: stagedRows,
@@ -784,9 +798,9 @@ class Component extends DCLogic {
       inspPlacement: (DETAIL[entry.name] || {}).placement ?? "linked",
       inspLibpath: libpathOf(entry),
       inspRegistered: entry.status !== "Rejected",
-      inspSource: catalogSource(entry.name) ? "catalog" : "local",
-      inspSourceVersion: (catalogSource(entry.name) || {}).installed ?? (catalogSource(entry.name) || {}).version ?? "",
-      inspProvenance: (catalogSource(entry.name) || {}).provenance ?? "",
+      inspSource: catalogSource(entry.uuid) ? "catalog" : "local",
+      inspSourceVersion: (catalogSource(entry.uuid) || {}).installed ?? (catalogSource(entry.uuid) || {}).version ?? "",
+      inspProvenance: (catalogSource(entry.uuid) || {}).provenance ?? "",
       openInspector: name => this.setState({ screen: "inspector", inspectorItem: name }),
       closeInspector: () => this.setState({ screen: "main" }),
 
@@ -820,7 +834,11 @@ class Component extends DCLogic {
       progressStep: progress !== undefined ? "Step " + (progress + 1) + " of " + stepTotal + " \u00b7 " + STEP_LABELS[progress][0] : "",
       progressPct: progress !== undefined ? Math.round((progress / stepTotal) * 100) + "%" : "0%",
       steps, stepTotal,
-      planLines: PLAN.map((p, i) => ({ ...p, num: i + 1 })),
+      showCancel: progress !== undefined && progress < 3,
+      cancelNote: progress !== undefined && progress < 3
+        ? "Nothing in the installation has changed yet, so Cancel leaves it untouched \u2014 there is nothing to undo."
+        : "The rename that moves the verified archive into place cannot be interrupted, so Cancel is gone. Once the preparation completes, undoing it means Restore.",
+      planLines: PLAN.map((p, i) => ({ ...p, num: i + 1, text: p.placement ? placementLine : p.text })),
 
       goMain: go("main"),
       goSettings: go("settings"),

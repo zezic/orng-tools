@@ -50,7 +50,7 @@ a:hover{color:#ff7a45}
           </div>
           <div style="display:grid; grid-template-columns:128px minmax(0,1fr) auto auto; align-items:center; gap:8px">
             <span style="font-size:11.5px; color:var(--ink-2)">Backups</span>
-            <span style="font-family:'Iosevka Extended',Iosevka,'SF Mono',Menlo,monospace; letter-spacing:-0.05em; font-size:10.5px; color:var(--ink); padding:5px 8px; background:var(--field); border-radius:4px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis">~/Library/Application Support/OrangeRegistry/backups</span>
+            <span style="font-family:'Iosevka Extended',Iosevka,'SF Mono',Menlo,monospace; letter-spacing:-0.05em; font-size:10.5px; color:var(--ink); padding:5px 8px; background:var(--field); border-radius:4px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis">~/.orng-registry/backups/6.1-94a90411/</span>
             <sc-if value="{{ hasBackup }}" hint-placeholder-val="{{ true }}">
               <span onClick="{{ onRestore }}" style="display:flex; align-items:center; gap:5px; font-size:11px; color:var(--ink-2); padding:4px 8px; background:var(--btn); border-radius:4px; cursor:pointer" style-hover="background:var(--btn-hover); color:var(--ink)"><i class="ph-duotone ph-clock-counter-clockwise" style="font-size:16px"></i>Restore&hellip;</span>
             </sc-if>
@@ -88,7 +88,7 @@ a:hover{color:#ff7a45}
           <i class="{{ deleteIcon }}" style="font-size:16px; flex:none; color:{{ deleteIconColor }}; margin-top:1px"></i>
           <div style="display:flex; flex-direction:column; gap:2px">
             <span style="font-size:11.5px; color:var(--ink)">Also delete the document file</span>
-            <span style="font-size:10.5px; line-height:1.45; color:var(--ink-3)">Off, removing an entry unregisters it and leaves your document in the library.</span>
+            <span style="font-size:10.5px; line-height:1.45; color:{{ deleteNoteInk }}">{{ deleteNote }}</span>
           </div>
         </div>
       </div>
@@ -127,9 +127,9 @@ a:hover{color:#ff7a45}
 </div>
 
 </x-dc>
-<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:820,&quot;height&quot;:560},&quot;guard&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;Armed&quot;,&quot;Disarmed&quot;,&quot;Unknown&quot;],&quot;default&quot;:&quot;Disarmed&quot;,&quot;tsType&quot;:&quot;string&quot;,&quot;section&quot;:&quot;Diagnostics&quot;},&quot;backup&quot;:{&quot;editor&quot;:&quot;text&quot;,&quot;default&quot;:&quot;Backup: 14 Sep 2026&quot;,&quot;tsType&quot;:&quot;string&quot;,&quot;section&quot;:&quot;Diagnostics&quot;},&quot;resolved&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:true,&quot;tsType&quot;:&quot;boolean&quot;,&quot;section&quot;:&quot;Diagnostics&quot;},&quot;entryCount&quot;:{&quot;editor&quot;:&quot;int&quot;,&quot;default&quot;:6,&quot;tsType&quot;:&quot;number&quot;,&quot;section&quot;:&quot;Diagnostics&quot;},&quot;onBack&quot;:{&quot;editor&quot;:null,&quot;tsType&quot;:&quot;() =&gt; void&quot;},&quot;onAbout&quot;:{&quot;editor&quot;:null,&quot;tsType&quot;:&quot;() =&gt; void&quot;},&quot;onRestore&quot;:{&quot;editor&quot;:null,&quot;tsType&quot;:&quot;() =&gt; void&quot;},&quot;onTheme&quot;:{&quot;editor&quot;:null,&quot;tsType&quot;:&quot;(t: string) =&gt; void&quot;}}">
+<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:820,&quot;height&quot;:560},&quot;placement&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;link&quot;,&quot;copy&quot;],&quot;default&quot;:&quot;link&quot;,&quot;tsType&quot;:&quot;string&quot;},&quot;deleteFile&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:false,&quot;tsType&quot;:&quot;boolean&quot;},&quot;guard&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;Armed&quot;,&quot;Disarmed&quot;,&quot;Unknown&quot;],&quot;default&quot;:&quot;Disarmed&quot;,&quot;tsType&quot;:&quot;string&quot;,&quot;section&quot;:&quot;Diagnostics&quot;},&quot;backup&quot;:{&quot;editor&quot;:&quot;text&quot;,&quot;default&quot;:&quot;Backup: 14 Sep 2026&quot;,&quot;tsType&quot;:&quot;string&quot;,&quot;section&quot;:&quot;Diagnostics&quot;},&quot;resolved&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:true,&quot;tsType&quot;:&quot;boolean&quot;,&quot;section&quot;:&quot;Diagnostics&quot;},&quot;entryCount&quot;:{&quot;editor&quot;:&quot;int&quot;,&quot;default&quot;:6,&quot;tsType&quot;:&quot;number&quot;,&quot;section&quot;:&quot;Diagnostics&quot;},&quot;onPlacement&quot;:{&quot;editor&quot;:null,&quot;tsType&quot;:&quot;(v: string) =&gt; void&quot;},&quot;onToggleDelete&quot;:{&quot;editor&quot;:null,&quot;tsType&quot;:&quot;() =&gt; void&quot;},&quot;onBack&quot;:{&quot;editor&quot;:null,&quot;tsType&quot;:&quot;() =&gt; void&quot;},&quot;onAbout&quot;:{&quot;editor&quot;:null,&quot;tsType&quot;:&quot;() =&gt; void&quot;},&quot;onRestore&quot;:{&quot;editor&quot;:null,&quot;tsType&quot;:&quot;() =&gt; void&quot;},&quot;onTheme&quot;:{&quot;editor&quot;:null,&quot;tsType&quot;:&quot;(t: string) =&gt; void&quot;}}">
 class Component extends DCLogic {
-  state = { place: "link", appearance: "System", del: false };
+  state = { appearance: "System" };
   seg(on) {
     return [
       "display:flex", "align-items:center", "gap:5px", "padding:4px 10px", "border-radius:3px",
@@ -145,26 +145,30 @@ class Component extends DCLogic {
   }
   renderVals() {
     const guard = (this.props.guard ?? "Disarmed").toLowerCase();
-    const guardLine = guard === "disarmed" ? "disarmed by orange-registry 0.9.2" : guard === "armed" ? "armed \u00b7 installation not prepared" : "state unknown";
+    const guardLine = guard === "disarmed" ? "disarmed by orng-registry 0.9.2" : guard === "armed" ? "armed \u00b7 installation not prepared" : "state unknown";
     const resolved = this.props.resolved ?? true;
     const entryCount = this.props.entryCount ?? 6;
     const anchorsLine = resolved
       ? "registry ok  \u00b7  descriptions ok  \u00b7  library ok"
       : "registry NOT LOCATED  \u00b7  descriptions ok  \u00b7  library ok";
     const entriesLine = entryCount > 0
-      ? "Library/orange-registry.json  \u00b7  " + entryCount + " entries"
-      : "Library/orange-registry.json  \u00b7  none recorded";
+      ? "~/.orng-registry/entries.tsv  \u00b7  " + entryCount + " entries"
+      : "~/.orng-registry/entries.tsv  \u00b7  none recorded";
     const rawBackup = this.props.backup ?? "Backup: 14 Sep 2026";
     const hasBackup = /\d/.test(rawBackup);
     const backupLine = hasBackup
       ? rawBackup.replace("Backup: ", "") + "  \u00b7  35.1 MB  \u00b7  jar + description bundles"
       : "none yet \u00b7 written before the installation is prepared";
-    const link = this.state.place === "link";
+    const link = (this.props.placement ?? "link") === "link";
     const a = this.state.appearance;
     return {
-      deleteIcon: this.state.del ? "ph-duotone ph-check-square" : "ph-duotone ph-square",
-      deleteIconColor: this.state.del ? "var(--accent)" : "var(--ink-3)",
-      toggleDelete: () => this.setState({ del: !this.state.del }),
+      deleteIcon: this.props.deleteFile ? "ph-duotone ph-check-square" : "ph-duotone ph-square",
+      deleteIconColor: this.props.deleteFile ? "var(--accent)" : "var(--ink-3)",
+      toggleDelete: () => this.props.onToggleDelete && this.props.onToggleDelete(),
+      deleteNote: this.props.deleteFile
+        ? "On, removing an entry also deletes your document from the library. That file is your own work, and deleting it cannot be undone from here."
+        : "Off, removing an entry unregisters it and leaves your document in the library.",
+      deleteNoteInk: this.props.deleteFile ? "var(--ink-2)" : "var(--ink-3)",
       linkStyle: this.radioRow(link), copyStyle: this.radioRow(!link),
       linkInk: link ? "var(--ink-3-warm)" : "var(--ink-3)",
       copyInk: !link ? "var(--ink-3-warm)" : "var(--ink-3)",
@@ -172,8 +176,8 @@ class Component extends DCLogic {
       copyRadio: !link ? "ph-duotone ph-radio-button" : "ph-duotone ph-circle",
       linkColor: link ? "var(--accent)" : "var(--ink-3)",
       copyColor: !link ? "var(--accent)" : "var(--ink-3)",
-      pickLink: () => this.setState({ place: "link" }),
-      pickCopy: () => this.setState({ place: "copy" }),
+      pickLink: () => this.props.onPlacement && this.props.onPlacement("link"),
+      pickCopy: () => this.props.onPlacement && this.props.onPlacement("copy"),
       sysStyle: this.seg(a === "System"), lightStyle: this.seg(a === "Light"), darkStyle: this.seg(a === "Dark"),
       pickSystem: () => this.setState({ appearance: "System" }),
       pickLight: () => { this.setState({ appearance: "Light" }); this.props.onTheme && this.props.onTheme("light"); },
@@ -181,12 +185,12 @@ class Component extends DCLogic {
       report: [
         "install    /Applications/Bitwig Studio.app",
         "version    6.1  (94a90411)",
-        "jar        Contents/Resources/bitwig.jar  34 MB",
+        "archive    Contents/Java/bitwig.jar  34 MB",
         "anchors    " + anchorsLine,
         "guard      " + guardLine,
         "backup     " + backupLine,
         "entries    " + entriesLine,
-        "placement  link into user library",
+        "placement  " + (link ? "link into user library" : "copy into the installation"),
         "factory    152 devices  \u00b7  43 modulators  \u00b7  233 modules"
       ].join("\n"),
       onBack: () => this.props.onBack && this.props.onBack(),

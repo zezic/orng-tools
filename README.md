@@ -58,6 +58,7 @@ No Bitwig content is redistributed here, and none ever will be.
 | [`docs/ui-spec.md`](docs/ui-spec.md) | What the application's interface must do |
 | [`docs/ui-spec-catalog.md`](docs/ui-spec-catalog.md) | The community catalog, as a UI feature |
 | [`docs/design-review.md`](docs/design-review.md) | Validation of the visual design against both |
+| [`docs/index-signing.md`](docs/index-signing.md) | How ORNG Catalog signs its index, and where the key lives |
 | [`LICENSING.md`](LICENSING.md) | Which crate is under which licence, and why |
 
 ## Scope

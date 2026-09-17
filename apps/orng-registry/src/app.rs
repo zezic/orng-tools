@@ -689,7 +689,7 @@ impl App {
         }
 
         let palette = self.palette;
-        egui::ScrollArea::vertical().auto_shrink([false, false]).show(ui, |ui| {
+        widget::list(ui, |ui| {
             // Pending work first, which is the designer's recommendation and
             // the only ordering under which the list answers "what am I about to
             // do" without scrolling.
@@ -1193,7 +1193,7 @@ fn published(ui: &mut egui::Ui, palette: Palette, catalog: &Fetching) {
             widget::empty_state(ui, palette, &empty);
         }
         Some(Ok(index)) => {
-            egui::ScrollArea::vertical().auto_shrink([false, false]).show(ui, |ui| {
+            widget::list(ui, |ui| {
                 widget::section(ui, palette, "Catalog", palette.ink_2, index.items.len());
                 for entry in &index.items {
                     widget::row(ui, palette, |ui, columns| {

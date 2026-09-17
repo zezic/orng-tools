@@ -340,6 +340,20 @@ pub fn menu_item(ui: &mut Ui, palette: Palette, icon: &str, label: &str) -> Resp
     )
 }
 
+/// The scrolling list, with the rows stacked and nothing between them.
+///
+/// egui puts `item_spacing` between every allocated widget, and this theme sets
+/// six pixels of it - which is right between a label and the thing it labels,
+/// and wrong between two rows. The design's rows are thirty-six apart because
+/// they are thirty-six tall and touch; with the gap they came out forty-two,
+/// and a list of eight was a row and a half taller than the bundle's.
+pub fn list(ui: &mut Ui, contents: impl FnOnce(&mut Ui)) {
+    egui::ScrollArea::vertical().auto_shrink([false, false]).show(ui, |ui| {
+        ui.spacing_mut().item_spacing.y = 0.0;
+        contents(ui);
+    });
+}
+
 /// A heading dividing the list into what is pending, what is registered and
 /// what Bitwig shipped.
 pub fn section(ui: &mut Ui, palette: Palette, title: &str, tone: Color32, count: usize) {

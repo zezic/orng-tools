@@ -31,8 +31,8 @@ fn main() -> eframe::Result {
     let options = eframe::NativeOptions {
         renderer: eframe::Renderer::Wgpu,
         viewport: eframe::egui::ViewportBuilder::default()
-            .with_inner_size([1040.0, 680.0])
-            .with_min_inner_size([760.0, 480.0])
+            .with_inner_size(theme::metric::WINDOW)
+            .with_min_inner_size([640.0, 440.0])
             .with_title("ORNG Registry"),
         ..Default::default()
     };

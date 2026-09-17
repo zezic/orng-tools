@@ -57,6 +57,18 @@ jobs:
           cargo --version
           rustup component add clippy
 
+      # The render tests lay every state of the interface out and compare it
+      # against a stored picture. Laying out needs nothing; comparing needs a
+      # renderer, and this runner has no graphics adapter at all - not even a
+      # software one - so wgpu has nothing to answer with. The other two
+      # platforms do compare, and they agree with each other, so the pictures
+      # are still checked on every push; what Linux gives up is looking at them,
+      # not drawing them. Opting out here rather than in the test, so a machine
+      # that stops checking has said so.
+      - name: This runner cannot render
+        if: runner.os == 'Linux'
+        run: echo "ORNG_SKIP_RENDER_SNAPSHOTS=1" >> "$GITHUB_ENV"
+
       # Debug rather than release: nothing here measures speed, and the
       # workspace links a Java bytecode assembler that is slow to optimise.
       - name: Clippy

@@ -80,7 +80,7 @@ fn escape(value: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::LibraryPath;
+    use crate::{LibraryPath, Provenance};
     use uuid::Uuid;
 
     fn registration(name: &str) -> Registration {
@@ -91,6 +91,7 @@ mod tests {
             library_path: LibraryPath::new(format!("devices/My Devices/{name}.bwdevice")).unwrap(),
             description: "Allpass phase-rotator".into(),
             keywords: vec!["disperser".into(), "allpass".into()],
+            provenance: Provenance::Local,
         }
     }
 

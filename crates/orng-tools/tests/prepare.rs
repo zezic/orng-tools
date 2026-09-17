@@ -16,7 +16,7 @@ use bitwig_document::Kind;
 use bitwig_registry::{Binding, guard};
 use orng_tools::{
     Backup, Error, GuardState, Installation, LibraryPath, Manifest, OrngHome, Placement,
-    Plan, Registration, Step, Strategy, UserLibrary, placement,
+    Plan, Provenance, Registration, Step, Strategy, UserLibrary, placement,
 };
 
 /// A copy of the installed Bitwig that a test may destroy.
@@ -278,6 +278,12 @@ fn the_injected_class_registers_the_entry_list() {
                 .unwrap(),
             description: "written by a test".into(),
             keywords: vec!["orng".into(), "test".into()],
+            // One of each source, so the row the class has to read past the
+            // columns it knows is covered too.
+            provenance: match kind {
+                Kind::Device => Provenance::Local,
+                _ => Provenance::Catalog { version: "1.2.0".parse().unwrap() },
+            },
         });
     }
     mirror.write_entries(&manifest.to_tsv());
@@ -300,7 +306,8 @@ fn the_injected_class_registers_the_entry_list() {
 #[test]
 fn a_broken_entry_list_costs_the_entries_and_not_the_launch() {
     let mirror = mirror_or_skip!();
-    mirror.write_entries("#orng-registry 1\nnot-a-uuid\tDEVICE\tA\tdevices/A.bwdevice\t\t\n");
+    let broken = "#orng-registry 2\nnot-a-uuid\tDEVICE\tA\tdevices/A.bwdevice\t\t\t\tlocal\n";
+    mirror.write_entries(broken);
 
     let refused = mirror.plan().apply(|_| {});
     let Err(Error::VerificationFailed { report }) = refused else {
@@ -352,6 +359,7 @@ fn copying_documents_keeps_them_inside_the_installation() {
         library_path: LibraryPath::for_document(Kind::Device, "ORNG COPIED.bwdevice").unwrap(),
         description: "written by a test".into(),
         keywords: Vec::new(),
+        provenance: Provenance::Local,
     };
     let written = placement::place(
         &mirror.install,

@@ -9,6 +9,7 @@ bitwig-install.workspace = true
 bitwig-document.workspace = true
 bitwig-classfile.workspace = true
 bitwig-registry.workspace = true
+orng-catalog.workspace = true
 thiserror.workspace = true
 uuid.workspace = true
 tempfile.workspace = true

@@ -602,6 +602,7 @@ dependencies = [
  "bitwig-document",
  "bitwig-install",
  "bitwig-registry",
+ "orng-catalog",
  "tempfile",
  "thiserror",
  "uuid",

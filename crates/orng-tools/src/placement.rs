@@ -153,7 +153,7 @@ fn symlink_dir(target: &Path, link: &Path) -> std::io::Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::LibraryPath;
+    use crate::{LibraryPath, Provenance};
     use uuid::Uuid;
 
     #[test]
@@ -174,6 +174,7 @@ mod tests {
             library_path: path,
             description: String::new(),
             keywords: Vec::new(),
+            provenance: Provenance::Local,
         };
         // Nothing has been placed, so it must report as unresolved rather than
         // claiming a location that does not exist.

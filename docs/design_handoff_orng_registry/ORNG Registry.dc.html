@@ -27,8 +27,8 @@ a:hover{color:#ff7a45}
 
     <div style="display:flex; align-items:flex-end; gap:16px; flex-wrap:wrap">
       <div style="display:flex; flex-direction:column; gap:5px; flex:1; min-width:240px">
-        <span style="font-size:21px; font-weight:600; color:var(--ink); letter-spacing:-0.025em">Orange Registry</span>
-        <span style="font-family:'Iosevka Extended',Iosevka,monospace; letter-spacing:-0.05em; font-size:11px; color:var(--ink-3)">Desktop UI &middot; 820&times;560 &middot; 31 states</span>
+        <span style="font-size:21px; font-weight:600; color:var(--ink); letter-spacing:-0.025em">ORNG Registry</span>
+        <span style="font-family:'Iosevka Extended',Iosevka,monospace; letter-spacing:-0.05em; font-size:11px; color:var(--ink-3)">Desktop UI &middot; 820&times;560 &middot; 32 states</span>
       </div>
       <div style="display:flex; gap:2px; padding:3px; background:var(--panel); border-radius:4px">
         <div onClick="{{ setDark }}" style="{{ darkBtn }}">Dark</div>
@@ -60,13 +60,13 @@ a:hover{color:#ff7a45}
             <div style="width:8px; height:8px; border-radius:50%; background:var(--line)"></div>
             <div style="width:8px; height:8px; border-radius:50%; background:var(--line)"></div>
           </div>
-          <span style="flex:1; text-align:center; font-family:'Iosevka Extended',Iosevka,monospace; letter-spacing:-0.05em; font-size:10.5px; color:var(--ink-3)">orng-registry</span>
+          <span style="flex:1; text-align:center; font-size:11px; font-weight:500; color:var(--ink-3)">ORNG Registry</span>
           <div style="width:34px"></div>
           
         </div>
 
         <sc-if value="{{ isSettings }}" hint-placeholder-val="{{ false }}">
-          <div style="display:grid; grid-template-rows:minmax(0,1fr); grid-template-columns:minmax(0,1fr); flex:1; min-height:0"><dc-import name="SettingsScreen" placement="{{ placement }}" onPlacement="{{ onPlacement }}" deleteFile="{{ deleteFile }}" onToggleDelete="{{ onToggleDelete }}" guard="{{ guard }}" backup="{{ backup }}" resolved="{{ resolved }}" entryCount="{{ entryCount }}" onBack="{{ goMain }}" onAbout="{{ goAbout }}" onRestore="{{ goRestore }}" onTheme="{{ setTheme }}" hint-size="100%,100%"></dc-import></div>
+          <div style="display:grid; grid-template-rows:minmax(0,1fr); grid-template-columns:minmax(0,1fr); flex:1; min-height:0"><dc-import name="SettingsScreen" version="{{ aboutVersion }}" build="{{ installBuild }}" placement="{{ placement }}" onPlacement="{{ onPlacement }}" deleteFile="{{ deleteFile }}" onToggleDelete="{{ onToggleDelete }}" guard="{{ guard }}" backup="{{ backup }}" resolved="{{ resolved }}" entryCount="{{ entryCount }}" onBack="{{ goMain }}" onAbout="{{ goAbout }}" onRestore="{{ goRestore }}" onTheme="{{ setTheme }}" hint-size="100%,100%"></dc-import></div>
         </sc-if>
         <sc-if value="{{ isRestore }}" hint-placeholder-val="{{ false }}">
           <div style="display:grid; grid-template-rows:minmax(0,1fr); grid-template-columns:minmax(0,1fr); flex:1; min-height:0"><dc-import name="RestoreScreen" backup="{{ backup }}" onBack="{{ goMain }}" hint-size="100%,100%"></dc-import></div>
@@ -158,10 +158,10 @@ a:hover{color:#ff7a45}
               </div>
 
               <sc-if value="{{ inspectorOpen }}" hint-placeholder-val="{{ false }}">
-                <dc-import name="Inspector" kind="{{ inspKind }}" deleteFile="{{ deleteFile }}" registered="{{ inspRegistered }}" entry-name="{{ inspName }}" status="{{ inspStatus }}" uuid="{{ inspUuid }}" description="{{ inspDescription }}" keywords="{{ inspKeywords }}" libpath="{{ inspLibpath }}" placement="{{ inspPlacement }}" source="{{ inspSource }}" sourceVersion="{{ inspSourceVersion }}" provenance="{{ inspProvenance }}" onClose="{{ closeInspector }}" hint-size="272px,100%"></dc-import>
+                <dc-import name="Inspector" kind="{{ inspKind }}" deleteFile="{{ deleteFile }}" registered="{{ inspRegistered }}" entry-name="{{ inspName }}" status="{{ inspStatus }}" uuid="{{ inspUuid }}" description="{{ inspDescription }}" keywords="{{ inspKeywords }}" libpath="{{ inspLibpath }}" placement="{{ inspPlacement }}" source="{{ inspSource }}" sourceVersion="{{ inspSourceVersion }}" provenance="{{ inspProvenance }}" provenanceUrl="{{ inspProvenanceUrl }}" onClose="{{ closeInspector }}" hint-size="272px,100%"></dc-import>
               </sc-if>
               <sc-if value="{{ detailOpen }}" hint-placeholder-val="{{ false }}">
-                <dc-import name="CatalogDetail" item-name="{{ detailName }}" kind="{{ detailKind }}" status="{{ detailStatus }}" author="{{ detailAuthor }}" version="{{ detailVersion }}" description="{{ detailDescription }}" keywords="{{ detailKeywords }}" licence="{{ detailLicence }}" provenance="{{ detailProvenance }}" homepage="{{ detailHomepage }}" uuid="{{ detailUuid }}" requires="{{ detailRequires }}" compatible="{{ detailCompatible }}" replacementName="{{ detailReplacement }}" onClose="{{ closeDetail }}" onPrimary="{{ detailPrimary }}" onReplacement="{{ openReplacement }}" hint-size="272px,100%"></dc-import>
+                <dc-import name="CatalogDetail" item-name="{{ detailName }}" kind="{{ detailKind }}" status="{{ detailStatus }}" author="{{ detailAuthor }}" version="{{ detailVersion }}" description="{{ detailDescription }}" keywords="{{ detailKeywords }}" licence="{{ detailLicence }}" provenance="{{ detailProvenance }}" provenanceUrl="{{ detailProvenanceUrl }}" homepage="{{ detailHomepage }}" uuid="{{ detailUuid }}" requires="{{ detailRequires }}" compatible="{{ detailCompatible }}" replacementName="{{ detailReplacement }}" onClose="{{ closeDetail }}" onPrimary="{{ detailPrimary }}" onReplacement="{{ openReplacement }}" hint-size="272px,100%"></dc-import>
               </sc-if>
             </div>
 
@@ -365,15 +365,15 @@ const FACTORY = [
   { kind: "MODULATOR", name: "LFO", uuid: "8c4b1e2a-0000-4000-8000-000000000002", status: "Factory", factory: true }
 ];
 const CATALOG = [
-  { kind: "DEVICE", name: "DISPERSER", description: "Allpass diffusion network for smearing transients into a wash.", long: "Four cascaded allpass stages with per-stage feedback and a tilt filter in the loop. Smears transients into a wash without the tail of a reverb.", author: "kirkwood", version: "1.2.0", status: "Installed", uuid: "21882ab0-7c41-4d0b-9a10-ff3e5d2e77a1", keywords: "disperser diffusion smear allpass", licence: "MIT", provenance: "orange-catalog #412", homepage: "github.com/kirkwood/disperser" },
-  { kind: "DEVICE", name: "TILT SHELF", description: "Two-band tilt EQ with a single control and a fixed pivot.", long: "One knob tilts the spectrum around a fixed 700 Hz pivot. Intended as a mix-bus tone control rather than a corrective EQ.", author: "mono.lab", version: "1.0.4", status: "Available", uuid: "b4102f77-9e21-4c08-8a5f-31d7c0ea4419", keywords: "tilt shelf eq tone bus", licence: "MIT", provenance: "orange-catalog #518", homepage: "mono-lab.dev/tilt" },
-  { kind: "MODULATOR", name: "BREATH FOLLOWER", description: "Envelope follower tuned for wind controllers and breath input.", long: "Tracks breath pressure with an asymmetric attack and release, so held notes do not pump. Built for EWI and TEC breath controllers.", author: "hsu", version: "2.1.0", installed: "2.0.3", status: "Update available", uuid: "5d2e77a1-c0de-4441-9e11-c930f88b4a20", keywords: "breath follower envelope wind expression", licence: "Apache-2.0", provenance: "orange-catalog #604", homepage: "" },
-  { kind: "MODULE", name: "SLEW LIMITER", description: "Rate-limits a signal, asymmetric rise and fall.", long: "Limits how fast a signal may change, with independent rise and fall rates. Useful for taming stepped modulation or building portamento.", author: "grid.works", version: "1.1.0", status: "Available", uuid: "4b71c8d9-21f0-4ab3-8c77-1e9b0d4a6f22", keywords: "slew limiter slope portamento glide", licence: "CC0", provenance: "orange-catalog #377", homepage: "grid.works/slew" },
-  { kind: "DEVICE", name: "CURVECOMP", description: "Feed-forward compressor with an editable transfer curve.", long: "Draw the input-to-output curve directly instead of setting threshold and ratio. Feed-forward detection with programme-dependent release.", author: "kirkwood", version: "0.9.0", status: "Superseded", uuid: "7c41d0b2-9a10-4ff3-8e5d-2e77a1c0de44", keywords: "curvecomp compressor transfer curve dynamics", licence: "MIT", provenance: "orange-catalog #203", homepage: "github.com/kirkwood/curvecomp", replacement: "CURVECOMP II" },
-  { kind: "DEVICE", name: "CURVECOMP II", description: "Transfer-curve compressor, rebuilt with a wider parameter set.", long: "The same drawn-curve approach as CURVECOMP, with per-band detection and a sidechain input. The parameter set changed, so it carries a new identity and installs alongside the original rather than replacing it.", author: "kirkwood", version: "2.0.0", status: "Available", uuid: "f2a7c418-6b03-4d91-9e52-7ac41d0b2e88", keywords: "curvecomp compressor transfer curve sidechain multiband", licence: "MIT", provenance: "orange-catalog #731", homepage: "github.com/kirkwood/curvecomp" },
-  { kind: "MODULE", name: "CHAOS SOURCE", description: "Deterministic chaotic oscillator for modulation.", long: "A Rossler attractor read as three correlated modulation outputs. Deterministic from a seed, so a project recalls the same trajectory.", author: "vf", version: "1.0.0", status: "Incompatible", requires: "6.2", uuid: "e11c930f-88b4-4a20-9188-b4a201e11c93", keywords: "chaos attractor random modulation seed", licence: "GPL-3.0", provenance: "orange-catalog #711", homepage: "" },
-  { kind: "DEVICE", name: "GRAIN CLOUD", description: "Granular texture generator with spray and pitch scatter.", long: "Reads a captured buffer as overlapping grains with position spray, pitch scatter and density control. Freezes into a sustained texture.", author: "atelier", version: "1.4.2", status: "Available", uuid: "9a10ff3e-5d2e-4771-a1c0-de4419e11c93", keywords: "grain cloud granular texture freeze", licence: "MIT", provenance: "orange-catalog #689", homepage: "atelier-audio.net/grain" },
-  { kind: "MODULATOR", name: "STEP SEQ 16", description: "Sixteen-step modulation sequencer with per-step glide.", long: "Sixteen steps with per-step glide time and a swing control, clocked from the transport or a free-running rate.", author: "mono.lab", version: "1.2.1", status: "Available", uuid: "3e90b1c4-5d2e-4771-a1c0-de4419e11c93", keywords: "step sequencer modulation glide swing", licence: "MIT", provenance: "orange-catalog #455", homepage: "mono-lab.dev/stepseq" }
+  { kind: "DEVICE", name: "DISPERSER", description: "Allpass diffusion network for smearing transients into a wash.", long: "Four cascaded allpass stages with per-stage feedback and a tilt filter in the loop. Smears transients into a wash without the tail of a reverb.", author: "kirkwood", version: "1.2.0", status: "Installed", uuid: "21882ab0-7c41-4d0b-9a10-ff3e5d2e77a1", keywords: "disperser diffusion smear allpass", licence: "MIT", provenance: "orng-catalog@3f9a1c2", commit: "3f9a1c2e8b4d7a61c05f2d93ab7e14c8f6021b5d", homepage: "github.com/kirkwood/disperser" },
+  { kind: "DEVICE", name: "TILT SHELF", description: "Two-band tilt EQ with a single control and a fixed pivot.", long: "One knob tilts the spectrum around a fixed 700 Hz pivot. Intended as a mix-bus tone control rather than a corrective EQ.", author: "mono.lab", version: "1.0.4", status: "Available", uuid: "b4102f77-9e21-4c08-8a5f-31d7c0ea4419", keywords: "tilt shelf eq tone bus", licence: "MIT", provenance: "orng-catalog@8c41d0b", commit: "8c41d0b9f37e2a5c6148bd90e2f7143a8c5b609e", homepage: "mono-lab.dev/tilt" },
+  { kind: "MODULATOR", name: "BREATH FOLLOWER", description: "Envelope follower tuned for wind controllers and breath input.", long: "Tracks breath pressure with an asymmetric attack and release, so held notes do not pump. Built for EWI and TEC breath controllers.", author: "hsu", version: "2.1.0", installed: "2.0.3", status: "Update available", uuid: "5d2e77a1-c0de-4441-9e11-c930f88b4a20", keywords: "breath follower envelope wind expression", licence: "Apache-2.0", provenance: "orng-catalog@b27e5a9", commit: "b27e5a91c4d80f637ae52b19d0c8146f7a3e9b52", homepage: "" },
+  { kind: "MODULE", name: "SLEW LIMITER", description: "Rate-limits a signal, asymmetric rise and fall.", long: "Limits how fast a signal may change, with independent rise and fall rates. Useful for taming stepped modulation or building portamento.", author: "grid.works", version: "1.1.0", status: "Available", uuid: "4b71c8d9-21f0-4ab3-8c77-1e9b0d4a6f22", keywords: "slew limiter slope portamento glide", licence: "CC0", provenance: "orng-catalog@1d6f038", commit: "1d6f0387b9ea24c5f10d78b3629ce4517af0d82b", homepage: "grid.works/slew" },
+  { kind: "DEVICE", name: "CURVECOMP", description: "Feed-forward compressor with an editable transfer curve.", long: "Draw the input-to-output curve directly instead of setting threshold and ratio. Feed-forward detection with programme-dependent release.", author: "kirkwood", version: "0.9.0", status: "Superseded", uuid: "7c41d0b2-9a10-4ff3-8e5d-2e77a1c0de44", keywords: "curvecomp compressor transfer curve dynamics", licence: "MIT", provenance: "orng-catalog@65b09ef", commit: "65b09ef1a72d48c930fb6e25d1a87c40936be7f2", homepage: "github.com/kirkwood/curvecomp", replacement: "CURVECOMP II" },
+  { kind: "DEVICE", name: "CURVECOMP II", description: "Transfer-curve compressor, rebuilt with a wider parameter set.", long: "The same drawn-curve approach as CURVECOMP, with per-band detection and a sidechain input. The parameter set changed, so it carries a new identity and installs alongside the original rather than replacing it.", author: "kirkwood", version: "2.0.0", status: "Available", uuid: "f2a7c418-6b03-4d91-9e52-7ac41d0b2e88", keywords: "curvecomp compressor transfer curve sidechain multiband", licence: "MIT", provenance: "orng-catalog@a04c7d3", commit: "a04c7d356f19b82e047dca6b385f1029ce74b8a1", homepage: "github.com/kirkwood/curvecomp" },
+  { kind: "MODULE", name: "CHAOS SOURCE", description: "Deterministic chaotic oscillator for modulation.", long: "A Rossler attractor read as three correlated modulation outputs. Deterministic from a seed, so a project recalls the same trajectory.", author: "vf", version: "1.0.0", status: "Incompatible", requires: "6.2", uuid: "e11c930f-88b4-4a20-9188-b4a201e11c93", keywords: "chaos attractor random modulation seed", licence: "GPL-3.0", provenance: "orng-catalog@e9137b4", commit: "e9137b40d582ac61f3b9e7052d4a86c1039fb2e7", homepage: "" },
+  { kind: "DEVICE", name: "GRAIN CLOUD", description: "Granular texture generator with spray and pitch scatter.", long: "Reads a captured buffer as overlapping grains with position spray, pitch scatter and density control. Freezes into a sustained texture.", author: "atelier", version: "1.4.2", status: "Available", uuid: "9a10ff3e-5d2e-4771-a1c0-de4419e11c93", keywords: "grain cloud granular texture freeze", licence: "MIT", provenance: "orng-catalog@47af8e1", commit: "47af8e12b6c03d95a7f1e8460b25dc739fa018c4", homepage: "atelier-audio.net/grain" },
+  { kind: "MODULATOR", name: "STEP SEQ 16", description: "Sixteen-step modulation sequencer with per-step glide.", long: "Sixteen steps with per-step glide time and a swing control, clocked from the transport or a free-running rate.", author: "mono.lab", version: "1.2.1", status: "Available", uuid: "3e90b1c4-5d2e-4771-a1c0-de4419e11c93", keywords: "step sequencer modulation glide swing", licence: "MIT", provenance: "orng-catalog@c58d2f6", commit: "c58d2f60a91b473ec28d05f6b14a7e39082cd5b1", homepage: "mono-lab.dev/stepseq" }
 ];
 
 const STEP_LABELS = [
@@ -384,7 +384,7 @@ const STEP_LABELS = [
   ["Link library folders", "", true]
 ];
 const PLAN = [
-  { color: "var(--ink-3)", text: "The archive and the description bundles are backed up first to ~/.orng-registry/backups/6.1-94a90411/." },
+  { color: "var(--ink-3)", text: "The archive and the description bundles are backed up first to ~/.orng/backups/6.1-94a90411/." },
   { color: "var(--accent-text)", text: "The patched archive is written beside the original, verified under Bitwig's own JVM, then moved into place by a single rename. Nothing in the installation changes until it verifies." },
   { color: "var(--ink-3)", text: "2 entries registered: WAVESHAPER ALPHA, SLEW LIMITER." },
   { color: "var(--ink-3)", text: "1 entry removed: OLD REVERB." },
@@ -442,6 +442,10 @@ const SCREENS = {
     caption: ["Replacement available", "Not an update and not a debt. A newer version exists as a separate device with its own identity, so installing it leaves projects alone and both can coexist. The row stays quiet \u2014 no accent, no badge \u2014 and the panel carries the explanation."],
     view: "catalog", list: true, detail: "CURVECOMP",
     action: { summary: "Catalog \u00b7 9 items", primary: "Apply changes", mode: "update", disabled: true, disabledReason: "Nothing to apply" }
+  },
+  settingsunknown: {
+    installState: "Unknown build", count: 0, guard: "Unknown", backup: "No backup yet", title: "Bitwig Studio", build: "",
+    action: { summary: "Installation not recognised", tone: "warn", primary: "Prepare installation", mode: "prepare", disabled: true, disabledReason: "This installation could not be read" }
   },
   catalogdetail: {
     caption: ["Item detail", "The same 272px panel the Local view uses. Author, version, required Bitwig version, licence and the keywords that will become search terms \u2014 plus provenance: a link to the merged change, which is what makes review the trust boundary rather than a claim about one."],
@@ -548,7 +552,7 @@ const GROUPS = [
   { label: "Apply", keys: ["confirm", "progress", "auth", "activate", "success", "restart", "failure", "running"] },
   { label: "Catalog", keys: ["catalog", "catalogdetail", "catalogupdate", "catalogupdateconfirm", "catalogsuperseded", "catalogincompatible"] },
   { label: "Catalog \u00b7 network", keys: ["catalogstale", "catalognever", "catalogverify", "catalognomatch"] },
-  { label: "Screens", keys: ["reapply", "settings", "restore", "about"] }
+  { label: "Screens", keys: ["reapply", "settings", "settingsunknown", "restore", "about"] }
 ];
 const CHIP = {
   main: "Entry list", hover: "Row hover", inspector: "Inspector", factory: "Factory shown", nomatch: "No match",
@@ -558,10 +562,11 @@ const CHIP = {
   catalog: "Browse", catalogdetail: "Item detail", catalogupdate: "Update available",
   catalogupdateconfirm: "Update confirm", catalogsuperseded: "Replacement", catalogincompatible: "Incompatible",
   catalogstale: "Cached / offline", catalognever: "Never fetched", catalogverify: "Verification failed", catalognomatch: "No results",
-  reapply: "Needs re-apply", settings: "Settings", restore: "Restore backup", about: "About"
+  reapply: "Needs re-apply", settings: "Settings", settingsunknown: "Settings \u00b7 unknown guard", restore: "Restore backup", about: "About"
 };
 const FULL = {
   settings: ["Settings", "One screen, no tabs. Diagnostics live here because that is what a user sends when a new Bitwig build is not recognised."],
+  settingsunknown: ["Settings \u00b7 unknown guard", "The refusal state. The guard site is present but not in a shape the app recognises, so preparation refuses rather than editing blind \u2014 reporting 'armed' here would send the user to press Prepare and collect an unexplained refusal."],
   restore: ["Restore backup", "Deliberate, behind the overflow control, and explicit about the cost: projects stop recalling custom devices afterwards."],
   about: ["About", "Detected version, build and whether resolution succeeded, plus the disclaimer. Deliberately no list of supported builds \u2014 the app resolves by structure, so such a list would be stale on release day."]
 };
@@ -597,7 +602,7 @@ class Component extends DCLogic {
     const screen = this.state.screen;
     const full = FULL[screen];
     const s = SCREENS[screen] || SCREENS.main;
-    const facts = full ? (SCREENS[this.state.from] || SCREENS.main) : s;
+    const facts = full ? (SCREENS[screen] || SCREENS[this.state.from] || SCREENS.main) : s;
     const go = k => () => this.setState({
       screen: k,
       from: FULL[k] ? (FULL[screen] ? this.state.from : screen) : k,
@@ -696,7 +701,7 @@ class Component extends DCLogic {
         items: g.keys.map(k => ({ label: CHIP[k], style: this.chipStyle(screen === k), go: go(k) }))
       })),
 
-      isSettings: screen === "settings",
+      isSettings: screen === "settings" || screen === "settingsunknown",
       isRestore: screen === "restore",
       isAbout: screen === "about",
       isApp: !full,
@@ -738,6 +743,7 @@ class Component extends DCLogic {
       detailKeywords: item.keywords,
       detailLicence: item.licence,
       detailProvenance: item.provenance,
+      detailProvenanceUrl: item.commit ? "https://github.com/zezic/orng-catalog/commit/" + item.commit : "",
       detailHomepage: item.homepage,
       detailUuid: item.uuid,
       detailRequires: item.requires ?? "6.0",
@@ -801,6 +807,7 @@ class Component extends DCLogic {
       inspSource: catalogSource(entry.uuid) ? "catalog" : "local",
       inspSourceVersion: (catalogSource(entry.uuid) || {}).installed ?? (catalogSource(entry.uuid) || {}).version ?? "",
       inspProvenance: (catalogSource(entry.uuid) || {}).provenance ?? "",
+      inspProvenanceUrl: (catalogSource(entry.uuid) || {}).commit ? "https://github.com/zezic/orng-catalog/commit/" + catalogSource(entry.uuid).commit : "",
       openInspector: name => this.setState({ screen: "inspector", inspectorItem: name }),
       closeInspector: () => this.setState({ screen: "main" }),
 

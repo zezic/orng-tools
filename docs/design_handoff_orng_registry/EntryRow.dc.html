@@ -102,7 +102,7 @@ class Component extends DCLogic {
       nameColor: status === "Rejected" ? "var(--ink-2)" : "var(--ink)",
       secondaryInk: selected ? "var(--ink-3-warm)" : "var(--ink-3)",
       fromCatalog: (p.source ?? "local") === "catalog",
-      sourceTitle: "Orange Catalog \u00b7 " + (p.sourceVersion ?? "1.2.0"),
+      sourceTitle: "ORNG Catalog \u00b7 " + (p.sourceVersion ?? "1.2.0"),
       nameDecoration: status === "Pending removal" ? "line-through" : "none",
       status, statusFg,
       kindLabel: rejected ? "\u2014" : (KIND[kind] || kind),

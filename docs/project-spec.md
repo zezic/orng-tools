@@ -354,6 +354,18 @@ instead of stacking a second copy of every edit, and restore always has an unmod
 original. An installation that is already modified with no backup to work from is refused,
 because there is then nothing pristine to patch.
 
+**6.11 Windows links with a junction, not a symbolic link.** A symbolic link there needs
+`SeCreateSymbolicLinkPrivilege`, which an ordinary account does not hold unless Developer
+Mode is on, so linking the library folders would fail for most of the people it is for. A
+junction needs no privilege, is resolved below the application, and is indistinguishable to
+Bitwig. It cannot point at a network share or live on a volume without reparse points; both
+fail loudly, and the answer to either is the `Copy` strategy, which makes no links at all.
+
+Two consequences that are easy to get wrong and were: a junction is a directory, so removing
+one is not the call that removes a file; and it stores its target in a form Windows
+normalises, so an existing link is recognised by resolving it rather than by comparing the
+text it reads back.
+
 **6.10 Three platforms, and the differences live in two places.** ORNG Registry targets
 macOS, Windows and Linux. Everything platform-shaped is already confined to
 `bitwig-install`, which knows where an installation, a user library and a settings
@@ -528,10 +540,11 @@ Built and tested against a real installation:
 
 Known gaps:
 
-- **Linking on Windows is wrong.** `placement.rs` creates a symbolic link, which needs
-  `SeCreateSymbolicLinkPrivilege` or Developer Mode, so preparation's link step fails for an
-  ordinary account. Its own comment says it makes a directory junction, which is what it
-  should do and what std cannot express. Nothing here has ever run on Windows.
+- **Nothing here has ever run on Windows.** It compiles and type-checks for the target, and
+  the linking tests are synthetic so every platform runs them, but no line of this has met a
+  real Windows filesystem. The privileged case is the one to distrust: a build agent
+  typically runs elevated, so the very failure junctions exist to avoid cannot reproduce on
+  one.
 
 Not built yet:
 

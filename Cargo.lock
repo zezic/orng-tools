@@ -492,6 +492,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "junction"
+version = "2.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "160f2eade097f30263b548aae5deb12ad349c909baa710fa24b92c9090b2e006"
+dependencies = [
+ "scopeguard",
+ "windows-sys",
+]
+
+[[package]]
 name = "krakatau2"
 version = "2.0.0-alpha"
 source = "git+https://github.com/zezic/Krakatau.git?rev=dc7840619881edd7979eb952c7752e78fd7f1f26#dc7840619881edd7979eb952c7752e78fd7f1f26"
@@ -602,6 +612,7 @@ dependencies = [
  "bitwig-document",
  "bitwig-install",
  "bitwig-registry",
+ "junction",
  "orng-catalog",
  "tempfile",
  "thiserror",
@@ -715,6 +726,12 @@ name = "rustversion"
 version = "1.0.23"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "cf54715a573b99ac80df0bc206da022bcd442c974952c7b9720069370852e21f"
+
+[[package]]
+name = "scopeguard"
+version = "1.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "94143f37725109f92c262ed2cf5e59bce7498c01bcc1502d7b9afe439a4e9f49"
 
 [[package]]
 name = "serde"

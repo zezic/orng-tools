@@ -20,14 +20,14 @@
 use std::collections::BTreeSet;
 use std::path::PathBuf;
 
-use eframe::egui::{self, Align, Layout, RichText};
+use eframe::egui::{self, Align, Layout, RichText, vec2};
 use orng_tools::{Kind, Registration, RunState, Step, Update};
 
 use crate::catalog::Fetching;
-use crate::session::{Found, Session};
+use crate::session::{Badge, Found, Session};
 use crate::staging::{self, Reading, Staged};
 use crate::theme::{self, Palette, font, metric};
-use crate::widget::{self, Tone};
+use crate::widget::{self, Tone, icon};
 use crate::work::{Applying, Stage, Work};
 
 /// Which top-level view is showing. Two, as the design has it.
@@ -165,45 +165,45 @@ impl App {
     ///
     /// Separate from [`eframe::App::update`] so that it can be driven without a
     /// window, which is how it gets looked at.
-    pub fn draw(&mut self, ctx: &egui::Context) {
+    pub fn draw(&mut self, ui: &mut egui::Ui) {
         self.pump();
-        self.take_drop(ctx);
+        self.take_drop(ui.ctx());
 
-        egui::TopBottomPanel::top("install")
-            .exact_height(metric::INSTALL_BAR)
+        egui::Panel::top("install")
+            .exact_size(metric::INSTALL_BAR)
             .frame(widget::bar(self.palette))
-            .show(ctx, |ui| self.install_bar(ui));
+            .show(ui, |ui| self.install_bar(ui));
 
         if let Some((tone, title, body)) = self.blocking() {
             // The panel is filled before the banner washes over it. A panel
             // with no frame of its own shows whatever was behind the window,
             // and a translucent wash over that is not a colour anybody chose.
-            egui::TopBottomPanel::top("banner")
+            egui::Panel::top("banner")
                 .frame(egui::Frame::new().fill(self.palette.bg))
-                .show(ctx, |ui| widget::banner(ui, self.palette, tone, title, &body));
+                .show(ui, |ui| widget::banner(ui, self.palette, tone, title, &body));
         }
 
-        egui::TopBottomPanel::bottom("action")
-            .exact_height(metric::ACTION_BAR)
+        egui::Panel::bottom("action")
+            .exact_size(metric::ACTION_BAR)
             .frame(widget::bar(self.palette))
-            .show(ctx, |ui| self.action_bar(ui));
+            .show(ui, |ui| self.action_bar(ui));
 
         if self.shows_a_list() {
-            egui::TopBottomPanel::top("toolbar")
-                .exact_height(metric::TOOLBAR)
+            egui::Panel::top("toolbar")
+                .exact_size(metric::TOOLBAR)
                 .frame(widget::toolbar(self.palette))
-                .show(ctx, |ui| self.list_toolbar(ui));
+                .show(ui, |ui| self.list_toolbar(ui));
         }
 
         egui::CentralPanel::default()
             .frame(widget::page(self.palette))
-            .show(ctx, |ui| self.page(ui));
+            .show(ui, |ui| self.page(ui));
     }
 }
 
 impl eframe::App for App {
-    fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
-        self.draw(ctx);
+    fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
+        self.draw(ui);
     }
 }
 
@@ -256,7 +256,7 @@ impl App {
     /// Whatever has been dropped on the window this frame.
     fn take_drop(&mut self, ctx: &egui::Context) {
         let dropped: Vec<PathBuf> = ctx.input(|input| {
-            input.raw.dropped_files.iter().filter_map(|file| file.path.clone()).collect()
+            input.raw.dropped_files.iter().map(|file| file.path().to_path_buf()).collect()
         });
         if !dropped.is_empty() {
             // Dropping is Local-view work, and the rows it produces only exist
@@ -289,7 +289,13 @@ impl App {
     /// Whether the middle region is a list, which is what the toolbar belongs to.
     fn shows_a_list(&self) -> bool {
         let running = self.applying.as_ref().is_some_and(|a| a.steps.is_some());
-        matches!(self.session, Session::Found(_)) && self.view == View::Local && !running
+        let Session::Found(found) = &self.session else { return false };
+        // Nothing to filter is nothing to filter with. The design keeps the
+        // toolbar when a filter has narrowed the list to nothing, because that
+        // is how the filter gets cleared, and drops it on the onboarding
+        // screen, where there is no list behind it.
+        let anything = !found.entries.is_empty() || !self.staged.is_empty();
+        self.view == View::Local && !running && anything
     }
 
     /// The rows that are ready to be written.
@@ -348,166 +354,142 @@ impl App {
 }
 
 impl App {
-    /// Region one: which Bitwig this is, and what state it is in.
+    /// Region one: the installation this window is pointed at.
+    ///
+    /// One line, as the design draws it. The tamper guard and the backup date
+    /// are not here: the bundle routes both to Settings, under Diagnostics, and
+    /// a second line carrying them was this application's invention.
     fn install_bar(&mut self, ui: &mut egui::Ui) {
         let palette = self.palette;
-        ui.vertical(|ui| {
-            ui.add_space(metric::TIGHT);
-            ui.horizontal(|ui| {
-                for (view, label) in [(View::Local, "Local"), (View::Catalog, "Catalog")] {
-                    if widget::view_tab(ui, palette, label, self.view == view).clicked() {
-                        self.view = view;
-                    }
-                    ui.add_space(metric::SNUG);
+        ui.horizontal_centered(|ui| {
+            for (view, label) in [(View::Local, "Local"), (View::Catalog, "Catalog")] {
+                if widget::view_tab(ui, palette, label, self.view == view).clicked() {
+                    self.view = view;
                 }
-                ui.add_space(metric::GAP - metric::SNUG);
-                self.install_identity(ui);
+                ui.add_space(metric::SNUG);
+            }
+            ui.add_space(metric::GAP - metric::SNUG);
+
+            // The controls are placed first, from the right, so the path gives
+            // way to them rather than pushing them off the edge of the window.
+            ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                widget::overflow(ui, palette, |ui| {
+                    let items = [
+                        (widget::icon::SETTINGS, "Settings"),
+                        (widget::icon::RESTORE, "Restore backup..."),
+                        (widget::icon::CHANGE_INSTALL, "Open backups folder"),
+                    ];
+                    for (icon, label) in items {
+                        let _ = widget::menu_item(ui, palette, icon, label);
+                    }
+                    ui.separator();
+                    let _ =
+                        widget::menu_item(ui, palette, widget::icon::ABOUT, "About ORNG Registry");
+                });
+                ui.add_space(metric::TOOL_GAP);
+                if widget::small_button(
+                    ui,
+                    palette,
+                    widget::icon::CHANGE_INSTALL,
+                    "Change install",
+                )
+                .clicked()
+                {
+                    self.locate(ui);
+                }
+                ui.add_space(metric::GAP);
+
+                ui.with_layout(Layout::left_to_right(Align::Center), |ui| {
+                    self.install_identity(ui);
+                });
             });
-            ui.add_space(metric::TIGHT);
-            self.install_state(ui);
         });
     }
 
-    /// The first line: what this installation is, and how to change it.
+    /// Let the user choose documents, which drag and drop must never be the
+    /// only way to do.
+    fn add_files(&mut self, ui: &egui::Ui) {
+        let chosen = rfd::FileDialog::new()
+            .set_title("Add documents to register")
+            .add_filter("Bitwig documents", &staging::ACCEPTED)
+            .pick_files()
+            .unwrap_or_default();
+        self.read(staging::documents_in(&chosen), ui.ctx());
+    }
+
+    /// Let the user point at an installation themselves.
+    fn locate(&mut self, ui: &egui::Ui) {
+        let Some(root) =
+            rfd::FileDialog::new().set_title("Locate Bitwig Studio").pick_folder()
+        else {
+            return;
+        };
+        // A folder the user insisted on. Refusing it has to say why against
+        // that folder rather than fall back to the one already loaded, which
+        // would look like the picker did nothing.
+        self.session = match orng_tools::Installation::at(&root) {
+            Ok(install) => Session::at(install),
+            Err(e) => {
+                Session::Unreadable { root: root.display().to_string(), why: e.to_string() }
+            }
+        };
+        let _ = ui;
+    }
+
+    /// What this installation is: its name, its build, its path, its state.
     fn install_identity(&mut self, ui: &mut egui::Ui) {
         let palette = self.palette;
-        // The controls are placed first, from the right, so the path gives way
-        // to them rather than pushing them off the edge of the window.
-        ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-            widget::overflow(ui, palette, |ui| {
-                for label in ["Settings", "Restore backup...", "Open backups folder"] {
-                    let _ = widget::menu_item(ui, palette, label);
-                }
-                ui.separator();
-                let _ = widget::menu_item(ui, palette, "About ORNG Registry");
-            });
-            ui.add_space(metric::TOOL_GAP);
-            let chosen = widget::small_button(ui, palette, "Change install")
-                .clicked()
-                .then(|| rfd::FileDialog::new().set_title("Locate Bitwig Studio").pick_folder())
-                .flatten();
-            if let Some(root) = chosen {
-                // A folder the user insisted on. Refusing it has to say why
-                // against that folder rather than fall back to the one that was
-                // already loaded, which would look like the picker did nothing.
-                self.session = match orng_tools::Installation::at(&root) {
-                    Ok(install) => Session::at(install),
-                    Err(e) => {
-                        Session::Unreadable { root: root.display().to_string(), why: e.to_string() }
-                    }
-                };
-            }
-            ui.add_space(metric::GAP);
-
-            ui.with_layout(Layout::left_to_right(Align::Center), |ui| {
-                let found = match &self.session {
-                    Session::Found(found) => found,
-                    // An installation that cannot be read is still an
-                    // installation, and the bar has to keep naming it: this is
-                    // the state a user reaches after a Bitwig release, and it
-                    // is the path they will be asked about.
-                    Session::Unreadable { root, .. } => {
-                        ui.label(
-                            RichText::new("Bitwig Studio")
-                                .font(font::emphasis(ui.ctx(), font::INSTALL_TITLE))
-                                .color(palette.ink),
-                        );
-                        ui.add_space(metric::GAP);
-                        ui.add(
-                            egui::Label::new(
-                                RichText::new(root)
-                                    .font(font::mono(font::MONO))
-                                    .color(palette.ink_3),
-                            )
-                            .truncate(),
-                        )
-                        .on_hover_text(root);
-                        return;
-                    }
-                    Session::NoInstallation { .. } => {
-                        ui.label(
-                            RichText::new("No installation selected")
-                                .font(font::emphasis(ui.ctx(), font::INSTALL_TITLE))
-                                .color(palette.ink_3),
-                        );
-                        return;
-                    }
-                };
-                ui.label(
-                    RichText::new(found.title())
-                        .font(font::emphasis(ui.ctx(), font::INSTALL_TITLE))
-                        .color(palette.ink),
-                );
+        let found = match &self.session {
+            Session::Found(found) => found,
+            // An installation that cannot be read is still an installation, and
+            // the bar has to keep naming it: this is the state a user reaches
+            // the morning after a Bitwig release, and the path is the thing
+            // they will be asked about.
+            Session::Unreadable { root, .. } => {
+                title(ui, "Bitwig Studio", palette.ink);
                 ui.add_space(metric::GAP);
-                let revision = found.revision();
-                if !revision.is_empty() {
-                    ui.label(
-                        RichText::new(revision)
-                            .font(font::mono(font::MONO_TIGHT))
-                            .color(palette.ink_2),
-                    )
-                    .on_hover_text(found.revision_in_full());
-                    ui.add_space(metric::GAP);
-                }
-                // Truncated, with the whole of it on hover, because a path is
-                // the longest thing in the bar and the least urgent.
-                let path = found.to.install.root().display().to_string();
-                ui.add(
-                    egui::Label::new(
-                        RichText::new(&path).font(font::mono(font::MONO)).color(palette.ink_3),
-                    )
-                    .truncate(),
-                )
-                .on_hover_text(path);
-            });
-        });
-    }
+                path(ui, palette, root);
+                ui.add_space(metric::GAP);
+                badge(ui, palette, "Unknown build");
+                return;
+            }
+            Session::NoInstallation { .. } => {
+                title(ui, "No installation selected", palette.ink_3);
+                return;
+            }
+        };
 
-    /// The second line: the badge, the guard, and whether there is a backup.
-    fn install_state(&mut self, ui: &mut egui::Ui) {
-        let palette = self.palette;
-        ui.horizontal(|ui| {
-            let (badge, guard, backup) = match &self.session {
-                Session::Found(found) => {
-                    (found.badge().label(), found.guard(), backup_line(found.backup.as_deref()))
-                }
-                Session::Unreadable { .. } => (
-                    "Unknown build".to_owned(),
-                    "Guard: not recognised",
-                    "No backup yet".to_owned(),
-                ),
-                Session::NoInstallation { .. } => {
-                    ("No installation".to_owned(), "", "No backup yet".to_owned())
-                }
-            };
+        title(ui, &found.title(), palette.ink);
+        ui.add_space(metric::GAP);
+        let revision = found.revision();
+        if !revision.is_empty() {
             ui.label(
-                RichText::new(&badge)
-                    .font(font::plain(font::CHIP))
-                    .color(widget::badge_colour(palette, &badge)),
-            );
-            // The guard is diagnostic and never a decision, so it is quieter
-            // than the badge beside it and carries no control.
-            if !guard.is_empty() {
-                ui.add_space(metric::GAP);
-                ui.label(RichText::new(guard).font(font::plain(font::CHIP)).color(palette.ink_3));
-            }
+                RichText::new(revision).font(font::mono(font::MONO_TIGHT)).color(palette.ink_2),
+            )
+            .on_hover_text(found.revision_in_full());
             ui.add_space(metric::GAP);
-            ui.label(RichText::new(backup).font(font::plain(font::CHIP)).color(palette.ink_3));
+        }
 
-            ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                // Both themes are drawn, so both are reachable. It is also the
-                // only way to see that nothing has quietly hard-coded a colour.
-                let other = if self.dark { "Light" } else { "Dark" };
-                if widget::small_button(ui, palette, other).clicked() {
-                    let dark = !self.dark;
-                    self.set_theme(dark, ui.ctx());
-                }
-                ui.add_space(metric::TOOL_GAP);
-                if widget::small_button(ui, palette, "Rescan").clicked() {
-                    self.session = Session::read();
-                }
-            });
-        });
+        // The badge takes whatever the path leaves, so it is never the thing
+        // that gets truncated: the path is the longest item in the bar and the
+        // least urgent.
+        let state = found.badge();
+        // `Registered` is the ordinary state and the design does not label it.
+        // The count is in the list's own heading, which is where somebody
+        // counting would look.
+        let label = (state != Badge::Registered(found.entries.entries().len()))
+            .then(|| state.label());
+        let width = label.as_ref().map_or(0.0, |text| text.len() as f32 * BADGE_WIDTH_PER_CHAR);
+        let room = (ui.available_width() - width - metric::GAP).max(0.0);
+        ui.allocate_ui_with_layout(
+            vec2(room, ui.available_height()),
+            Layout::left_to_right(Align::Center),
+            |ui| path(ui, palette, &found.to.install.root().display().to_string()),
+        );
+        if let Some(label) = label {
+            ui.add_space(metric::GAP);
+            badge(ui, palette, &label);
+        }
     }
 
     /// Above the list: what to show of it, and the other way in.
@@ -530,6 +512,11 @@ impl App {
             .collect();
 
         ui.horizontal_centered(|ui| {
+            ui.label(
+                RichText::new(widget::icon::SEARCH)
+                    .font(font::icon(ui.ctx(), font::ICON))
+                    .color(palette.ink_3),
+            );
             ui.add(
                 egui::TextEdit::singleline(&mut self.filter.query)
                     .hint_text("Search name or UUID")
@@ -551,13 +538,10 @@ impl App {
             }
 
             ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                if widget::small_button(ui, palette, "Add files...").clicked() {
-                    let chosen = rfd::FileDialog::new()
-                        .set_title("Add documents to register")
-                        .add_filter("Bitwig documents", &staging::ACCEPTED)
-                        .pick_files()
-                        .unwrap_or_default();
-                    self.read(staging::documents_in(&chosen), ui.ctx());
+                if widget::small_button(ui, palette, widget::icon::ADD_FILES, "Add files...")
+                    .clicked()
+                {
+                    self.add_files(ui);
                 }
             });
         });
@@ -567,47 +551,57 @@ impl App {
     fn page(&mut self, ui: &mut egui::Ui) {
         match &self.session {
             Session::NoInstallation { searched } => {
-                let searched = searched.clone();
-                widget::empty_state(
-                    ui,
-                    self.palette,
-                    "No Bitwig Studio found",
-                    "Point the app at an installation and it will read it.",
+                let body = format!(
+                    "ORNG Registry looked in {searched}. Point it at the installation root \
+                     if it lives somewhere else."
                 );
-                ui.add_space(metric::TIGHT);
-                ui.vertical_centered(|ui| {
-                    ui.label(
-                        RichText::new(searched)
-                            .font(font::mono(font::MONO))
-                            .color(self.palette.ink_3),
-                    );
-                });
+                let empty = widget::Empty {
+                    icon: widget::icon::NO_INSTALL,
+                    inviting: false,
+                    title: "No Bitwig Studio installation found",
+                    body: &body,
+                    extensions: false,
+                    aside: None,
+                    action: Some("Locate Bitwig Studio..."),
+                    action_is_primary: true,
+                    alt: Some("Copy diagnostics"),
+                    foot: Some("The installation root contains bitwig.jar"),
+                    minor: false,
+                };
+                match widget::empty_state(ui, self.palette, &empty) {
+                    widget::Pressed::Action => self.locate(ui),
+                    widget::Pressed::Alt => ui.ctx().copy_text(body.clone()),
+                    widget::Pressed::Nothing => {}
+                }
             }
             // The state a user reaches the morning after a Bitwig release. It is
             // not an error they caused, so nothing can be listed and the region
             // is given over to saying what could not be read.
             Session::Unreadable { root, why } => {
                 let (root, why) = (root.clone(), why.clone());
-                widget::empty_state(
-                    ui,
-                    self.palette,
-                    "This installation was not recognised",
-                    "Nothing here is broken. This build of Bitwig is arranged in a way \
-                     this app has not seen, so it will not guess.",
-                );
-                ui.add_space(metric::TIGHT);
-                ui.vertical_centered(|ui| {
-                    ui.label(
-                        RichText::new(&root).font(font::mono(font::MONO)).color(self.palette.ink_3),
-                    );
-                    ui.label(
-                        RichText::new(&why).font(font::mono(font::MONO)).color(self.palette.ink_3),
-                    );
-                    ui.add_space(metric::GAP);
-                    if widget::small_button(ui, self.palette, "Copy diagnostics").clicked() {
-                        ui.ctx().copy_text(format!("{root}\n{why}"));
-                    }
-                });
+                let empty = widget::Empty {
+                    icon: widget::icon::UNREADABLE,
+                    inviting: false,
+                    title: "This Bitwig installation could not be read",
+                    body: "ORNG Registry finds what it needs by structure rather than by \
+                           version number, and this installation is arranged in a way it does \
+                           not recognise. That usually means a new Bitwig release. Nothing has \
+                           been changed.",
+                    extensions: false,
+                    aside: None,
+                    action: Some("Copy diagnostics"),
+                    action_is_primary: true,
+                    alt: Some("Change install..."),
+                    foot: Some(
+                        "The diagnostics report names what was looked for and what was found",
+                    ),
+                    minor: false,
+                };
+                match widget::empty_state(ui, self.palette, &empty) {
+                    widget::Pressed::Action => ui.ctx().copy_text(format!("{root}\n{why}")),
+                    widget::Pressed::Alt => self.locate(ui),
+                    widget::Pressed::Nothing => {}
+                }
             }
             Session::Found(_) if self.view == View::Catalog => {
                 let palette = self.palette;
@@ -650,45 +644,51 @@ impl App {
             .collect();
 
         if found.entries.is_empty() && self.staged.is_empty() {
-            // The primary onboarding surface. It names the extensions and says
-            // that preparing needs Bitwig closed, because that is the one thing
-            // about the first run that is not obvious.
-            widget::empty_state(
-                ui,
-                self.palette,
-                "Nothing registered yet",
-                "Drop a device, modulator or Grid module onto this window to register it.",
-            );
-            ui.add_space(metric::TIGHT);
-            ui.vertical_centered(|ui| {
-                ui.label(
-                    RichText::new(staging::ACCEPTED.map(|e| format!(".{e}")).join("    "))
-                    .font(font::mono(font::MONO))
-                    .color(self.palette.accent_text),
-                );
-                ui.add_space(metric::GAP);
-                ui.label(
-                    RichText::new("Bitwig Studio must be closed the first time.")
-                        .font(font::plain(font::NOTE))
-                        .color(self.palette.ink_3),
-                );
-            });
+            // The primary onboarding surface, and the only screen whose icon
+            // takes the accent: it is an invitation rather than a report.
+            let empty = widget::Empty {
+                icon: widget::icon::DROP,
+                inviting: true,
+                title: "Drop a device here to register it",
+                body: "ORNG Registry reads the document's identity and makes this installation \
+                       recognise it. Bitwig Studio must be closed the first time, while the \
+                       installation is prepared.",
+                extensions: true,
+                aside: Some(
+                    "Nothing of your own yet? The catalog has devices, modulators and Grid \
+                     modules you can install in one click.",
+                ),
+                action: Some("Browse the catalog"),
+                action_is_primary: true,
+                alt: Some("Add files..."),
+                foot: Some("A backup is written before anything is changed"),
+                minor: false,
+            };
+            match widget::empty_state(ui, self.palette, &empty) {
+                widget::Pressed::Action => self.view = View::Catalog,
+                widget::Pressed::Alt => self.add_files(ui),
+                widget::Pressed::Nothing => {}
+            }
             return;
         }
 
         if shown.is_empty() && registered.is_empty() {
-            widget::empty_state(
-                ui,
-                self.palette,
-                "Nothing matches",
-                "No entry matches the current search and filters.",
-            );
-            ui.add_space(metric::TIGHT);
-            ui.vertical_centered(|ui| {
-                if widget::small_button(ui, self.palette, "Clear filters").clicked() {
-                    self.filter = Filter::default();
-                }
-            });
+            let empty = widget::Empty {
+                icon: widget::icon::NO_MATCH,
+                inviting: false,
+                title: "No entries match",
+                body: "Nothing here matches the current search and kind filters.",
+                extensions: false,
+                aside: None,
+                action: Some("Clear filters"),
+                action_is_primary: false,
+                alt: None,
+                foot: None,
+                minor: true,
+            };
+            if widget::empty_state(ui, self.palette, &empty) == widget::Pressed::Action {
+                self.filter = Filter::default();
+            }
             return;
         }
 
@@ -864,22 +864,22 @@ impl App {
             Session::Found(found) => found,
             Session::Unreadable { .. } => {
                 let why = "This installation could not be read";
-                widget::primary_button(ui, palette, "Apply changes", false, why);
+                widget::primary_button(ui, palette, "Apply changes", icon::APPLY, false, why);
                 return;
             }
             Session::NoInstallation { .. } => {
                 let why = "No installation selected";
-                widget::primary_button(ui, palette, "Apply changes", false, why);
+                widget::primary_button(ui, palette, "Apply changes", icon::APPLY, false, why);
                 return;
             }
         };
 
         if let Some(applying) = &self.applying {
             if applying.is_running() {
-                widget::primary_button(ui, palette, "Applying", false, "In progress");
+                widget::primary_button(ui, palette, "Applying", icon::APPLY, false, "In progress");
                 return;
             }
-            if widget::small_button(ui, palette, "Done").clicked() {
+            if widget::small_button(ui, palette, icon::APPLY, "Done").clicked() {
                 self.applying = None;
             }
             return;
@@ -895,8 +895,14 @@ impl App {
             None => "Apply changes".to_owned(),
         };
 
+        // An arrow when the press leads somewhere - a confirmation, a step
+        // list - and a tick when it simply does the thing.
+        let mark = match pending {
+            Some(Work::PrepareThenEntries) => icon::PREPARE,
+            _ => icon::APPLY,
+        };
         let Some(work) = pending else {
-            widget::primary_button(ui, palette, &label, false, "Nothing to apply");
+            widget::primary_button(ui, palette, &label, mark, false, "Nothing to apply");
             return;
         };
         // Preparing an installation that would then read an empty list is work
@@ -906,7 +912,7 @@ impl App {
             && found.entries.is_empty()
             && self.ready().count() == 0
         {
-            widget::primary_button(ui, palette, &label, false, "Nothing to register yet");
+            widget::primary_button(ui, palette, &label, mark, false, "Nothing to register yet");
             return;
         }
         // Only preparation is blocked by a running Bitwig or an unrecognised
@@ -914,10 +920,10 @@ impl App {
         // it too, because a disabled control with no reason on it is not a
         // statement.
         if let Some((_, why, _)) = self.blocking() {
-            widget::primary_button(ui, palette, &label, false, why);
+            widget::primary_button(ui, palette, &label, mark, false, why);
             return;
         }
-        if widget::primary_button(ui, palette, &label, true, "").clicked() {
+        if widget::primary_button(ui, palette, &label, mark, true, "").clicked() {
             self.start(work, ui.ctx());
         }
     }
@@ -943,6 +949,34 @@ impl App {
     }
 }
 
+/// The installation's name, the loudest thing in the window.
+fn title(ui: &mut egui::Ui, text: &str, ink: egui::Color32) {
+    ui.label(RichText::new(text).font(font::emphasis(ui.ctx(), font::INSTALL_TITLE)).color(ink));
+}
+
+/// Where it is, truncated, and whole on hover.
+fn path(ui: &mut egui::Ui, palette: Palette, root: &str) {
+    ui.add(
+        egui::Label::new(RichText::new(root).font(font::mono(font::MONO)).color(palette.ink_3))
+            .truncate(),
+    )
+    .on_hover_text(root);
+}
+
+/// What state the registry is in, coloured as the design colours it.
+fn badge(ui: &mut egui::Ui, palette: Palette, label: &str) {
+    ui.label(
+        RichText::new(label)
+            .font(font::plain(font::CHIP))
+            .color(widget::badge_colour(palette, label)),
+    );
+}
+
+/// Roughly how wide a character of the badge is, for leaving room before it has
+/// been laid out. An estimate, and only ever used to decide how much of the
+/// path to show.
+const BADGE_WIDTH_PER_CHAR: f32 = 6.0;
+
 /// The plural the kind filters are labelled with. `Modules` and not `Grid
 /// modules`, because the toolbar is tight and the design labels them so.
 fn plural(kind: Kind) -> &'static str {
@@ -950,17 +984,6 @@ fn plural(kind: Kind) -> &'static str {
         Kind::Device => "Devices",
         Kind::Modulator => "Modulators",
         Kind::Module => "Modules",
-    }
-}
-
-/// Whether there is a backup, and when it was taken.
-///
-/// Before the first preparation there is none, and the indicator says so rather
-/// than rendering an empty date.
-fn backup_line(taken: Option<&str>) -> String {
-    match taken {
-        Some(date) => format!("Backup: {date}"),
-        None => "No backup yet".to_owned(),
     }
 }
 
@@ -1123,22 +1146,55 @@ const TIGHT_INSIDE_A_ROW: f32 = 3.0;
 /// The Catalog view: what ORNG Catalog publishes, once it has been proved.
 fn published(ui: &mut egui::Ui, palette: Palette, catalog: &Fetching) {
     match catalog.outcome.as_ref() {
-        None => widget::empty_state(ui, palette, "Fetching the catalog", "Checking its signature."),
+        None => {
+            let empty = widget::Empty {
+                icon: icon::CATALOG,
+                inviting: false,
+                title: "Fetching the catalog",
+                body: "Checking its signature before anything in it is believed.",
+                extensions: false,
+                aside: None,
+                action: None,
+                action_is_primary: false,
+                alt: None,
+                foot: None,
+                minor: false,
+            };
+            widget::empty_state(ui, palette, &empty);
+        }
         Some(Err(why)) => {
-            let why = why.clone();
-            widget::empty_state(
-                ui,
-                palette,
-                "The catalog could not be read",
-                "Nothing is installed from an index that does not verify.",
-            );
-            ui.add_space(metric::TIGHT);
-            ui.vertical_centered(|ui| {
-                ui.label(RichText::new(why).font(font::mono(font::MONO)).color(palette.ink_3));
-            });
+            let empty = widget::Empty {
+                icon: icon::UNREADABLE,
+                inviting: false,
+                title: "The catalog could not be read",
+                body: "Nothing is installed from an index that does not verify. The catalog \
+                       is one small file over HTTPS, signed by the key this application was \
+                       built with.",
+                extensions: false,
+                aside: Some(why),
+                action: None,
+                action_is_primary: false,
+                alt: None,
+                foot: Some("Everything already registered keeps working"),
+                minor: false,
+            };
+            widget::empty_state(ui, palette, &empty);
         }
         Some(Ok(index)) if index.items.is_empty() => {
-            widget::empty_state(ui, palette, "The catalog is empty", "Nothing is published yet.")
+            let empty = widget::Empty {
+                icon: icon::CATALOG,
+                inviting: false,
+                title: "The catalog is empty",
+                body: "Nothing is published yet.",
+                extensions: false,
+                aside: None,
+                action: None,
+                action_is_primary: false,
+                alt: None,
+                foot: None,
+                minor: false,
+            };
+            widget::empty_state(ui, palette, &empty);
         }
         Some(Ok(index)) => {
             egui::ScrollArea::vertical().auto_shrink([false, false]).show(ui, |ui| {

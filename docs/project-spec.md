@@ -4,9 +4,15 @@ The stable reference for what this project is, how it works and why it is built 
 is. Where this document and another disagree, this one is wrong and should be fixed; it is
 meant to be the thing that keeps the vision from drifting, not a record of a past plan.
 
-Companion documents: `ui-spec.md` (what the app's interface must do), `design-review.md`
-(validation of the visual design against it), `AGENTS.md` (how code in this repo is
-written).
+Companion documents: `docs/design_handoff_orng_registry/` (the design bundle, and **the
+authority for what the interface looks like**), `design-review.md` (what was checked against
+it and what came back), `AGENTS.md` (how code in this repo is written).
+
+`ui-spec.md` is no longer followed. It was written before there was a design and its
+structural sketch is a hint that was taken for a layout - the install bar grew a second line
+of badge, guard and backup on the strength of it, when the bundle routes the guard and the
+backup to Settings under Diagnostics and draws one line. Where the two disagree the bundle
+wins, and anything the bundle does not draw is asked about rather than invented.
 
 ---
 
@@ -621,14 +627,17 @@ the row; and `Add files...` is there because drag and drop may not be the only w
 press runs both modes when both are pending, which is also what puts the description
 bundles back after a Bitwig update has replaced them.
 
-The three regions `ui-spec.md` requires, drawn to the design bundle's own measurements
-rather than to an approximation of them: the install bar naming the installation, its
-build, its path, its registry badge, the guard and the backup; the list, with search, the
-kind filters and sections dividing pending work from what is registered; and the action
-bar carrying the summary, the mode it will run, and the one primary action. A row is a
-grid, so identities and statuses line up down the list. Every state renders headlessly
-into `apps/orng-registry/tests/snapshots`, and the fixture paths are relative so that the
-pictures are a function of the code rather than of the machine that drew them.
+The design bundle's own components, at its own measurements: the install bar naming the
+installation, its build, its path and its registry badge; the list toolbar with search and
+the kind filters; the list, with sections dividing pending work from what is registered;
+and the action bar carrying the summary, the mode it will run, and the one primary action.
+A row is a grid, so identities and statuses line up down the list. The icons are the
+design's own set, Phosphor, in the Light weight it names. Every empty state is the
+designer's copy verbatim rather than something invented beside it.
+
+Every state renders headlessly into `apps/orng-registry/tests/snapshots`, and the fixture
+paths are relative so that the pictures are a function of the code rather than of the
+machine that drew them.
 
 Not built yet:
 
@@ -643,7 +652,13 @@ Not built yet:
   that did nothing would be worse than no toggle.
 - The plan confirmation the Prepare install mode is supposed to show before it runs.
 - Everything else the design draws: Settings, About, Restore, the inspector, the update
-  modal. The overflow control lists them; none of them opens anything yet.
+  modal. The overflow control lists them; none of them opens anything yet. Two things live
+  in Settings in the bundle and are therefore unreachable until it exists: the tamper guard
+  and the backup date, under Diagnostics, and the appearance switch - so light and dark are
+  currently reachable only from the render tests.
+- The design draws its small icons in Phosphor's `duotone`, which is two overlapping glyphs
+  in two colours and has no single-colour font to be drawn from. Light is used throughout
+  instead; whether that matters is a question for the designer.
 
 ---
 

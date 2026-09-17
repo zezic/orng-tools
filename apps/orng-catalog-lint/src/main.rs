@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: 2026 Sergey Ukolov
 // SPDX-License-Identifier: MIT OR Apache-2.0
 
-//! The tool that guards the Orng Catalog repository.
+//! The tool that guards the ORNG Catalog repository.
 //!
 //! Every rule it applies lives in `orng-catalog`, which is also what the
 //! application reads the catalog with. One implementation, so the repository and
@@ -43,7 +43,7 @@ mod exit {
 #[derive(Parser)]
 #[command(
     name = "orng-catalog-lint",
-    about = "Validates an Orng Catalog checkout and generates its index",
+    about = "Validates an ORNG Catalog checkout and generates its index",
     version
 )]
 struct Cli {

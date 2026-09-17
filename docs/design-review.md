@@ -1,4 +1,4 @@
-# Design review: Orng Registry
+# Design review: ORNG Registry
 
 Validation of the design handoff against the app's actual behaviour and against the
 Bitwig internals it depends on. Everything below was checked against a real Bitwig Studio

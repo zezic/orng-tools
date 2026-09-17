@@ -20,9 +20,9 @@ has never heard of it, so projects cannot recall it reliably.
 
 - a set of libraries for reading Bitwig documents and preparing a Bitwig installation to
   accept custom identities, publishable so other people can build on them;
-- **Orng Registry**, an application that lets a user register their own content with one
+- **ORNG Registry**, an application that lets a user register their own content with one
   drag and one button;
-- **Orng Catalog**, a curated public repository of community content that Orng Registry
+- **ORNG Catalog**, a curated public repository of community content that ORNG Registry
   can install from directly.
 
 The user-facing promise is small and should stay small: *your own devices behave like
@@ -39,7 +39,7 @@ In scope:
 - Registering identities with a specific Bitwig installation.
 - Placing documents where the installation resolves them.
 - Making registered content appear and be searchable in Bitwig's browser.
-- Fetching, installing and updating content from Orng Catalog.
+- Fetching, installing and updating content from ORNG Catalog.
 - Undoing all of the above.
 
 Out of scope, and intended to stay that way:
@@ -50,7 +50,7 @@ Out of scope, and intended to stay that way:
   sacrifices a stock device per custom one and makes projects non-portable between users
   with different donor mappings.
 - Anything that unlocks Bitwig functionality the user has not paid for. See section 9.
-- Accounts, telemetry, update checks, or any network traffic beyond Orng Catalog.
+- Accounts, telemetry, update checks, or any network traffic beyond ORNG Catalog.
 
 ---
 
@@ -64,7 +64,7 @@ meaning in this project, and "catalog" means only the public repository.
 | **Core Registry** | Bitwig's internal list of every identity it treats as native. What preparation teaches to read our entries. |
 | **Bitwig library** | `Library/` inside the installation: `devices/`, `modulators/`, `modules/`. Where registered paths resolve. |
 | **User library** | The user's own content folder, under `Documents` or `$HOME`. Survives Bitwig updates. |
-| **Orng Catalog** | The public repository of community content. The only thing this project calls a catalog. |
+| **ORNG Catalog** | The public repository of community content. The only thing this project calls a catalog. |
 | **Entry list** | This project's durable record of what it has registered. The prepared installation reads it at startup. |
 | **Kind** | `Device`, `Modulator` or `Module`. Fixed by Bitwig; a property of a document, never a user choice. |
 | **Registration** | One piece of custom content as this project records it: identity, kind, name, path, description, keywords. |
@@ -345,7 +345,7 @@ is offered only before an identity has been registered.
 
 **6.7 The document is the source of truth for identity.** Anything derivable from a
 document is read from it rather than restated alongside it. Applies to the entry list and
-to Orng Catalog manifests alike.
+to ORNG Catalog manifests alike.
 
 **6.8 The backup is the patch source, not the installed file.** A backup is taken once per
 build and never overwritten, and every preparation of that build patches it rather than
@@ -354,11 +354,20 @@ instead of stacking a second copy of every edit, and restore always has an unmod
 original. An installation that is already modified with no backup to work from is refused,
 because there is then nothing pristine to patch.
 
+**6.9 `ORNG` in user-facing text, `orng` in machine identifiers.** The product names are
+**ORNG Registry** and **ORNG Catalog**; the binary, the paths, the packages, the domain and
+the repositories are lowercase `orng`. Read as an abbreviation rather than a word, which is
+what the uppercase is for. It does not stand for anything yet.
+
+Splitting on that line rather than picking one casing keeps a heading from having to look
+like a command and a path from having to shout. It also supersedes the round-two letter,
+which said the product name became "ORNG Registry"; the designer was told in round three.
+
 ---
 
-## 7. Orng Catalog
+## 7. ORNG Catalog
 
-A public repository of community content that Orng Registry installs from, so users get a
+A public repository of community content that ORNG Registry installs from, so users get a
 curated view of what exists instead of hunting for downloads.
 
 ### 7.1 What it actually is
@@ -366,7 +375,7 @@ curated view of what exists instead of hunting for downloads.
 Not a file host. Content is 20 to 30 KB per item; the entire Bitwig factory device set is
 4.7 MB. Hosting is a non-problem.
 
-Orng Catalog is an **identity authority**. Its job is to guarantee that a UUID means one
+ORNG Catalog is an **identity authority**. Its job is to guarantee that a UUID means one
 thing, permanently, across contributors who do not know each other. Every rule below
 follows from that.
 
@@ -470,7 +479,7 @@ when told to, so the command stays a projection of the tree everywhere else.
 ### 7.6 What this adds to the app
 
 - A second top-level view for browsing, which the current single-view design does not have.
-- Provenance on each registration: local file, or Orng Catalog item at a version. Recorded
+- Provenance on each registration: local file, or ORNG Catalog item at a version. Recorded
   in the entry list (5.2) as one value and not as a pair of optional fields, so that "a
   catalog item at no version" and "a local file at version 2.0.1" cannot be written down.
 - An `Update available` status, distinct from a locally modified file - different cause,

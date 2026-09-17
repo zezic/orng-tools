@@ -61,7 +61,7 @@ to a copyleft crate under GPL-3.0-only, matching the crate it lands in.
 
 ## Not covered here
 
-Content published to Orng Catalog carries its own licence, declared per item
+Content published to ORNG Catalog carries its own licence, declared per item
 in `orng.toml`. An author's choice for their device is independent of the
 licence on this code.
 

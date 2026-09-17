@@ -165,7 +165,7 @@ pub struct Registration {
 pub enum Provenance {
     /// A file the user chose themselves. Nothing upstream to compare against.
     Local,
-    /// An Orng Catalog item, at the version that was installed.
+    /// An ORNG Catalog item, at the version that was installed.
     Catalog { version: ItemVersion },
 }
 

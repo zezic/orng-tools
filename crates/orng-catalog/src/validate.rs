@@ -3,7 +3,7 @@
 
 //! The rules that keep identities stable.
 //!
-//! Orng Catalog's only real job is to guarantee that a UUID means one thing,
+//! ORNG Catalog's only real job is to guarantee that a UUID means one thing,
 //! permanently, across contributors who do not know each other. These checks are
 //! that guarantee, expressed once and run both by continuous integration on a
 //! pull request and by anyone regenerating the index.

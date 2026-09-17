@@ -77,17 +77,27 @@ pub enum Helper {
     Absent,
 }
 
-/// What an installation's archive currently is.
+/// What an installation is, and what has been done to it.
 ///
-/// Two facts, reported separately because they are separately true and the
-/// interface shows them as two. Collapsing them into "prepared or not" would
-/// lose the states that actually need explaining: an archive carrying the class
-/// with the guard still armed is a preparation that stopped between patching
-/// and activating, and Bitwig would degrade audio in every project rather than
-/// simply ignore the entry list.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// Flat, and answered by one read. Resolving the anchors is the expensive part
+/// of looking at an archive - it scans classes, and takes seconds on a slow
+/// machine - so everything that read yields is returned together rather than
+/// left for a second call to pay for again.
+///
+/// The two conditions are reported separately because they are separately true
+/// and the interface shows them as two. Collapsing them into "prepared or not"
+/// would lose the state that actually needs explaining: an archive carrying the
+/// class with the guard still armed is a preparation that stopped between
+/// patching and activating, and Bitwig would degrade audio in every project
+/// rather than simply ignore the entry list.
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Condition {
+    /// Which Bitwig this is. `None` when the version string is not where it
+    /// usually sits, which is reportable and does not block a patch.
+    pub build: Option<BuildId>,
+    /// Whether the class preparation injects is in the archive.
     pub helper: Helper,
+    /// What the tamper guard reads.
     pub guard: GuardState,
 }
 
@@ -120,7 +130,7 @@ pub fn inspect(install: &Installation) -> Result<Condition> {
     };
     let binding = Binding::resolve(&jar)?;
     let guard = guard::inspect(&jar.entry(&binding.guard_entry)?)?;
-    Ok(Condition { helper, guard })
+    Ok(Condition { build: binding.build, helper, guard })
 }
 
 /// What preparation will do, decided without writing anything.

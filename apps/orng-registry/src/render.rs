@@ -20,10 +20,12 @@ use crate::app::{App, View};
 use crate::session::{Found, Session};
 use crate::catalog::Fetching;
 use crate::staging::{self, Staged};
+use crate::theme::metric;
 use crate::work::{Applying, Stage, State};
 
-/// The window's own size, so what is rendered is what would be seen.
-const SIZE: egui::Vec2 = egui::vec2(1040.0, 680.0);
+/// The window's own size, so what is rendered is what would be seen - and the
+/// size the design is drawn at, so a picture can be held against the bundle.
+const SIZE: egui::Vec2 = egui::vec2(metric::WINDOW[0], metric::WINDOW[1]);
 
 /// A fixed place to build a fake installation.
 ///

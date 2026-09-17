@@ -162,7 +162,16 @@ impl Palette {
 /// These are the design's own numbers, read out of the handoff bundle's inline
 /// styles rather than judged by eye. Where the design gives a height it is here
 /// as a height, not as a padding that happens to produce one.
+///
+/// **They are absolute, and they were authored for a window of [`WINDOW`].** A
+/// thirty-six pixel row in a window half as tall again is not the same row: the
+/// numbers still hold but the density does not, and the list reads sparse
+/// against the bundle. Growing the window is the user's to do; opening larger
+/// than the design was drawn at is not ours.
 pub mod metric {
+    /// The window the design is drawn at, and therefore the size this opens.
+    pub const WINDOW: [f32; 2] = [820.0, 560.0];
+
     /// Between two things that belong to one phrase: an icon and its label, a
     /// chip and its count.
     pub const TIGHT: f32 = 6.0;
@@ -175,11 +184,8 @@ pub mod metric {
     /// From the edge of a bar or a row to its content.
     pub const PAD: f32 = 12.0;
 
-    /// The bar naming the installation, across the top of both views. Two
-    /// lines: what this installation is, and what state it is in. The design's
-    /// own shell allocates it seventy pixels for one drawn line of forty-two,
-    /// and the specification's sketch has the second line in it.
-    pub const INSTALL_BAR: f32 = 70.0;
+    /// The bar naming the installation, across the top of both views.
+    pub const INSTALL_BAR: f32 = 42.0;
     /// Search, kind filters, the factory toggle and `Add files...`.
     pub const TOOLBAR: f32 = 42.0;
     /// The summary and the one primary action.

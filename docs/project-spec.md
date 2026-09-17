@@ -582,10 +582,22 @@ Known gaps:
 - Preparation writes inside the installation, which on Windows is under `Program Files` and
   needs elevation. Detecting that and asking for it is the application's, and unbuilt.
 
+The catalog repository's own continuous integration, which checks a pull request, decides
+whether it may auto-merge, and on merge regenerates the index, signs it and publishes both
+assets. The published index verifies against the published key.
+
+The application, as far as: reading what the machine has, listing what is registered,
+preparing an installation, and reading the catalog. It draws in the design's palette and
+typefaces, and every state it can be in renders headlessly into `apps/orng-registry/tests/
+snapshots` so a change to the interface can be looked at rather than reasoned about.
+
 Not built yet:
 
-- The application.
-- The catalog repository's own continuous integration.
+- Registering a document the user drops in, which is the other half of the Local view.
+- Installing from the catalog: fetching a document by path, checking it against the digest
+  the index carries, and registering it.
+- Everything else the design draws: Settings, About, Restore, the inspector, the update
+  modal.
 
 ---
 

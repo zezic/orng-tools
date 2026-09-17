@@ -519,18 +519,7 @@ impl App {
             .collect();
 
         ui.horizontal_centered(|ui| {
-            ui.label(
-                RichText::new(widget::icon::SEARCH)
-                    .font(font::icon(ui.ctx(), font::ICON))
-                    .color(palette.ink_3),
-            );
-            ui.add(
-                egui::TextEdit::singleline(&mut self.filter.query)
-                    .hint_text("Search name or UUID")
-                    .desired_width(metric::SEARCH_WIDTH)
-                    .font(font::plain(font::CONTROL))
-                    .margin(egui::Margin::symmetric(metric::TOOL_GAP as i8, 0)),
-            );
+            widget::search_field(ui, palette, &mut self.filter.query, "Search name or UUID");
             ui.add_space(metric::TOOL_GAP);
             for (kind, count) in counts {
                 let on = self.filter.kinds.contains(&kind);

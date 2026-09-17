@@ -170,6 +170,37 @@ pub fn small_button(ui: &mut Ui, palette: Palette, icon: &str, label: &str) -> R
         .on_hover_cursor(egui::CursorIcon::PointingHand)
 }
 
+/// The search field: one filled, rounded box holding the glyph and the text.
+///
+/// The icon is *inside* the field in the bundle, not sitting on the bar beside
+/// it. That is the difference between a field with an affordance in it and an
+/// icon that happens to be next to a box.
+pub fn search_field(ui: &mut Ui, palette: Palette, query: &mut String, hint: &str) {
+    Frame::new()
+        .fill(palette.field)
+        .corner_radius(CornerRadius::same(metric::RADIUS))
+        .inner_margin(Margin::symmetric(metric::TOOL_GAP as i8, 0))
+        .show(ui, |ui| {
+            ui.set_height(metric::CONTROL);
+            ui.horizontal_centered(|ui| {
+                ui.label(
+                    RichText::new(icon::SEARCH)
+                        .font(font::icon(ui.ctx(), font::ICON))
+                        .color(palette.ink_3),
+                );
+                ui.add(
+                    egui::TextEdit::singleline(query)
+                        .hint_text(hint)
+                        .desired_width(metric::SEARCH_WIDTH)
+                        .font(font::plain(font::CONTROL))
+                        // The frame is the one drawn above; a second one inside
+                        // it is a box in a box.
+                        .frame(Frame::NONE),
+                );
+            });
+        });
+}
+
 /// A control that is on or off, and says which by a mark rather than a fill.
 pub fn check(ui: &mut Ui, palette: Palette, label: &str, on: bool) -> Response {
     let mark = if on { "[x]" } else { "[ ]" };

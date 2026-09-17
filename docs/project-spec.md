@@ -354,6 +354,24 @@ instead of stacking a second copy of every edit, and restore always has an unmod
 original. An installation that is already modified with no backup to work from is refused,
 because there is then nothing pristine to patch.
 
+**6.9 `ORNG` in user-facing text, `orng` in machine identifiers.** The product names are
+**ORNG Registry** and **ORNG Catalog**; the binary, the paths, the packages, the domain and
+the repositories are lowercase `orng`. Read as an abbreviation rather than a word, which is
+what the uppercase is for. It does not stand for anything yet.
+
+Splitting on that line rather than picking one casing keeps a heading from having to look
+like a command and a path from having to shout. It also supersedes the round-two letter,
+which said the product name became "ORNG Registry"; the designer was told in round three.
+
+**6.10 Three platforms, and the differences live in two places.** ORNG Registry targets
+macOS, Windows and Linux. Everything platform-shaped is already confined to
+`bitwig-install`, which knows where an installation, a user library and a settings
+directory sit on each, and to one function in `orng-tools` that links a folder. Nothing
+above those two knows what it is running on, and nothing new should.
+
+Continuous integration builds and tests all three, because the two-thirds of that code
+nobody exercises locally is exactly the two-thirds that rots.
+
 **6.11 Windows links with a junction, not a symbolic link.** A symbolic link there needs
 `SeCreateSymbolicLinkPrivilege`, which an ordinary account does not hold unless Developer
 Mode is on, so linking the library folders would fail for most of the people it is for. A
@@ -365,15 +383,6 @@ Two consequences that are easy to get wrong and were: a junction is a directory,
 one is not the call that removes a file; and it stores its target in a form Windows
 normalises, so an existing link is recognised by resolving it rather than by comparing the
 text it reads back.
-
-**6.10 Three platforms, and the differences live in two places.** ORNG Registry targets
-macOS, Windows and Linux. Everything platform-shaped is already confined to
-`bitwig-install`, which knows where an installation, a user library and a settings
-directory sit on each, and to one function in `orng-tools` that links a folder. Nothing
-above those two knows what it is running on, and nothing new should.
-
-Continuous integration builds and tests all three, because the two-thirds of that code
-nobody exercises locally is exactly the two-thirds that rots.
 
 **6.12 The index signature is detached, and the key is pinned in the app.** An embedded
 signature has to be excluded from what it covers, so what is signed becomes a
@@ -387,15 +396,6 @@ the index would be chosen by whoever serves the index, which is the party the si
 exists to distrust. The cost is that rotation needs an application release, which is the
 right price: a scheme where the key can be replaced remotely is a scheme where it can be
 replaced by the wrong person.
-
-**6.9 `ORNG` in user-facing text, `orng` in machine identifiers.** The product names are
-**ORNG Registry** and **ORNG Catalog**; the binary, the paths, the packages, the domain and
-the repositories are lowercase `orng`. Read as an abbreviation rather than a word, which is
-what the uppercase is for. It does not stand for anything yet.
-
-Splitting on that line rather than picking one casing keeps a heading from having to look
-like a command and a path from having to shout. It also supersedes the round-two letter,
-which said the product name became "ORNG Registry"; the designer was told in round three.
 
 ---
 

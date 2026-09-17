@@ -12,6 +12,28 @@
 // You should have received a copy of the GNU General Public License along with
 // this program. If not, see <https://www.gnu.org/licenses/>.
 
-fn main() {
-    println!("orng-registry: UI pending design");
+//! ORNG Registry: register your own content with Bitwig Studio.
+
+pub mod app;
+pub mod session;
+pub mod theme;
+pub mod widget;
+
+#[cfg(test)]
+mod render;
+
+fn main() -> eframe::Result {
+    let options = eframe::NativeOptions {
+        renderer: eframe::Renderer::Wgpu,
+        viewport: eframe::egui::ViewportBuilder::default()
+            .with_inner_size([1040.0, 680.0])
+            .with_min_inner_size([760.0, 480.0])
+            .with_title("ORNG Registry"),
+        ..Default::default()
+    };
+    eframe::run_native(
+        "ORNG Registry",
+        options,
+        Box::new(|cc| Ok(Box::new(app::App::new(cc)))),
+    )
 }

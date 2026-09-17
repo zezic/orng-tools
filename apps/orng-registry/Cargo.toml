@@ -6,3 +6,17 @@ license = "GPL-3.0-only"
 
 [dependencies]
 orng-tools.workspace = true
+
+# wgpu rather than glow, selected at run time in `main`. Windows often has no
+# OpenGL driver at all - only Direct3D - so a GL-only renderer is a renderer
+# that fails to start on a machine whose graphics are fine. eframe's default
+# features are kept because they are what supply wgpu's platform backends;
+# turning them off builds a wgpu with no backend and panics on the first frame.
+eframe = { version = "0.33", features = ["wgpu"] }
+
+# Rendering the interface headlessly, so a change can be looked at rather than
+# reasoned about. egui places widgets in ways that are hard to predict from the
+# code alone - margins, baselines and available width especially - and a picture
+# is the only honest check.
+[dev-dependencies]
+egui_kittest = { version = "0.33", features = ["wgpu", "snapshot"] }

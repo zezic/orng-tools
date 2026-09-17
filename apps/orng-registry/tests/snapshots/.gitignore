@@ -1,0 +1,4 @@
+# Written beside a snapshot when one does not match. Never committed: the
+# stored image is the record, and a diff is a symptom of a change in flight.
+*.diff.png
+*.new.png

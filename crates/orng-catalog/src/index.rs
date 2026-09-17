@@ -20,6 +20,7 @@ use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 use crate::manifest::ItemVersion;
+use crate::signing::{PublicKey, Signature};
 use crate::{AuthorId, Error, Item, Result, Slug};
 
 /// Bumped when the shape changes in a way older readers cannot handle. A reader
@@ -195,8 +196,26 @@ impl Index {
         Index { schema: SCHEMA, revision: history.revision.clone(), items: entries }
     }
 
+    /// Read an index the caller already trusts: one it generated itself, or the
+    /// copy of the last published index a workflow was handed. Anything that
+    /// arrived over the network goes through [`Index::verified`] instead.
     pub fn parse(json: &str) -> Result<Self> {
         Ok(serde_json::from_str(json)?)
+    }
+
+    /// Read a downloaded index, and only if the catalog signed these bytes.
+    ///
+    /// This is the whole verification path the application needs: no network
+    /// beyond the two files, no git client, no release API. Fetch `index.json`
+    /// and `index.json.sig`, hold the public key in the build, and call this.
+    ///
+    /// Verification comes first and parsing second, over one `&[u8]` that is
+    /// never re-serialized in between, so the bytes proved are the bytes read.
+    /// Splitting it into a verify call and a parse call would make forgetting
+    /// the first one possible, which is the only mistake here that matters.
+    pub fn verified(json: &[u8], signature: &Signature, key: &PublicKey) -> Result<Self> {
+        key.verify(json, signature)?;
+        Ok(serde_json::from_slice(json)?)
     }
 
     pub fn to_json(&self) -> String {
@@ -278,6 +297,30 @@ mod tests {
     #[test]
     fn the_short_form_is_what_a_link_is_labelled_with() {
         assert_eq!(revision('a').short(), "aaaaaaa");
+    }
+
+    /// The path the application takes: two downloaded files and a key compiled
+    /// into the build. An index that does not verify never becomes an `Index`,
+    /// so nothing downstream has to remember to ask whether it was checked.
+    #[test]
+    fn a_downloaded_index_is_parsed_only_once_it_is_proved() {
+        let key = crate::SecretKey::generate();
+        let published = Index { schema: SCHEMA, revision: Some(revision('a')), items: Vec::new() };
+        let served = published.to_json().into_bytes();
+        let signature = key.sign(&served);
+
+        assert_eq!(
+            Index::verified(&served, &signature, &key.public_key()).unwrap(),
+            published
+        );
+
+        // The mirror rewrites a row, or serves a different index entirely.
+        let forged =
+            Index { schema: SCHEMA, revision: Some(revision('b')), items: Vec::new() }.to_json();
+        assert!(matches!(
+            Index::verified(forged.as_bytes(), &signature, &key.public_key()),
+            Err(Error::SignatureMismatch)
+        ));
     }
 
     #[test]

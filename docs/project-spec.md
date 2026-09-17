@@ -375,6 +375,19 @@ above those two knows what it is running on, and nothing new should.
 Continuous integration builds and tests all three, because the two-thirds of that code
 nobody exercises locally is exactly the two-thirds that rots.
 
+**6.12 The index signature is detached, and the key is pinned in the app.** An embedded
+signature has to be excluded from what it covers, so what is signed becomes a
+canonicalisation of the file rather than the file, and a canonicalisation is a second
+serializer for two programs to agree about. A second asset keeps the bytes signed, the bytes
+served and the bytes parsed identical, with nothing to normalise, and leaves `index.json`
+untouched for any reader that has not learned about signatures.
+
+The public key is compiled into the application rather than fetched. A key downloaded beside
+the index would be chosen by whoever serves the index, which is the party the signature
+exists to distrust. The cost is that rotation needs an application release, which is the
+right price: a scheme where the key can be replaced remotely is a scheme where it can be
+replaced by the wrong person.
+
 **6.9 `ORNG` in user-facing text, `orng` in machine identifiers.** The product names are
 **ORNG Registry** and **ORNG Catalog**; the binary, the paths, the packages, the domain and
 the repositories are lowercase `orng`. Read as an abbreviation rather than a word, which is
@@ -482,6 +495,14 @@ that one URL and then individual documents by path: plain HTTPS, no API, no toke
 account, no git client. Each row carries a hash and size, so a download is verified against
 a reviewed index rather than trusted for coming from the right domain.
 
+**The index is signed**, and published with its signature as a second asset,
+`index.json.sig`. Every digest in the index is only as good as the index, so whoever serves
+it decides what gets installed; a mirror at `orng.tools` would otherwise be a second party
+able to do that. The app carries the public key and refuses an index that does not verify
+against it, which leaves a mirror able to be stale but not able to be wrong. Decision 6.12
+records why the signature is detached rather than embedded. `docs/index-signing.md` is the
+note the catalog's own workflow is written from.
+
 The index carries **two kinds of revision, which must not stand in for one another**: one
 for the whole file, naming the commit it was generated from, and one per item, naming the
 change that published that item. The per-item one is what the app shows before installing,
@@ -537,6 +558,12 @@ Built and tested against a real installation:
   version and source in the entry list (5.2, 7.6). The entry list's format marker is now
   checked on read rather than only written, and a list written before the catalog existed
   still loads, as local content.
+
+- Index signing, both halves: the lint signs with a key it will only take from the
+  environment and verifies against a public one, and the library offers the single call the
+  application makes, which parses a downloaded index only once the signature over those
+  exact bytes is proved. A tampered index, a signature from another key and malformed key
+  material are each covered by a test.
 
 Verified on Windows on ARM64, against Bitwig Studio 6.1: the whole suite, including the
 anchors, the factory registry, the tamper guard, and the prepare transaction end to end

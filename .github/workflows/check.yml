@@ -87,3 +87,13 @@ jobs:
           orng-catalog-lint check --help > /dev/null
           orng-catalog-lint owners --help > /dev/null
           orng-catalog-lint index --help | grep -q -- --from-git
+          orng-catalog-lint sign --help > /dev/null
+          orng-catalog-lint verify --help > /dev/null
+
+      - name: The signing key comes from the environment and nowhere else
+        # The publish workflow hands the key over in ORNG_CATALOG_SIGNING_KEY. A
+        # flag that could name it instead would put it in a log, so the absence
+        # of one is part of the interface and is asserted rather than assumed.
+        run: |
+          ! orng-catalog-lint sign --help | grep -q -- --key
+          orng-catalog-lint sign --index /dev/null 2>&1 | grep -q ORNG_CATALOG_SIGNING_KEY

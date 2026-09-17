@@ -15,8 +15,8 @@ use bitwig_classfile::{Jar, JarEdits};
 use bitwig_document::Kind;
 use bitwig_registry::{Binding, guard};
 use orng_tools::{
-    Backup, Error, GuardState, Installation, LibraryPath, Manifest, OrngHome, Placement,
-    Plan, Provenance, Registration, Step, Strategy, UserLibrary, placement,
+    Backup, Error, GuardState, Helper, Installation, LibraryPath, Manifest, OrngHome,
+    Placement, Plan, Provenance, Registration, Step, Strategy, UserLibrary, placement, prepare,
 };
 
 /// A copy of the installed Bitwig that a test may destroy.
@@ -314,6 +314,54 @@ fn the_injected_class_registers_the_entry_list() {
     mirror.write_entries(&manifest.to_tsv());
 
     mirror.apply(mirror.plan());
+}
+
+/// What the application asks on opening, and again after preparing.
+///
+/// Read back out of the archive rather than remembered, because the answer has
+/// to survive the app being closed, the installation being replaced by a Bitwig
+/// update, and a preparation that failed half way.
+#[test]
+fn an_installation_reports_what_has_been_done_to_it() {
+    let mirror = mirror_or_skip!();
+
+    let before = prepare::inspect(&mirror.install).expect("could not read the mirror");
+    assert!(before.is_stock(), "a fresh mirror is not stock: {before:?}");
+    assert!(!before.is_prepared());
+    assert_eq!(before.helper, Helper::Absent);
+    assert_eq!(before.guard, GuardState::Armed);
+
+    mirror.apply(mirror.plan());
+
+    let after = prepare::inspect(&mirror.install).expect("could not read the prepared mirror");
+    assert!(after.is_prepared(), "not prepared after preparing: {after:?}");
+    assert!(!after.is_stock());
+    assert_eq!(after.helper, Helper::Present);
+    assert_eq!(after.guard, GuardState::Disarmed);
+}
+
+/// The state the two facts exist to describe, and the reason `is_prepared` is
+/// not just "our class is in there".
+///
+/// A preparation that stopped between patching and activating leaves the class
+/// in an archive whose guard is still armed. That is worse than not being
+/// prepared: Bitwig degrades audio in every project rather than merely ignoring
+/// the entry list, so nothing may report it as ready.
+#[test]
+fn our_class_with_the_guard_still_armed_is_not_prepared() {
+    let mirror = mirror_or_skip!();
+
+    // The content does not matter. What is being asked is whether the entry is
+    // there, and preparation is what would also have disarmed the guard.
+    let mut edits = JarEdits::new();
+    edits.add("OrngRegistry.class", b"not a class, and does not need to be".to_vec());
+    mirror.rewrite_archive(&edits);
+
+    let half = prepare::inspect(&mirror.install).expect("could not read the mirror");
+    assert_eq!(half.helper, Helper::Present);
+    assert_eq!(half.guard, GuardState::Armed);
+    assert!(!half.is_prepared(), "an armed guard with our class in it is not prepared");
+    assert!(!half.is_stock(), "an archive with our class in it is not stock");
 }
 
 /// The other half: the injected class must never stop Bitwig starting.

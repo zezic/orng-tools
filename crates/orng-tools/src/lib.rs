@@ -45,7 +45,7 @@ pub use home::OrngHome;
 pub use orng_catalog::manifest::ItemVersion;
 pub use placement::{Placement, Strategy};
 pub use manifest::Manifest;
-pub use prepare::{Plan, Step};
+pub use prepare::{Condition, Helper, Plan, Step};
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {

@@ -16,12 +16,14 @@ pub mod index;
 pub mod item;
 pub mod manifest;
 pub mod owners;
+pub mod signing;
 pub mod validate;
 
 pub use index::{History, Index, IndexEntry, Revision};
 pub use item::{AuthorId, Item, Slug, scan};
 pub use manifest::Manifest;
 pub use owners::{Authorization, Owner, Owners, Refusal, authorize};
+pub use signing::{PublicKey, SecretKey, Signature};
 pub use validate::{Problem, Report, Severity};
 
 #[derive(Debug, thiserror::Error)]
@@ -40,6 +42,12 @@ pub enum Error {
     BadVersion(String),
     #[error("{0} is not a commit: expected forty lowercase hex digits")]
     BadRevision(String),
+    /// Deliberately holds no copy of what it refused. One thing parsed through
+    /// here is the signing key, and an error message goes to a workflow log.
+    #[error("malformed {what}: {why}")]
+    BadKeyMaterial { what: &'static str, why: &'static str },
+    #[error("the signature does not match this index under this key")]
+    SignatureMismatch,
 }
 
 pub type Result<T> = std::result::Result<T, Error>;
@@ -58,4 +66,10 @@ pub const MANIFEST_FILE: &str = "orng.toml";
 
 pub(crate) fn read(path: &std::path::Path) -> Result<Vec<u8>> {
     std::fs::read(path).map_err(|source| Error::Io { path: path.display().to_string(), source })
+}
+
+/// Lowercase hex, which is the form of every byte string this project publishes:
+/// a content digest, a commit, a public key, a signature.
+pub(crate) fn hex(bytes: &[u8]) -> String {
+    bytes.iter().map(|b| format!("{b:02x}")).collect()
 }

@@ -41,6 +41,7 @@ impl App {
     /// this machine does not happen to be in.
     pub fn with(ctx: &egui::Context, session: Session) -> Self {
         let palette = Palette::DARK;
+        theme::install_fonts(ctx);
         theme::apply(ctx, palette);
         App { session, view: View::Local, palette, dark: true }
     }

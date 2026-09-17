@@ -25,9 +25,12 @@ const SIZE: egui::Vec2 = egui::vec2(1040.0, 680.0);
 /// installation's path, so a random one lands in the rendered image and no two
 /// runs can ever match. A snapshot has to be a function of the code alone.
 fn fixture(name: &str) -> std::path::PathBuf {
-    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("../../target/render-fixtures")
-        .join(name);
+    let target = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .and_then(std::path::Path::parent)
+        .expect("the crate is two below the workspace")
+        .join("target/render-fixtures");
+    let root = target.join(name);
     let _ = std::fs::remove_dir_all(&root);
     root
 }

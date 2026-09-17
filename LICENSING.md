@@ -67,3 +67,19 @@ licence on this code.
 
 Nothing in this repository is licensed to you by Bitwig GmbH, and nothing here
 redistributes Bitwig code or assets.
+
+## Bundled fonts
+
+`assets/fonts/` holds typefaces the interface draws with. They are neither this
+project's code nor catalog content, and they carry their own terms:
+
+| Face | Licence |
+| --- | --- |
+| Inter | SIL Open Font License 1.1 |
+| Iosevka | SIL Open Font License 1.1 |
+
+The OFL permits bundling and redistribution inside a larger work, including a
+copyleft one, and asks that the licence travel with the fonts. Their licence
+texts sit beside them in `assets/fonts/`. Neither is modified here beyond
+subsetting, which the licence allows; a subset is still the font under its own
+name and terms.

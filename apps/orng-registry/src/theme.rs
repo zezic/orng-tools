@@ -15,7 +15,7 @@
 use std::sync::Arc;
 
 use eframe::egui::{
-    self, Color32, CornerRadius, FontData, FontDefinitions, FontFamily, FontId, Stroke, TextStyle,
+    self, Color32, CornerRadius, FontData, FontDefinitions, FontFamily, Stroke, TextStyle,
 };
 
 /// A colour as the design writes one, so the two can be compared by eye.
@@ -76,6 +76,13 @@ pub struct Palette {
     /// Laid over everything when the window is a drop target, so what is behind
     /// it reads as out of reach rather than merely dimmed.
     pub scrim: Color32,
+    /// Every other row, over whatever the list sits on.
+    pub zebra: Color32,
+    /// The wash behind a banner, one per tone.
+    pub ok_bg: Color32,
+    pub warn_bg: Color32,
+    pub err_bg: Color32,
+    pub info_bg: Color32,
 }
 
 impl Palette {
@@ -106,6 +113,11 @@ impl Palette {
         btn: hex(0x282828),
         btn_hover: hex(0x333333),
         scrim: hexa(0x000000, 189),
+        zebra: hexa(0xffffff, 13),
+        ok_bg: hexa(0xf2f2f2, 15),
+        warn_bg: hexa(0xff5a1f, 26),
+        err_bg: hexa(0xff4036, 26),
+        info_bg: hexa(0xa9a9a9, 18),
     };
 
     /// Drawn, and not yet reachable from the interface. Kept here because a
@@ -137,30 +149,118 @@ impl Palette {
         btn: hex(0xe2e2e2),
         btn_hover: hex(0xd8d8d8),
         scrim: hexa(0xffffff, 168),
+        zebra: hexa(0x000000, 11),
+        ok_bg: hexa(0x171717, 13),
+        warn_bg: hexa(0xe8500f, 26),
+        err_bg: hexa(0xbf2a1c, 23),
+        info_bg: hexa(0x3e3e3e, 18),
     };
 }
 
 /// Measurements, in the same spirit: named once, never typed into a layout.
+///
+/// These are the design's own numbers, read out of the handoff bundle's inline
+/// styles rather than judged by eye. Where the design gives a height it is here
+/// as a height, not as a padding that happens to produce one.
 pub mod metric {
-    /// Gap between a label and the thing it labels.
+    /// Between two things that belong to one phrase: an icon and its label, a
+    /// chip and its count.
     pub const TIGHT: f32 = 6.0;
-    /// Gap between two things that are not part of one phrase. Two view names
-    /// set six pixels apart read as one sentence, which is what this is for.
-    pub const GAP: f32 = 16.0;
-    /// Inside a panel, from its edge to its content.
-    pub const PAD: f32 = 14.0;
-    /// One entry row. Tall enough for two lines of text plus breathing room.
-    pub const ROW_HEIGHT: f32 = 44.0;
-    /// The toolbar and the install bar.
-    pub const BAR_HEIGHT: f32 = 46.0;
-    /// Corner of a panel, a field or a button.
-    pub const RADIUS: u8 = 6;
+    /// Between two things that do not.
+    pub const GAP: f32 = 12.0;
+    /// Between the items of a toolbar, which is tighter than a bar's.
+    pub const TOOL_GAP: f32 = 8.0;
+    /// Between two members of one group, such as the view switch.
+    pub const SNUG: f32 = 2.0;
+    /// From the edge of a bar or a row to its content.
+    pub const PAD: f32 = 12.0;
+
+    /// The bar naming the installation, across the top of both views. Two
+    /// lines: what this installation is, and what state it is in. The design's
+    /// own shell allocates it seventy pixels for one drawn line of forty-two,
+    /// and the specification's sketch has the second line in it.
+    pub const INSTALL_BAR: f32 = 70.0;
+    /// Search, kind filters, the factory toggle and `Add files...`.
+    pub const TOOLBAR: f32 = 42.0;
+    /// The summary and the one primary action.
+    pub const ACTION_BAR: f32 = 52.0;
+    /// One entry.
+    pub const ROW: f32 = 36.0;
+    /// A heading dividing the list into pending, registered and factory.
+    pub const SECTION: f32 = 26.0;
+    /// A control inside a bar: a view tab, a kind chip, a search field.
+    pub const CONTROL: f32 = 26.0;
+    /// The primary action, which is taller than anything beside it.
+    pub const ACTION: f32 = 32.0;
+
+    /// Corner of a control. The design rounds by three, not by six: at these
+    /// sizes a six-pixel radius reads as a pill rather than as a soft corner.
+    pub const RADIUS: u8 = 3;
     /// Every separating line in the design is one pixel. Named because it is a
     /// decision, and because an untyped `1.0` is ambiguous to the compiler here.
     pub const HAIRLINE: f32 = 1.0;
-    /// The underline marking the current view, which is the one line that is
-    /// meant to be seen rather than merely to divide.
-    pub const UNDERLINE: f32 = 2.0;
+
+    /// How wide the columns of an entry row are. The design lays a row out as a
+    /// grid rather than as a flow, so the identities and the statuses line up
+    /// down the list instead of wandering with the length of each name.
+    pub const KIND_COLUMN: f32 = 66.0;
+    pub const UUID_COLUMN: f32 = 106.0;
+    pub const STATUS_COLUMN: f32 = 130.0;
+    /// The search field, which gives way before the filters do.
+    pub const SEARCH_WIDTH: f32 = 200.0;
+}
+
+/// Where a piece of text sits in the hierarchy.
+///
+/// Named by role rather than by size, so a caller says what a thing *is*. The
+/// sizes are the design's, which uses more of them than egui has named styles
+/// for, so these are [`FontId`]s rather than `TextStyle`s - the five egui styles
+/// are still set, for the controls this does not draw by hand.
+///
+/// `emphasis` is the design's 500 and 600 weights. It is a second family rather
+/// than a flag, because that is how a font is chosen, and it needs the context
+/// to ask whether the family is bound yet: fonts installed during a pass are not
+/// available until the next one, and asking for an unbound family panics.
+pub mod font {
+    use eframe::egui::{self, FontFamily, FontId};
+
+    /// The installation's name, the loudest thing in the window.
+    pub const INSTALL_TITLE: f32 = 13.5;
+    /// An entry's display name.
+    pub const ROW_NAME: f32 = 12.5;
+    /// The primary action.
+    pub const ACTION: f32 = 12.0;
+    /// A tab, a menu item, a search field, the action bar's summary.
+    pub const CONTROL: f32 = 11.5;
+    /// A chip, a badge, a status, a section heading.
+    pub const CHIP: f32 = 11.0;
+    /// A reason, a note, anything explaining the line above it.
+    pub const NOTE: f32 = 10.5;
+    /// A path, an identity, a version: anything a user might copy.
+    pub const MONO: f32 = 10.5;
+    /// A count or a build revision, which sit beside text rather than in it.
+    pub const MONO_TIGHT: f32 = 10.0;
+    /// An empty state's headline.
+    pub const HEADING: f32 = 17.0;
+
+    pub fn plain(size: f32) -> FontId {
+        FontId::new(size, FontFamily::Proportional)
+    }
+
+    pub fn mono(size: f32) -> FontId {
+        FontId::new(size, FontFamily::Monospace)
+    }
+
+    /// The design's heavier weight, when this frame can draw it.
+    ///
+    /// A named family is bound from the pass *after* `set_fonts`, and this
+    /// application installs its fonts while it is being built - which under the
+    /// render harness happens inside a pass. Asking for a family that is not
+    /// bound panics, so the answer is the regular face until it is.
+    pub fn emphasis(ctx: &egui::Context, size: f32) -> FontId {
+        let bound = ctx.fonts(|fonts| fonts.families().iter().any(|f| *f == super::emphasis()));
+        if bound { FontId::new(size, super::emphasis()) } else { plain(size) }
+    }
 }
 
 /// Load the design's faces.
@@ -177,10 +277,19 @@ pub mod metric {
 /// in the one column a user is most likely to be reading carefully.
 pub fn install_fonts(ctx: &egui::Context) {
     const INTER: &[u8] = include_bytes!("../../../assets/fonts/InterDisplay-Regular.ttf");
+    const INTER_MEDIUM: &[u8] = include_bytes!("../../../assets/fonts/InterDisplay-Medium.ttf");
     const MONO: &[u8] = include_bytes!("../../../assets/fonts/subset-Iosevka-Regular-Extended.ttf");
+    const MONO_MEDIUM: &[u8] =
+        include_bytes!("../../../assets/fonts/subset-Iosevka-Medium-Extended.ttf");
 
     let mut fonts = FontDefinitions::default();
-    for (name, bytes) in [("inter", INTER), ("iosevka", MONO)] {
+    let faces = [
+        ("inter", INTER),
+        ("inter-medium", INTER_MEDIUM),
+        ("iosevka", MONO),
+        ("iosevka-medium", MONO_MEDIUM),
+    ];
+    for (name, bytes) in faces {
         fonts.font_data.insert(name.to_owned(), Arc::new(FontData::from_static(bytes)));
     }
 
@@ -190,44 +299,40 @@ pub fn install_fonts(ctx: &egui::Context) {
             list.insert(at, (*face).to_owned());
         }
     };
-    // Only the two families egui binds itself. A `FontFamily::Name` is not bound
-    // until the frame after `set_fonts`, so anything drawn in the first frame
-    // that asked for one would panic - which is exactly what the empty state,
-    // the only thing here with a heading in it, did.
     family(&mut fonts, FontFamily::Proportional, &["inter"]);
     family(&mut fonts, FontFamily::Monospace, &["iosevka", "inter"]);
+    // The design sets its headings and its primary action in a heavier weight,
+    // and a weight is a face, so it is a third family. A `FontFamily::Name` is
+    // not bound until the pass after `set_fonts`, and this runs while the
+    // application is being built - which under the render harness is inside a
+    // pass. Anything asking for it in that pass would panic, which is exactly
+    // what the empty state once did, so `font::emphasis` asks first.
+    family(&mut fonts, FontFamily::Name(EMPHASIS.into()), &["inter-medium", "iosevka-medium"]);
 
     ctx.set_fonts(fonts);
 }
 
-/// Where a piece of text sits in the hierarchy.
-///
-/// Mapped onto egui's named styles so a caller says what a thing *is* rather
-/// than what size it should be.
-pub mod text {
-    use eframe::egui::TextStyle;
+/// The heavier of the two weights the design uses.
+const EMPHASIS: &str = "emphasis";
 
-    /// A screen or section heading.
-    pub const HEADING: TextStyle = TextStyle::Heading;
-    /// Ordinary interface text.
-    pub const BODY: TextStyle = TextStyle::Body;
-    /// A label, a unit, a caption.
-    pub const SMALL: TextStyle = TextStyle::Small;
-    /// A path, an identity, a version, a build string. Anything the user might
-    /// copy into a bug report is monospaced, as the design has it.
-    pub const MONO: TextStyle = TextStyle::Monospace;
+/// That weight as a family, for the one call that has to name it.
+pub fn emphasis() -> FontFamily {
+    FontFamily::Name(EMPHASIS.into())
 }
 
 /// Apply the whole theme to a context. Called once at startup.
 pub fn apply(ctx: &egui::Context, palette: Palette) {
     let mut style = (*ctx.style()).clone();
 
+    // What egui draws for itself - the text inside a `Button`, a tooltip - in
+    // the sizes the design gives the same things. Everything this application
+    // draws by hand names a `font::` role instead.
     style.text_styles = [
-        (TextStyle::Heading, FontId::new(17.0, FontFamily::Proportional)),
-        (TextStyle::Body, FontId::new(13.0, FontFamily::Proportional)),
-        (TextStyle::Button, FontId::new(13.0, FontFamily::Proportional)),
-        (TextStyle::Small, FontId::new(11.0, FontFamily::Proportional)),
-        (TextStyle::Monospace, FontId::new(12.0, FontFamily::Monospace)),
+        (TextStyle::Heading, font::plain(font::HEADING)),
+        (TextStyle::Body, font::plain(font::CONTROL)),
+        (TextStyle::Button, font::plain(font::CONTROL)),
+        (TextStyle::Small, font::plain(font::CHIP)),
+        (TextStyle::Monospace, font::mono(font::MONO)),
     ]
     .into();
 
@@ -247,9 +352,11 @@ pub fn apply(ctx: &egui::Context, palette: Palette) {
     // Widgets, quietest state first. The design draws buttons as flat fills
     // that lift on hover, with no outline until they are interacted with.
     let w = &mut visuals.widgets;
-    w.noninteractive.bg_fill = palette.bg;
-    w.noninteractive.weak_bg_fill = palette.bg;
-    w.noninteractive.bg_stroke = Stroke::new(metric::HAIRLINE, palette.line);
+    // The search field is the only frame egui draws for this application, and
+    // the design gives it a fill and no outline at all.
+    w.noninteractive.bg_fill = palette.field;
+    w.noninteractive.weak_bg_fill = palette.field;
+    w.noninteractive.bg_stroke = Stroke::NONE;
     w.noninteractive.fg_stroke = Stroke::new(metric::HAIRLINE, palette.ink_2);
     w.noninteractive.corner_radius = radius;
 

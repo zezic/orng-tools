@@ -13,8 +13,11 @@
 //! or a build number while there is no installation to have one - the case the
 //! interface has an empty state for.
 
+use std::time::SystemTime;
+
 use orng_tools::{
-    Condition, Destination, Installation, Manifest, RunState, Strategy, prepare, running_state,
+    Backup, Condition, Destination, GuardState, Helper, Installation, Manifest, RunState, Strategy,
+    prepare, running_state,
 };
 
 /// Where documents go until there is a setting for it.
@@ -49,6 +52,13 @@ pub struct Found {
     pub running: RunState,
     /// Everything this app has registered.
     pub entries: Manifest,
+    /// The date the most recent backup was taken, if there has ever been one.
+    ///
+    /// Formatted here, where it is read, and not where it is drawn. A timestamp
+    /// rendered at the point of drawing is rendered in the drawing machine's
+    /// time zone, which makes what is on screen a function of who is looking -
+    /// and makes a rendered picture of it unreproducible off this continent.
+    pub backup: Option<String>,
 }
 
 impl Session {
@@ -87,6 +97,7 @@ impl Session {
 
         Session::Found(Box::new(Found {
             running: running_state(&to.install),
+            backup: latest_backup(&to),
             condition,
             to,
             entries,
@@ -94,18 +105,188 @@ impl Session {
     }
 }
 
-impl Found {
-    /// What the status line says about the installation, in the design's words.
-    pub fn guard_summary(&self) -> &'static str {
-        use orng_tools::{GuardState, Helper};
-        match (self.condition.helper, self.condition.guard) {
-            (_, GuardState::Unknown) => "guard site not recognised, preparation refuses",
-            (Helper::Present, GuardState::Disarmed) => "prepared",
-            (Helper::Absent, GuardState::Armed) => "guard armed, installation not prepared",
-            // Neither of the remaining two is a state this app produces and
-            // stops at, so neither gets a comfortable word for it.
-            (Helper::Present, GuardState::Armed) => "partly prepared, the guard is still armed",
-            (Helper::Absent, GuardState::Disarmed) => "the guard was disarmed by something else",
+/// The date of the most recent backup, across every build that has one.
+///
+/// A directory that cannot be read, or one whose date cannot be, is treated as
+/// no backup: the indicator states presence, and a presence it cannot prove is
+/// one it must not claim.
+fn latest_backup(to: &Destination) -> Option<String> {
+    let taken: SystemTime =
+        Backup::list(&to.home).ok()?.iter().filter_map(|backup| backup.taken_at().ok()).max()?;
+    let stamp = jiff::Timestamp::try_from(taken).ok()?;
+    Some(stamp.to_zoned(jiff::tz::TimeZone::system()).strftime("%-d %b %Y").to_string())
+}
+
+/// What the install bar's badge says about the registry.
+///
+/// Exactly one of these is true at a time, which is why it is an enum and not a
+/// string built at the point of drawing: two screens describing one installation
+/// differently is the failure this prevents.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Badge {
+    /// Nothing registered, and the archive is as Bitwig shipped it.
+    Stock,
+    /// Registered and verified, with the number of entries.
+    Registered(usize),
+    /// Entries on record, and a stock archive again. Normal after a Bitwig
+    /// update, and not the user's fault.
+    NeedsReapply,
+    /// The registry structure could not be located inside this archive.
+    UnknownBuild,
+    /// The archive was changed by something that is not this application.
+    ModifiedElsewhere,
+}
+
+impl Badge {
+    pub fn label(self) -> String {
+        match self {
+            Badge::Stock => "Stock".to_owned(),
+            Badge::Registered(count) => format!("Registered ({count})"),
+            Badge::NeedsReapply => "Needs re-apply".to_owned(),
+            Badge::UnknownBuild => "Unknown build".to_owned(),
+            Badge::ModifiedElsewhere => "Modified elsewhere".to_owned(),
         }
+    }
+}
+
+impl Found {
+    /// Which of the five states this installation is in.
+    ///
+    /// The guard is asked first. A guard site this build cannot read is the one
+    /// condition that makes every other answer a guess, because preparation
+    /// refuses before it looks at anything else.
+    pub fn badge(&self) -> Badge {
+        let registered = self.entries.entries().len();
+        match (self.condition.guard, self.condition.helper) {
+            (GuardState::Unknown, _) => Badge::UnknownBuild,
+            (GuardState::Disarmed, Helper::Present) => Badge::Registered(registered),
+            (GuardState::Armed, Helper::Absent) if registered == 0 => Badge::Stock,
+            // The entries are fine; the installation is what needs work. Said
+            // once, here, rather than once per row.
+            (GuardState::Armed, Helper::Absent) => Badge::NeedsReapply,
+            // Neither remaining pair is a state this application produces and
+            // stops at: a disarmed guard with no helper is somebody else's edit,
+            // and a helper behind an armed guard is a preparation that stopped
+            // between patching and activating.
+            _ => Badge::ModifiedElsewhere,
+        }
+    }
+
+    /// What the tamper guard reads, in the words the design uses. Diagnostic,
+    /// and drawn as such: it is never a decision the user makes.
+    pub fn guard(&self) -> &'static str {
+        match self.condition.guard {
+            GuardState::Armed => "Guard: armed",
+            GuardState::Disarmed => "Guard: disarmed",
+            GuardState::Unknown => "Guard: not recognised",
+        }
+    }
+
+    /// Which Bitwig this is, for the install bar's title.
+    pub fn title(&self) -> String {
+        match &self.condition.build {
+            Some(build) => format!("Bitwig Studio {}", build.version),
+            // A build that does not state its version still has an
+            // installation's name. Inventing a number would be worse than
+            // leaving the title short.
+            None => "Bitwig Studio".to_owned(),
+        }
+    }
+
+    /// The short build revision, as the design shows it. Empty when this archive
+    /// does not say, which the design already draws as an empty slot.
+    pub fn revision(&self) -> String {
+        match &self.condition.build {
+            Some(build) => build.revision.chars().take(SHORT_REVISION).collect(),
+            None => String::new(),
+        }
+    }
+
+    /// The whole revision, for the hover that carries what the bar truncates.
+    pub fn revision_in_full(&self) -> String {
+        match &self.condition.build {
+            Some(build) => format!("Build {}", build.revision),
+            None => "This build does not state a revision".to_owned(),
+        }
+    }
+}
+
+/// How much of a forty-character revision is enough to tell two builds apart,
+/// and the length the design draws.
+const SHORT_REVISION: usize = 8;
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn condition(guard: GuardState, helper: Helper) -> Condition {
+        Condition { build: None, helper, guard }
+    }
+
+    fn found(guard: GuardState, helper: Helper, entries: &str) -> Found {
+        let temp = std::path::Path::new("target/render-fixtures/badge");
+        Found {
+            to: Destination {
+                install: orng_tools::testing::install(&temp.join("Bitwig Studio.app")),
+                library: orng_tools::UserLibrary::at(&temp.join("Library")),
+                home: orng_tools::OrngHome::at(temp),
+                placement: PLACEMENT,
+            },
+            condition: condition(guard, helper),
+            running: RunState::Clear,
+            entries: Manifest::parse(entries).expect("the sample list parses"),
+            backup: None,
+        }
+    }
+
+    const NONE: &str = "#orng-registry 2\n";
+    const ONE: &str = "#orng-registry 2\n\
+        80c0dc4c-d142-53a7-85ee-b91427819b66\tDEVICE\tA\tdevices/My Devices/A.bwdevice\t\t\t\tlocal\n";
+
+    /// The state a user reaches the morning after a Bitwig release, and the one
+    /// most likely to be seen by somebody not expecting it.
+    #[test]
+    fn an_update_that_reset_the_installation_reads_as_needing_re_apply() {
+        let found = found(GuardState::Armed, Helper::Absent, ONE);
+        assert_eq!(found.badge(), Badge::NeedsReapply);
+    }
+
+    /// The same archive with nothing on record is not a problem at all, and must
+    /// not be dressed as one.
+    #[test]
+    fn a_stock_archive_with_nothing_registered_is_stock() {
+        assert_eq!(found(GuardState::Armed, Helper::Absent, NONE).badge(), Badge::Stock);
+    }
+
+    #[test]
+    fn a_prepared_installation_counts_what_it_carries() {
+        let found = found(GuardState::Disarmed, Helper::Present, ONE);
+        assert_eq!(found.badge(), Badge::Registered(1));
+        assert_eq!(found.badge().label(), "Registered (1)");
+    }
+
+    /// An unreadable guard outranks everything, because preparation refuses on
+    /// it before it looks at anything else - so any other badge would send the
+    /// user to press a button that will not work.
+    #[test]
+    fn a_guard_this_build_cannot_read_outranks_every_other_answer() {
+        for helper in [Helper::Present, Helper::Absent] {
+            let found = found(GuardState::Unknown, helper, ONE);
+            assert_eq!(found.badge(), Badge::UnknownBuild, "{helper:?}");
+        }
+    }
+
+    /// Half-prepared and disarmed-by-something-else are different accidents with
+    /// the same remedy, and neither is a state this application stops at.
+    #[test]
+    fn an_archive_this_application_did_not_leave_that_way_says_so() {
+        assert_eq!(
+            found(GuardState::Disarmed, Helper::Absent, NONE).badge(),
+            Badge::ModifiedElsewhere
+        );
+        assert_eq!(
+            found(GuardState::Armed, Helper::Present, NONE).badge(),
+            Badge::ModifiedElsewhere
+        );
     }
 }

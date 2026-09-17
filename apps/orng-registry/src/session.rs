@@ -162,16 +162,6 @@ impl Found {
         }
     }
 
-    /// What the tamper guard reads, in the words the design uses. Diagnostic,
-    /// and drawn as such: it is never a decision the user makes.
-    pub fn guard(&self) -> &'static str {
-        match self.condition.guard {
-            GuardState::Armed => "Guard: armed",
-            GuardState::Disarmed => "Guard: disarmed",
-            GuardState::Unknown => "Guard: not recognised",
-        }
-    }
-
     /// Which Bitwig this is, for the install bar's title.
     pub fn title(&self) -> String {
         match &self.condition.build {

@@ -418,30 +418,44 @@ fn apply_to(style: &mut egui::Style, palette: Palette) {
 
     w.hovered.bg_fill = palette.btn_hover;
     w.hovered.weak_bg_fill = palette.btn_hover;
-    w.hovered.bg_stroke = Stroke::new(metric::HAIRLINE, palette.line);
+    w.hovered.bg_stroke = Stroke::NONE;
     w.hovered.fg_stroke = Stroke::new(metric::HAIRLINE, palette.ink);
     w.hovered.corner_radius = radius;
 
     w.active.bg_fill = palette.accent;
     w.active.weak_bg_fill = palette.accent;
-    w.active.bg_stroke = Stroke::new(metric::HAIRLINE, palette.accent);
+    w.active.bg_stroke = Stroke::NONE;
     w.active.fg_stroke = Stroke::new(metric::HAIRLINE, palette.accent_ink);
     w.active.corner_radius = radius;
 
     w.open.bg_fill = palette.panel_2;
     w.open.weak_bg_fill = palette.panel_2;
-    w.open.bg_stroke = Stroke::new(metric::HAIRLINE, palette.line);
+    w.open.bg_stroke = Stroke::NONE;
     w.open.fg_stroke = Stroke::new(metric::HAIRLINE, palette.ink);
     w.open.corner_radius = radius;
 
-    // egui grows a widget by a pixel when it is hovered and again when it is
-    // pressed. The design does neither: hovering changes the fill and nothing
-    // else, and a control that changes size under the pointer makes a bar full
-    // of them twitch as the pointer crosses it.
+    // **Nothing may change size under the pointer**, and two separate things in
+    // egui do.
+    //
+    // `expansion` draws the frame outside the rect that was allocated, so a
+    // hovered control grows without moving its neighbours - a twitch rather than
+    // a reflow.
+    //
+    // The outline is worse, and is why the bar still moved after the first of
+    // these was zeroed: a button's inner margin is `button_padding + expansion -
+    // bg_stroke.width` (`widget_style.rs`), so a state carrying a one-pixel
+    // outline is two pixels narrower than one without, and every control after
+    // it on the bar slides over. That the widgets here pass `Stroke::NONE`
+    // themselves does not help, because the margin is computed from the style's
+    // stroke and not from the one the button draws with.
+    //
+    // The design has no outline in any state and changes the fill alone, so both
+    // are zero everywhere and the question does not arise.
     for state in
         [&mut w.noninteractive, &mut w.inactive, &mut w.hovered, &mut w.active, &mut w.open]
     {
         state.expansion = 0.0;
+        state.bg_stroke = Stroke::NONE;
     }
 
     let spacing = &mut style.spacing;

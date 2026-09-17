@@ -138,16 +138,36 @@ fn with_icon(
     job.into()
 }
 
+/// Add a button whose fill follows the pointer.
+///
+/// The fill has to come from the style rather than from `Button::fill`, because
+/// an explicit fill wins over every state and the control then never responds to
+/// being hovered at all. Set on a scope so that each control can name its own
+/// pair without the two sharing one entry in the theme.
+fn filled_button(
+    ui: &mut Ui,
+    base: Color32,
+    hover: Color32,
+    button: egui::Button<'_>,
+) -> Response {
+    ui.scope(|ui| {
+        let states = &mut ui.style_mut().visuals.widgets;
+        states.inactive.weak_bg_fill = base;
+        states.hovered.weak_bg_fill = hover;
+        states.active.weak_bg_fill = hover;
+        ui.add(button)
+    })
+    .inner
+}
+
 /// A quiet control in a bar: `Change install`, `Add files...`.
 pub fn small_button(ui: &mut Ui, palette: Palette, icon: &str, label: &str) -> Response {
-    ui.add(
-        egui::Button::new(with_icon(ui, icon, label, font::CHIP, palette.ink, palette.ink_2))
-            .fill(palette.btn)
-            .stroke(Stroke::NONE)
-            .corner_radius(CornerRadius::same(metric::RADIUS))
-            .min_size(vec2(0.0, metric::CONTROL)),
-    )
-    .on_hover_cursor(egui::CursorIcon::PointingHand)
+    let button = egui::Button::new(with_icon(ui, icon, label, font::CHIP, palette.ink, palette.ink_2))
+        .stroke(Stroke::NONE)
+        .corner_radius(CornerRadius::same(metric::RADIUS))
+        .min_size(vec2(0.0, metric::CONTROL));
+    filled_button(ui, palette.btn, palette.btn_hover, button)
+        .on_hover_cursor(egui::CursorIcon::PointingHand)
 }
 
 /// A control that is on or off, and says which by a mark rather than a fill.
@@ -238,16 +258,15 @@ pub fn primary_button(
 
 /// The overflow control, and the menu behind it.
 pub fn overflow(ui: &mut Ui, palette: Palette, menu: impl FnOnce(&mut Ui)) {
-    let response = ui.add(
-        egui::Button::new(
-            RichText::new(icon::OVERFLOW).font(font::icon(ui.ctx(), font::ICON)).color(palette.ink_2),
-        )
-        .fill(Color32::TRANSPARENT)
-        .stroke(Stroke::NONE)
-        .corner_radius(CornerRadius::same(metric::RADIUS))
-        .min_size(vec2(metric::CONTROL, metric::CONTROL)),
-    );
-    response.on_hover_cursor(egui::CursorIcon::PointingHand).context_menu(menu);
+    let button = egui::Button::new(
+        RichText::new(icon::OVERFLOW).font(font::icon(ui.ctx(), font::ICON)).color(palette.ink_2),
+    )
+    .stroke(Stroke::NONE)
+    .corner_radius(CornerRadius::same(metric::RADIUS))
+    .min_size(vec2(metric::CONTROL, metric::CONTROL));
+    filled_button(ui, Color32::TRANSPARENT, palette.btn_hover, button)
+        .on_hover_cursor(egui::CursorIcon::PointingHand)
+        .context_menu(menu);
 }
 
 /// The icons the design names, by the job each does here rather than by the

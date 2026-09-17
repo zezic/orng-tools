@@ -16,6 +16,8 @@
 
 pub mod app;
 pub mod catalog;
+#[cfg(target_os = "macos")]
+pub mod macos;
 pub mod session;
 pub mod staging;
 pub mod theme;

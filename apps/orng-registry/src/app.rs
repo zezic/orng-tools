@@ -203,6 +203,13 @@ impl App {
 
 impl eframe::App for App {
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
+        // Colour management is AppKit's, and it is undone when the window moves
+        // between displays - so it is re-applied per frame rather than once at
+        // startup. Not in `draw`, which the render harness also calls and which
+        // has no window behind it.
+        #[cfg(target_os = "macos")]
+        crate::macos::manage_colour(_frame);
+
         self.draw(ui);
     }
 }

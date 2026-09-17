@@ -28,6 +28,17 @@ ureq = { version = "3", default-features = false, features = ["rustls"] }
 rfd = { version = "0.17", default-features = false, features = ["xdg-portal"] }
 egui-phosphor = { version = "0.14", default-features = false, features = ["light"] }
 
+# Colour management is AppKit's, and neither eframe nor winit exposes it. A
+# window that does not declare its colour space is handed to the panel
+# untouched, which on a wide-gamut display stretches every sRGB colour the
+# design specifies. Nothing else here needs AppKit.
+[target.'cfg(target_os = "macos")'.dependencies]
+objc2 = "0.6"
+objc2-app-kit = { version = "0.3", features = ["NSView", "NSResponder"] }
+objc2-quartz-core = { version = "0.3", features = ["CALayer", "CAMetalLayer", "objc2-core-graphics"] }
+objc2-core-graphics = { version = "0.3", default-features = false, features = ["std", "CGColorSpace"] }
+raw-window-handle = "0.6"
+
 # Rendering the interface headlessly, so a change can be looked at rather than
 # reasoned about. egui places widgets in ways that are hard to predict from the
 # code alone - margins, baselines and available width especially - and a picture

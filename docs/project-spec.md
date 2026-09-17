@@ -343,7 +343,18 @@ this decision protects, so opting out of it opts out of the link as well.
 
 **6.4 Entitlement: grant entries, never the flag.** Section 4.2.
 
-**6.13 A document is never written over unless its identity says it is the same
+**6.13 The window declares its colour space on macOS.** A `CAMetalLayer` whose
+`colorspace` is nil is not unmanaged-but-harmless: nil means *these values are
+already in the display's own space*, so the window server hands them to the panel
+untouched. wgpu sets it to nil in the belief that the layer's default is sRGB,
+and the default is nil - so on a wide-gamut display every colour the design
+specifies is stretched across a gamut it was not authored for, and the interface
+reads oversaturated. The layer is tagged sRGB, which is what the palette is
+transcribed from, and the tag is re-applied every frame because the layer is
+rebuilt when the window moves between displays. Confirmed by reading the layer
+back: it is nil before, sRGB after, and nil again after a rebuild.
+
+**6.14 A document is never written over unless its identity says it is the same
 content.** Under the linking strategy a document is placed in the folder Bitwig's
 own "Save device..." writes into, and a registered library path is derived from a
 file name, so what is already at the target is as likely to be the user's own

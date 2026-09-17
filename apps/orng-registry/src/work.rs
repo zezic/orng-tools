@@ -11,10 +11,18 @@
 //! So it runs on another thread and reports back. The interface holds the
 //! progress and never the plan, which also means it cannot be tempted to ask the
 //! plan a question halfway through.
+//!
+//! The worker wakes the window itself. An `egui::Context` is a handle that can
+//! be cloned across threads, and `request_repaint` on it is how a thread that
+//! is not the drawing one says there is something new to draw. The alternative
+//! is for the window to wake on a timer and look - which burns a wakeup ten
+//! times a second through a verification that takes half a minute, and still
+//! answers late.
 
 use std::sync::mpsc::{Receiver, TryRecvError, channel};
 use std::thread;
 
+use eframe::egui;
 use orng_tools::{Installation, OrngHome, Plan, Step, Strategy, UserLibrary};
 
 /// What the worker says as it goes.
@@ -58,27 +66,29 @@ impl Preparing {
         library: UserLibrary,
         home: OrngHome,
         placement: Strategy,
+        ctx: egui::Context,
     ) -> Preparing {
         let (tx, updates) = channel();
         thread::spawn(move || {
+            // Every send is followed by a wake, so the window redraws when
+            // something happened and stays asleep when nothing did.
+            let say = |progress| {
+                let _ = tx.send(progress);
+                ctx.request_repaint();
+            };
+
             let plan = match Plan::compute(&install, &library, &home, placement) {
                 Ok(plan) => plan,
                 // A plan that cannot be computed has written nothing, which is
                 // the property the transaction exists to have. Report it as the
                 // whole run failing rather than as a step failing, because no
                 // step ran.
-                Err(e) => {
-                    let _ = tx.send(Progress::Finished(Err(e.to_string())));
-                    return;
-                }
+                Err(e) => return say(Progress::Finished(Err(e.to_string()))),
             };
-            let _ = tx.send(Progress::Planned(plan.steps().collect()));
+            say(Progress::Planned(plan.steps().collect()));
 
-            let reporter = tx.clone();
-            let result = plan.apply(|step| {
-                let _ = reporter.send(Progress::Began(step));
-            });
-            let _ = tx.send(Progress::Finished(result.map_err(|e| e.to_string())));
+            let result = plan.apply(|step| say(Progress::Began(step)));
+            say(Progress::Finished(result.map_err(|e| e.to_string())));
         });
 
         Preparing {

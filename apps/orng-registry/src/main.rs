@@ -18,6 +18,7 @@ pub mod app;
 pub mod session;
 pub mod theme;
 pub mod widget;
+pub mod work;
 
 #[cfg(test)]
 mod render;

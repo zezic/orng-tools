@@ -8,11 +8,12 @@
 //! and the session is re-read after anything that could change the answer.
 
 use eframe::egui::{self, Align, Layout, RichText};
-use orng_tools::{Registration, RunState};
+use orng_tools::{OrngHome, Registration, RunState, Step, Strategy, UserLibrary};
 
 use crate::session::{Found, Session};
 use crate::theme::{self, Palette, metric, text};
 use crate::widget;
+use crate::work::Preparing;
 
 /// Which top-level view is showing. Two, as the design has it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -28,6 +29,12 @@ pub struct App {
     view: View,
     palette: Palette,
     dark: bool,
+    /// Set while an installation is being prepared, and kept afterwards so the
+    /// result stays on screen until the user does something else.
+    preparing: Option<Preparing>,
+    /// Whether the machine has been re-read since the preparation ended. It is
+    /// read once, not every frame: the answer costs seconds.
+    reread: bool,
 }
 
 impl App {
@@ -43,11 +50,17 @@ impl App {
         let palette = Palette::DARK;
         theme::install_fonts(ctx);
         theme::apply(ctx, palette);
-        App { session, view: View::Local, palette, dark: true }
+        App { session, view: View::Local, palette, dark: true, preparing: None, reread: false }
     }
 
     pub fn show_view(&mut self, view: View) {
         self.view = view;
+    }
+
+    /// Put a preparation on screen without having started one. Tests only.
+    #[cfg(test)]
+    pub fn set_preparing(&mut self, preparing: Preparing) {
+        self.preparing = Some(preparing);
     }
 
     /// Switch palettes. The toolbar and the render tests share this, so neither
@@ -65,6 +78,8 @@ impl App {
     /// Separate from [`eframe::App::update`] so that it can be driven without a
     /// window, which is how it gets looked at.
     pub fn draw(&mut self, ctx: &egui::Context) {
+        self.pump(ctx);
+
         egui::TopBottomPanel::top("views")
             .exact_height(metric::BAR_HEIGHT)
             .frame(widget::bar(self.palette))
@@ -90,6 +105,10 @@ impl App {
                     ui.label(RichText::new(root).text_style(text::MONO).color(self.palette.ink_3));
                 }
                 Session::Found(found) => match self.view {
+                    View::Local if self.preparing.is_some() => {
+                        let preparing = self.preparing.as_ref().expect("just checked");
+                        progress(ui, self.palette, preparing);
+                    }
                     View::Local => local(ui, self.palette, found),
                     View::Catalog => widget::empty_state(
                         ui,
@@ -105,6 +124,39 @@ impl App {
 impl eframe::App for App {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         self.draw(ctx);
+    }
+}
+
+impl App {
+    /// Take whatever the worker has said, and re-read the machine once it is
+    /// done, because what was true before a preparation is not true after one.
+    fn pump(&mut self, ctx: &egui::Context) {
+        let Some(preparing) = &mut self.preparing else { return };
+        if preparing.poll() {
+            ctx.request_repaint();
+        }
+        if preparing.is_running() {
+            // Nothing has happened this frame, but something will, and no input
+            // is coming to wake the window up.
+            ctx.request_repaint_after(std::time::Duration::from_millis(100));
+        } else if preparing.outcome.as_ref().is_some_and(Result::is_ok) && !self.reread {
+            self.reread = true;
+            self.session = Session::read();
+        }
+    }
+
+    /// Whether preparation may even be offered.
+    fn blocker(found: &crate::session::Found) -> Option<&'static str> {
+        use orng_tools::GuardState;
+        match &found.running {
+            RunState::Running(_) => Some("Quit Bitwig Studio first"),
+            RunState::Clear => match found.condition.guard {
+                // Section 4.3: an unrecognised guard is refused, never edited
+                // blind. Saying so here is better than a refusal after a click.
+                GuardState::Unknown => Some("This build's tamper guard is not recognised"),
+                _ => None,
+            },
+        }
     }
 }
 
@@ -137,7 +189,7 @@ impl App {
     fn status(&mut self, ui: &mut egui::Ui) {
         ui.horizontal_centered(|ui| {
             ui.add_space(metric::PAD - metric::TIGHT);
-            let (line, tone) = match &self.session {
+            let (line, tone): (String, egui::Color32) = match &self.session {
                 Session::NoInstallation { .. } => {
                     ("no installation".to_owned(), self.palette.ink_3)
                 }
@@ -162,8 +214,104 @@ impl App {
                     (format!("{root}  .  {build}  .  {}{running}", found.guard_summary()), tone)
                 }
             };
-            ui.label(RichText::new(line).text_style(text::MONO).color(tone));
+            // The action is placed first, from the right. Laying the line out
+            // first leaves the button whatever width is left over, and an
+            // installation path is long enough that there is none: the button
+            // then hangs off the edge of the window.
+            ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                ui.add_space(metric::PAD - metric::TIGHT);
+                self.action(ui);
+                ui.add_space(metric::GAP);
+                // Whatever is left is the line's, and it gives way rather than
+                // pushing anything: a path is the least important thing here.
+                ui.with_layout(Layout::left_to_right(Align::Center), |ui| {
+                    ui.add_space(metric::PAD - metric::TIGHT);
+                    ui.add(
+                        egui::Label::new(
+                            RichText::new(line).text_style(text::MONO).color(tone),
+                        )
+                        .truncate(),
+                    );
+                });
+            });
         });
+    }
+
+    /// The one thing this window can do to an installation, so far.
+    fn action(&mut self, ui: &mut egui::Ui) {
+        let Session::Found(found) = &self.session else { return };
+
+        if let Some(preparing) = &self.preparing {
+            if preparing.is_running() {
+                ui.label(widget::toned(self.palette, widget::Tone::Warn, "Preparing"));
+                return;
+            }
+            if ui.button("Done").clicked() {
+                self.preparing = None;
+            }
+            return;
+        }
+
+        if found.condition.is_prepared() {
+            return;
+        }
+        match App::blocker(found) {
+            // Say why rather than showing a button that refuses. The reason is
+            // the useful half; a disabled control with no explanation is not.
+            Some(why) => {
+                ui.label(widget::toned(self.palette, widget::Tone::Quiet, why));
+            }
+            None => {
+                if ui.button("Prepare").clicked() {
+                    self.reread = false;
+                    self.preparing = Some(Preparing::start(
+                        found.install.clone(),
+                        UserLibrary::discover().expect("a library that was found a moment ago"),
+                        OrngHome::discover().expect("a home that was found a moment ago"),
+                        Strategy::Link,
+                    ));
+                }
+            }
+        }
+    }
+}
+
+/// A preparation, step by step.
+fn progress(ui: &mut egui::Ui, palette: Palette, preparing: &Preparing) {
+    ui.add_space(metric::PAD);
+    ui.label(RichText::new("Preparing this installation").text_style(text::HEADING));
+    ui.add_space(metric::TIGHT);
+    ui.label(
+        RichText::new(
+            "Nothing in the installation changes until the patched archive verifies.",
+        )
+        .text_style(text::SMALL)
+        .color(palette.ink_3),
+    );
+    ui.add_space(metric::GAP);
+
+    for (step, state) in &preparing.steps {
+        widget::step_row(ui, palette, step_label(*step), *state);
+    }
+
+    if let Some(Err(why)) = &preparing.outcome {
+        ui.add_space(metric::GAP);
+        // The transaction's promise, said plainly. Nothing was restored,
+        // because nothing was touched.
+        widget::failure(ui, palette, "Your installation was not changed.");
+        ui.add_space(metric::TIGHT);
+        ui.label(RichText::new(why).text_style(text::MONO).color(palette.ink_3));
+    }
+}
+
+/// The wording of each step is the application's, not the library's.
+fn step_label(step: Step) -> &'static str {
+    match step {
+        Step::Backup => "Back up the archive and the description bundles",
+        Step::Patch => "Prepare the installation",
+        Step::Verify => "Verify",
+        Step::Activate => "Activate",
+        Step::Link => "Link library folders",
     }
 }
 

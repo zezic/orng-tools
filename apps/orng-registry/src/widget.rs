@@ -100,3 +100,53 @@ pub fn empty_state(ui: &mut Ui, palette: Palette, heading: &str, detail: &str) {
         ui.label(RichText::new(detail).text_style(text::BODY).color(palette.ink_3));
     });
 }
+
+/// How much attention a piece of text is asking for.
+///
+/// The mapping from state to colour lives here so two screens reporting the
+/// same condition cannot disagree about how alarming it is.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Tone {
+    Warn,
+    Quiet,
+}
+
+pub fn toned(palette: Palette, tone: Tone, value: &str) -> RichText {
+    let colour = match tone {
+        Tone::Warn => palette.warn,
+        Tone::Quiet => palette.ink_3,
+    };
+    RichText::new(value).text_style(text::BODY).color(colour)
+}
+
+/// One step of a preparation, as a row of the progress list.
+///
+/// Every step is drawn whether or not this plan runs it. A step that vanished
+/// would change the count under a reader who is watching it move, and "not run"
+/// is a thing they need to be able to see afterwards.
+pub fn step_row(ui: &mut Ui, palette: Palette, label: &str, state: crate::work::State) {
+    use crate::work::State;
+    let (mark, colour) = match state {
+        State::Waiting => ("   ", palette.ink_3),
+        State::NotRun => ("  -", palette.ink_3),
+        State::Running => ("  >", palette.accent_text),
+        State::Done => ("  +", palette.ink_2),
+        State::Failed => ("  x", palette.err_text),
+    };
+    let suffix = match state {
+        State::NotRun => "   not run",
+        _ => "",
+    };
+    ui.horizontal(|ui| {
+        ui.label(RichText::new(mark).text_style(text::MONO).color(colour));
+        ui.label(RichText::new(label).text_style(text::BODY).color(colour));
+        if !suffix.is_empty() {
+            ui.label(RichText::new(suffix).text_style(text::SMALL).color(palette.ink_3));
+        }
+    });
+}
+
+/// A block of text explaining a failure, in the tone a failure calls for.
+pub fn failure(ui: &mut Ui, palette: Palette, why: &str) {
+    ui.label(RichText::new(why).text_style(text::BODY).color(palette.err_text));
+}

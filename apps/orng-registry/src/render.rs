@@ -15,6 +15,7 @@ use orng_tools::{Condition, GuardState, Helper, Installation, Manifest, RunState
 
 use crate::app::{App, View};
 use crate::session::{Found, Session};
+use crate::work::{Preparing, State};
 
 /// The window's own size, so what is rendered is what would be seen.
 const SIZE: egui::Vec2 = egui::vec2(1040.0, 680.0);
@@ -69,6 +70,28 @@ fn found(root: &std::path::Path, helper: Helper, guard: GuardState) -> Session {
     }))
 }
 
+/// Render one state, with a preparation held still, and write it out.
+fn shot_preparing(name: &str, preparing: Preparing) {
+    let root = fixture(name);
+    let session = found(&root, Helper::Absent, GuardState::Armed);
+    let mut app: Option<App> = None;
+    let mut session = Some(session);
+    let mut preparing = Some(preparing);
+    let mut harness = Harness::builder().with_size(SIZE).build(move |ctx| {
+        let app = app.get_or_insert_with(|| {
+            let mut app = App::with(ctx, session.take().expect("built once"));
+            app.set_preparing(preparing.take().expect("built once"));
+            app
+        });
+        app.draw(ctx);
+    });
+    // A fixed number of frames, not "until it settles". A preparation in flight
+    // asks for a repaint every hundred milliseconds because it is waiting on
+    // another thread, so it never settles and never will.
+    harness.run_steps(3);
+    harness.snapshot(name);
+}
+
 /// Render one state and write it out under `name`.
 fn shot(name: &str, session: Session, view: View, dark: bool) {
     let mut app: Option<App> = None;
@@ -113,5 +136,43 @@ fn nothing_installed() {
         },
         View::Local,
         true,
+    );
+}
+
+/// Halfway through, which is what a user watches.
+#[test]
+fn a_preparation_in_flight() {
+    use orng_tools::Step;
+    shot_preparing(
+        "preparing",
+        Preparing::frozen(
+            [
+                (Step::Backup, State::Done),
+                (Step::Patch, State::Done),
+                (Step::Verify, State::Running),
+                (Step::Activate, State::Waiting),
+                (Step::Link, State::NotRun),
+            ],
+            None,
+        ),
+    );
+}
+
+/// The case the transaction exists for: it stopped, and nothing was touched.
+#[test]
+fn a_preparation_that_failed() {
+    use orng_tools::Step;
+    shot_preparing(
+        "preparing-failed",
+        Preparing::frozen(
+            [
+                (Step::Backup, State::Done),
+                (Step::Patch, State::Done),
+                (Step::Verify, State::Failed),
+                (Step::Activate, State::Waiting),
+                (Step::Link, State::Waiting),
+            ],
+            Some(Err("the patched archive did not load under the bundled JVM".to_owned())),
+        ),
     );
 }

@@ -1,0 +1,11 @@
+[package]
+name = "orng-catalog-lint"
+description = "Validates an Orng Catalog checkout and generates its index"
+version.workspace = true
+edition.workspace = true
+license = "MIT OR Apache-2.0"
+repository.workspace = true
+
+[dependencies]
+orng-catalog.workspace = true
+clap.workspace = true

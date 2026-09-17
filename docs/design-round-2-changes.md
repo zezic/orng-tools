@@ -1,4 +1,4 @@
-# Orange Registry: changes for round three
+# Orng Registry: changes for round three
 
 For the designer. A work list, not a review - the reasoning behind each item is in
 `design-review.md` if you want it, but you should not need it to make these changes.
@@ -10,7 +10,8 @@ right in the places that were hardest to get right - refusing an install on a ha
 with `Copy details` and deliberately no `Retry`, install not confirming while update does,
 and insisting both items of a supersede pair exist in the catalog so the offer can navigate.
 
-Five changes. Four are small and one is a restructure.
+Six changes. Four are small, one is a restructure, and one is a rename that
+arrived after round two was drawn.
 
 ---
 
@@ -21,8 +22,8 @@ ones are now in `ui-spec.md`, appendix. They are:
 
 | | |
 | --- | --- |
-| Entry list | `~/.orange-registry/entries.tsv` |
-| Backups | `~/.orange-registry/backups/<version>-<short revision>/` |
+| Entry list | `~/.orng/entries.tsv` |
+| Backups | `~/.orng/backups/<version>-<short revision>/` |
 | The archive | `Contents/Java/bitwig.jar` |
 
 ### Entry list
@@ -146,6 +147,37 @@ folder resolved straight back out into the user library and a document "copied i
 installation" landed in exactly the file the linked strategy would have used.
 
 It now skips, as you had it.
+
+---
+
+## 6. The project is now called Orng
+
+This landed after you drew round two, so nothing about it is your error - but it touches
+every screen, and it is better done in one pass than discovered later.
+
+`orng.tools` is the project's domain and the name follows it. The product names become
+**Orng Registry** and **Orng Catalog**, and the binary is `orng-registry`.
+
+The paths in item 1 already reflect this, so drawing them from that table gets both changes
+at once:
+
+| | |
+| --- | --- |
+| Entry list | `~/.orng/entries.tsv` |
+| Backups | `~/.orng/backups/<version>-<short revision>/` |
+
+Two consequences worth naming:
+
+- **The app's directory is now one root, `~/.orng/`,** holding the entry list and the
+  backups. The old name said "registry" while also holding backups of the *installation*,
+  which are not the registry's. Settings shows a backup folder inside it rather than a
+  separate location.
+- **The provenance string changes shape.** `orange-catalog #455` becomes an `orng-catalog`
+  reference - though per item 4 that field is being added to the index, so the exact form is
+  ours to give you rather than yours to invent. Draw it as a link with a short label.
+
+The name Bitwig is unchanged everywhere it appears, and so is anything describing Bitwig's
+own files: `Contents/Java/bitwig.jar`, the `Library` folder, the description bundles.
 
 ---
 

@@ -7,12 +7,12 @@ part of it and there is no reason to spread that to the rest.
 | --- | --- | --- |
 | `bitwig-install` | MIT OR Apache-2.0 | No copyleft dependencies |
 | `bitwig-document` | MIT OR Apache-2.0 | No copyleft dependencies |
-| `orange-catalog` | MIT OR Apache-2.0 | No copyleft dependencies |
+| `orng-catalog` | MIT OR Apache-2.0 | No copyleft dependencies |
 | `bitwig-classfile` | GPL-3.0-only | Links [Krakatau](https://github.com/Storyyeller/Krakatau), which is GPL-3.0 |
 | `bitwig-registry` | GPL-3.0-only | Links `bitwig-classfile` |
-| `orange-tools` | GPL-3.0-only | Links `bitwig-classfile` |
-| `orange-registry` | GPL-3.0-only | Links `bitwig-classfile` |
-| `orange-catalog-lint` | MIT OR Apache-2.0 | Reads documents and the catalog format only |
+| `orng-tools` | GPL-3.0-only | Links `bitwig-classfile` |
+| `orng-registry` | GPL-3.0-only | Links `bitwig-classfile` |
+| `orng-catalog-lint` | MIT OR Apache-2.0 | Reads documents and the catalog format only |
 
 ## What this means for you
 
@@ -61,8 +61,8 @@ to a copyleft crate under GPL-3.0-only, matching the crate it lands in.
 
 ## Not covered here
 
-Content published to Orange Catalog carries its own licence, declared per item
-in `orange.toml`. An author's choice for their device is independent of the
+Content published to Orng Catalog carries its own licence, declared per item
+in `orng.toml`. An author's choice for their device is independent of the
 licence on this code.
 
 Nothing in this repository is licensed to you by Bitwig GmbH, and nothing here

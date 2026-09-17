@@ -18,7 +18,7 @@ pub mod manifest;
 pub mod owners;
 pub mod validate;
 
-pub use index::{Index, IndexEntry};
+pub use index::{History, Index, IndexEntry, Revision};
 pub use item::{AuthorId, Item, Slug, scan};
 pub use manifest::Manifest;
 pub use owners::{Authorization, Owner, Owners, Refusal, authorize};
@@ -38,6 +38,8 @@ pub enum Error {
     BadIdentifier(String, &'static str),
     #[error("{0} is not a Bitwig release number")]
     BadVersion(String),
+    #[error("{0} is not a commit: expected forty lowercase hex digits")]
+    BadRevision(String),
 }
 
 pub type Result<T> = std::result::Result<T, Error>;

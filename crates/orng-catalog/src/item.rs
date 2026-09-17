@@ -109,7 +109,7 @@ impl Item {
 
         let name = document_file.file_name().unwrap_or_default().to_string_lossy();
         Ok(Item {
-            document_path: format!("{CONTENT_DIR}/{author}/{slug}/{name}"),
+            document_path: format!("{}/{name}", item_dir(&author, &slug)),
             author,
             slug,
             manifest,
@@ -119,6 +119,15 @@ impl Item {
         })
     }
 
+    /// Repository-relative directory of the item, with forward slashes.
+    ///
+    /// The unit both ownership and history are expressed in: the owners check
+    /// matches a pull request's paths against it, and git is asked what last
+    /// changed it.
+    pub fn dir(&self) -> String {
+        item_dir(&self.author, &self.slug)
+    }
+
     /// Content hash, as published in the index and checked after download.
     pub fn digest(&self) -> String {
         use sha2::{Digest, Sha256};
@@ -126,6 +135,12 @@ impl Item {
         hasher.update(&self.document);
         hasher.finalize().iter().map(|b| format!("{b:02x}")).collect()
     }
+}
+
+/// The one place the tree's shape is written down, so a path built for git and a
+/// path published in the index cannot drift apart.
+fn item_dir(author: &AuthorId, slug: &Slug) -> String {
+    format!("{CONTENT_DIR}/{author}/{slug}")
 }
 
 /// The single document in an item directory.

@@ -23,7 +23,9 @@ use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
 use clap::{Parser, Subcommand};
-use orng_catalog::{Authorization, Index, Owners, Severity, authorize, scan, validate};
+use orng_catalog::{
+    Authorization, History, Index, Item, Owners, Revision, Severity, authorize, scan, validate,
+};
 
 /// Outcomes, as a process exit status. A workflow branches on these, so they are
 /// part of the interface and not an afterthought.
@@ -67,9 +69,18 @@ enum Command {
         /// Where to write it. Standard output if absent.
         #[arg(long, value_name = "FILE")]
         out: Option<PathBuf>,
-        /// Commit the index was generated from, for tracing an item to review.
+        /// Commit the index was generated from. For a caller holding a tree that
+        /// is not a checkout; `--from-git` reads it from the checkout instead.
         #[arg(long, value_name = "SHA")]
         revision: Option<String>,
+        /// Read the revisions out of the checkout at `--root`: its `HEAD` for the
+        /// index, and for each item the change that last touched its directory.
+        ///
+        /// Off by default, so the command stays a projection of the tree and
+        /// needs no git. Continuous integration turns it on after a merge, which
+        /// is the only moment a per-item answer exists.
+        #[arg(long, conflicts_with = "revision")]
+        from_git: bool,
     },
     /// Decide whether an account may change these paths.
     Owners {
@@ -90,7 +101,9 @@ enum Command {
 fn main() -> ExitCode {
     match Cli::parse().command {
         Command::Check { root, against } => check(&root, against.as_deref()),
-        Command::Index { root, out, revision } => index(&root, out.as_deref(), revision),
+        Command::Index { root, out, revision, from_git } => {
+            index(&root, out.as_deref(), revision, from_git)
+        }
         Command::Owners { owners, actor_id, changed } => {
             ownership(&owners, actor_id, &changed)
         }
@@ -141,7 +154,7 @@ fn check(root: &Path, against: Option<&Path>) -> ExitCode {
     }
 }
 
-fn index(root: &Path, out: Option<&Path>, revision: Option<String>) -> ExitCode {
+fn index(root: &Path, out: Option<&Path>, revision: Option<String>, from_git: bool) -> ExitCode {
     let (items, failures) = scan(root);
     if !failures.is_empty() {
         for failure in &failures {
@@ -151,7 +164,11 @@ fn index(root: &Path, out: Option<&Path>, revision: Option<String>) -> ExitCode 
         return ExitCode::from(exit::FAILED);
     }
 
-    let json = Index::build(&items, revision).to_json();
+    let history = match history(root, &items, revision, from_git) {
+        Ok(history) => history,
+        Err(code) => return code,
+    };
+    let json = Index::build(&items, &history).to_json();
     match out {
         None => println!("{json}"),
         Some(path) => {
@@ -163,6 +180,61 @@ fn index(root: &Path, out: Option<&Path>, revision: Option<String>) -> ExitCode 
         }
     }
     ExitCode::from(exit::OK)
+}
+
+/// Assemble what the tree cannot say about itself.
+///
+/// The library takes history as data and never runs git, because the
+/// application links that library too and must not need a git client. Knowing
+/// that this tool runs inside a checkout is the binary's business.
+fn history(
+    root: &Path,
+    items: &[Item],
+    revision: Option<String>,
+    from_git: bool,
+) -> Result<History, ExitCode> {
+    if let Some(text) = revision {
+        return Ok(History::at(parse_revision(&text)?));
+    }
+    if !from_git {
+        return Ok(History::default());
+    }
+
+    let mut history = History::at(parse_revision(&git(root, &["rev-parse", "HEAD"])?)?);
+    for item in items {
+        let dir = item.dir();
+        // `--first-parent` is what makes this the *merging* commit. Without it
+        // git answers with the contributor's own commit from inside the branch,
+        // which nobody reviewed and which is not on the published history at
+        // all. Squash merges give the same answer either way.
+        let found = git(root, &["log", "-1", "--first-parent", "--format=%H", "--", &dir])?;
+        // Empty when the path has never been committed, which is the normal
+        // state of an item still sitting in a working tree.
+        if !found.is_empty() {
+            history.record(dir, parse_revision(&found)?);
+        }
+    }
+    Ok(history)
+}
+
+fn git(root: &Path, args: &[&str]) -> Result<String, ExitCode> {
+    let output =
+        std::process::Command::new("git").arg("-C").arg(root).args(args).output().map_err(|e| {
+            eprintln!("could not run git: {e}");
+            ExitCode::from(exit::FAILED)
+        })?;
+    if !output.status.success() {
+        eprintln!("git {}: {}", args.join(" "), String::from_utf8_lossy(&output.stderr).trim());
+        return Err(ExitCode::from(exit::FAILED));
+    }
+    Ok(String::from_utf8_lossy(&output.stdout).trim().to_owned())
+}
+
+fn parse_revision(text: &str) -> Result<Revision, ExitCode> {
+    Revision::new(text).map_err(|e| {
+        eprintln!("{e}");
+        ExitCode::from(exit::FAILED)
+    })
 }
 
 fn ownership(owners_file: &Path, actor: u64, changed: &[String]) -> ExitCode {

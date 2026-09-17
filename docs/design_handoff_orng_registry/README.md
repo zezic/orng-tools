@@ -1,35 +1,46 @@
-# Handoff: Orange Registry — custom content manager for Bitwig Studio
+# Handoff: ORNG Registry — custom content manager for Bitwig Studio
 
-> **Revision 6.** Identical to revision 5 in every design value — no mockup changed. The one
-> difference is the **project rename** described in *Naming* immediately below: the binary,
-> the dot-folder and the guard string are now `orng-registry`. If you hold an earlier copy of
-> this bundle, the rename is the only thing to pick up.
+> **Revision 7.** Applies `design-round-3-changes.md`, all six items. No design value moved:
+> the app root is now `~/.orng/`, the product name is **ORNG Registry**, the guard reads as
+> three states with no version string, the stale name-matching provenance rule is gone, the
+> review link is a commit, and the compatibility/migration passage revision 6 added has been
+> deleted — nothing was ever released, so there is nothing to migrate.
 
 ## Naming
 
-The project was renamed **orange-registry → orng-registry**, because `orng.tools` was
-available as a domain. What that does and does not change:
+The project was renamed **orange-registry → orng**, because `orng.tools` was available as a
+domain. One convention settles it everywhere downstream:
+
+| | |
+|---|---|
+| **User-facing text** | **`ORNG`, uppercase** — "ORNG Registry", "ORNG Catalog". Read as an abbreviation, not a word |
+| **Machine identifiers** | **`orng`, lowercase** — binary, paths, packages, domain, repositories |
+
+So: `ORNG Registry` in the About heading, in prose, in documentation and in the window
+title; `orng-registry` in About's mono identity line; `~/.orng/` in Settings;
+`orng.tools` as the domain; `orng-catalog` in a provenance string.
 
 | | |
 |---|---|
 | Binary / package name | `orng-registry` |
-| Config + backup root | `~/.orng-registry/` — entry list `~/.orng-registry/entries.tsv`, backups `~/.orng-registry/backups/<version>-<short revision>/` |
-| Guard string written into the installation | `disarmed by orng-registry 0.9.2` |
-| Window title strip (stand-in for native chrome) | `orng-registry` |
-| About's mono identity line | `0.9.2 · orng-registry · macOS arm64` |
+| App root | `~/.orng/` — entry list `~/.orng/entries.tsv`, backups `~/.orng/backups/<version>-<short revision>/` |
+| Window title | `ORNG Registry` (Inter 11px/500, centred; the strip stands in for native chrome — do not build it) |
+| About's mono identity line | `0.9.2 · orng-registry · macOS arm64` — lowercase, correct as drawn |
+| Catalog repository | `orng-catalog` |
 | Domain | `orng.tools` |
-| **Product display name** | **unchanged — "Orange Registry"** (About heading, prose, documentation) |
 
-So the user-visible name is still the two words; only the machine identifier shortened. Two
-consequences for implementation: the guard string is what the app looks for to decide whether
-an installation is already prepared, so an installation prepared by an `orange-registry`
-build will not be recognised by an `orng-registry` build unless you accept both; and the
-config root moved, so either migrate `~/.orange-registry/` on first launch or accept both
-paths. Neither is a design question — nothing in the UI reports the old name — but both are
-states the UI has to describe correctly (`guard armed · installation not prepared`,
-`entries … · none recorded`) if you do not migrate.
+**The root is `~/.orng/`, not `~/.orng/`.** `.orng` is compiled into the Java class
+preparation injects into `bitwig.jar`, which reads the entry list at every launch from a
+path it holds as a literal — so the root is not a preference the UI may vary. It is also
+deliberately not named for the app: it holds backups of the **installation**, which are
+Bitwig's files, so one root named for the project holds both.
 
-> **Revision 5.** Adds the Orange Catalog feature (per `ui-spec-catalog.md`), the
+**There is nothing to migrate.** Nothing has ever been released, so no machine holds an
+`~/.orange-registry/` directory and no installation was ever prepared by an
+`orange-registry` build. There is no compatibility state to draw and no first-launch
+migration screen.
+
+> **Revision 5.** Adds the ORNG Catalog feature (per `ui-spec-catalog.md`), the
 > `Local`/`Catalog` switch, a single-row install bar, and dot-free status treatment.
 > Supersedes the two-row install bar, the `ViewSwitch` strip and the "Entries" name
 > described in earlier revisions. See **For this audit round** immediately below for what
@@ -37,14 +48,14 @@ states the UI has to describe correctly (`guard armed · installation not prepar
 
 ## Overview
 
-Orange Registry (binary `orng-registry`) is a desktop utility that registers user-made
+ORNG Registry (binary `orng-registry`) is a desktop utility that registers user-made
 devices, modulators and Grid modules with a Bitwig Studio installation, so that projects
 recall them reliably. It reads each document's identity (UUID), records it, modifies the
 installation so it loads that entry list at startup, places the documents in the user
 library, and writes descriptions and search keywords so the devices are findable in
 Bitwig's browser.
 
-This bundle documents the **UI** for that app: **31 states** across two primary views
+This bundle documents the **UI** for that app: **32 states** across two primary views
 (`Local` and `Catalog`), three full-window secondary screens, two modals and a drag
 overlay, in dark and light appearance.
 
@@ -79,10 +90,10 @@ Two consequences worth stating plainly:
 
 `design-round-2-changes.md`, all five items:
 
-1. **Three paths corrected** — entry list `~/.orng-registry/entries.tsv` (outside the
+1. **Three paths corrected** — entry list `~/.orng/entries.tsv` (outside the
    installation, so a Bitwig update cannot replace it, and tab-separated because the injected
    class parses it with `split("\t")` at every launch); backups
-   `~/.orng-registry/backups/<version>-<short revision>/`; archive
+   `~/.orng/backups/<version>-<short revision>/`; archive
    `Contents/Java/bitwig.jar`, not `Contents/Resources`.
 2. **The transaction is five steps, reordered** so nothing in the installation changes until
    the patched archive verifies. Cancel copy and the failure message follow from it.
@@ -101,7 +112,7 @@ authors and review references, the eleven local entries, and the three backup ti
 
 ## For the previous audit round
 
-Revision 4. Since the last audit the app gained the **Orange Catalog** (a second primary
+Revision 4. Since the last audit the app gained the **ORNG Catalog** (a second primary
 view, ten new states, four new components) and lost a good deal of chrome. The corrections
 from `design-review.md` are all applied and are marked as decisions 9–12 below.
 
@@ -116,10 +127,10 @@ derives from, and what happens when that input changes.**
 
 Specific claims worth testing against the real implementation:
 
-1. **The two views must agree.** A Local entry is catalog-sourced iff a catalog item of the
-   same name reports `Installed`, `Superseded` or `Update available`. If the real app can
-   hold state where those disagree (a catalog item installed under a different name, a
-   renamed document), the rule needs replacing with an identity match, not a name match.
+1. **The two views must agree.** A Local entry is catalog-sourced iff a catalog item **with
+   the same UUID** reports `Installed`, `Superseded` or `Update available` — never a name
+   match; names are allowed to collide in the repository and the app renames entries when
+   they do. The rule is stated in full under *What the Local view gains*.
 2. **Per-kind library folders.** The design states `devices/My Devices/*.bwdevice`,
    `modulators/My Modulators/*.bwmodulator`, `modules/My Modules/*.bwmodule`. Confirm those
    are the real paths and the real extensions.
@@ -159,7 +170,7 @@ written by a technical writer), and icon choices beyond those named below.
 
 - Logical window **820 × 560**, resizable is untested — every state was designed at this size.
 - Window corner radius 12px; no window border (the shell separates from the desktop by tone and shadow).
-- A 30px title strip at the top of the prototype (`orng-registry`, centred, three dots at
+- A 30px title strip at the top of the prototype (`ORNG Registry`, centred, three dots at
   left) stands in for **native window chrome** — do not build it, use the platform's.
 - **Left gutter: 12px.** Everything aligns to it: install-bar content, toolbar, list rows,
   section bands, action bar, and all three secondary screens.
@@ -558,7 +569,7 @@ installation** · **Verify** · **Activate** · **Link library folders**.
 
 Only `Contents/Java/bitwig.jar` (34 MB) and the three description bundles are copied — never
 the ~957 MB installation, and the backup goes to
-`~/.orng-registry/backups/<version>-<short revision>/`, outside the installation so a
+`~/.orng/backups/<version>-<short revision>/`, outside the installation so a
 Bitwig update cannot reach it.
 
 **The order is the property the transaction exists to provide.** The patched archive is
@@ -624,15 +635,15 @@ Body, 12px gutter, max 620px, sections 15px apart, each with a 10.5px/600 `--ink
   promise the opposite of the setting half the time.
 - **Diagnostics** — one line of explanation, `Copy report` button, and a mono report block
   in a `--field` well: install path, version and build, archive path and size, which anchors
-  resolved, **guard state**, **backup date and size**, entry-list location and count,
+  resolved, **guard state** (see below), **backup date and size**, entry-list location and count,
   placement strategy, factory breakdown.
 
   **Every variable line derives from the installation the screen was opened from** — none of
   it is fixed text. From a prepared install: `anchors registry ok · descriptions ok · library
-  ok`, `guard disarmed by orng-registry 0.9.2`, `backup 14 Sep 2026 · 35.1 MB`,
+  ok`, `guard disarmed`, `backup 14 Sep 2026 · 35.1 MB`,
   `entries … · 6 entries`. From a stock one: `guard armed · installation not prepared`,
   `backup none yet`, `entries … · none recorded`. From `Unknown build`:
-  `anchors registry NOT LOCATED`, `guard state unknown`. This matters more here than
+  `version —  (unresolved)`, `archive … not read`, `anchors registry NOT LOCATED`, `guard unknown · guard site not recognised · preparation refuses`, `factory not read · the registry anchor was not located`. Version, build, archive size and the factory breakdown all come through the registry anchor, so when it does not resolve the report says so rather than restating the last known figures — the install bar suppresses the version in the same state (decision 11), and the two surfaces must not disagree. This matters more here than
   anywhere else in the app — the report is the artefact a user sends to get a new Bitwig
   build supported, and `Copy diagnostics` is the primary action of the state that most
   needs it, so a report that claims every anchor resolved would deny the failure it exists
@@ -641,6 +652,26 @@ Body, 12px gutter, max 620px, sections 15px apart, each with a 10.5px/600 `--ink
   `guard armed · installation not prepared` and `backup none yet`, and the Backups row
   reads "No backup yet" instead of offering `Restore…`. There is deliberately **no licence line** — the entitlement tier is assembled
   at Bitwig startup and nothing static in the installation exposes it.
+- **The tamper guard is three states, and nothing is written into the installation.** The
+  guard is a bytecode edit: it compiles to a value load, a comparison and a branch, and
+  disarming replaces the load with a zero so the comparison always takes the normal path.
+  The state is read back by reading that instruction — there is no marker, no version and no
+  name, so the app cannot know who disarmed an installation or with what, and the diagnostics
+  line reads `guard disarmed` and nothing more. It is also not how "already prepared" is
+  decided.
+
+  | State | Line | Meaning |
+  |---|---|---|
+  | `armed` | `armed · installation not prepared` | Untouched — the normal state of an installation that was never prepared |
+  | `disarmed` | `disarmed` | Prepared |
+  | `unknown` | `unknown · guard site not recognised · preparation refuses` | The guard site is present but not in a shape the app recognises |
+
+  `unknown` is the state with a consequence and must be drawn as itself: preparation
+  **refuses** on it rather than editing blind. It is what a Bitwig release that changed the
+  guard looks like, so it is the state a user meets on upgrade day — Settings reporting
+  `armed` there would send them to press Prepare and collect an unexplained refusal. In the
+  prototype it is the `Settings · unknown guard` state, reached from the picker.
+
 - **About** row — clickable card with `ph-info`, version in mono, `ph-caret-right`.
 
 One screen, no tabs. Diagnostics live here because that is what a user sends when a new
@@ -689,7 +720,7 @@ Resolution row is how that is reported, and it has both a success and a failure 
 
 ## The Catalog view
 
-**Orange Catalog** is a public, curated repository of community devices, modulators and Grid
+**ORNG Catalog** is a public, curated repository of community devices, modulators and Grid
 modules that the app can install directly. Two facts shape the design: items are 20–30 KB so
 installing is effectively instant and needs no download manager, and **an item is executable
 DSP** — the repository's review process is the only trust boundary, so the author is visible
@@ -740,9 +771,25 @@ fill in the window. `Update` takes `--accent-text`, the two failures `--err-text
 
 Author and version, full description, **Requires Bitwig \<version\> or newer** stated whether
 or not it is satisfied, licence, the keywords that become search terms once installed, the
-homepage if the author gave one, and **provenance — a link to the merged change in the
-repository**. That link is what makes review the trust boundary rather than a claim about
-one. UUID last, secondary. Primary action, plus `Remove` when installed.
+homepage if the author gave one, and **provenance — a link to the commit that published the
+item**. That link is what makes review the trust boundary rather than a claim about one.
+UUID last, secondary. Primary action, plus `Remove` when installed.
+
+**The provenance link is a commit, not a pull request.** The index is generated from git
+history on merge, and a commit is what that history can name; a PR number survives only as
+text inside a commit message. Per item the index carries the forty lowercase hex digits of
+the publishing commit:
+
+| | |
+|---|---|
+| Label | `orng-catalog@<first seven characters>` — e.g. `orng-catalog@3f9a1c2` |
+| Links to | `https://github.com/zezic/orng-catalog/commit/<the forty>` |
+
+Seven characters occupy about the width the earlier `#412` form did, so the layout does not
+move. Both panels render it as `Reviewed in orng-catalog@3f9a1c2` with the full URL on the
+element's tooltip (`provenanceUrl` prop). The entry list also records the version an item
+was installed at, so the update modal's `installed 2.0.3 → catalog 2.1.0` has both numbers
+behind it.
 
 ### Install, update, supersede
 
@@ -790,7 +837,7 @@ kinds, and the inspector states the same per-kind destination one panel away.
 ### What the Local view gains
 
 - **Provenance per entry**: a `ph-duotone ph-package` marker on catalog-sourced rows
-  (tooltip `Orange Catalog · <version>`) and a **Source** block in the inspector with the
+  (tooltip `ORNG Catalog · <version>`) and a **Source** block in the inspector with the
   review link. Local-file entries show `Local file`.
 
   **The sample data must not collide on UUID.** Only four pairs share an identity, each a
@@ -932,7 +979,7 @@ browser; child files also render standalone.
 
 | File | Contents |
 |---|---|
-| `Orange Registry.dc.html` | Root: window shell, all 31 states, state picker, theme toggle, drag overlay, plan/progress/update modals, banner |
+| `ORNG Registry.dc.html` | Root: window shell, all 32 states, state picker, theme toggle, drag overlay, plan/progress/update modals, banner |
 | `EntryRow.dc.html` | One Local row: 10 statuses, 3 kinds, hover/selected/factory/narrow, catalog provenance marker |
 | `InstallBar.dc.html` | Single-row install bar: Local/Catalog switch, conditional state chip, catalog freshness, overflow menu |
 | `ListToolbar.dc.html` | Local toolbar: search, kind filters with counts, factory toggle, Add files |
@@ -947,7 +994,7 @@ browser; child files also render standalone.
 | `AboutScreen.dc.html` | About |
 | `support.js` | Prototype runtime — **not part of the design**, required only to open the HTML |
 
-Open `Orange Registry.dc.html` and use the picker above the window to reach any of the 31 states; the
+Open `ORNG Registry.dc.html` and use the picker above the window to reach any of the 32 states; the
 `Dark`/`Light` toggle beside the title switches appearance. The child files are the same
 components in isolation, each with editable properties.
 

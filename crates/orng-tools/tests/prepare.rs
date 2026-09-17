@@ -58,16 +58,21 @@ impl Mirror {
             }
         }
 
-        // The JVM is found by probing the bundle directories, so linking both of
-        // them keeps the probe honest instead of hard-coding this machine's.
-        let plugins = root.join("Contents/PlugIns");
-        std::fs::create_dir_all(&plugins).unwrap();
-        for bundle in ["JavaVM-arm64.bundle", "JavaVM-x64.bundle"] {
-            let source = real.root().join("Contents/PlugIns").join(bundle);
-            if source.is_dir() {
-                link(&source, &plugins.join(bundle));
-            }
-        }
+        // The JVM is found by probing, so the mirror has to put one where the
+        // probe will look - and where that is differs by platform: a bundle
+        // under Contents/PlugIns on macOS, `jre` on Windows and Linux. Naming
+        // the macOS ones left the mirror without a JVM anywhere else, which is
+        // why none of these tests could run outside it.
+        //
+        // So mirror whatever the real installation actually uses, at the same
+        // place relative to its root. That keeps the probe honest without this
+        // test knowing any layout at all.
+        let java = real.bundled_java().expect("the installation has no bundled JVM");
+        let home = java.parent().and_then(Path::parent).expect("java lives in <home>/bin");
+        let relative = home.strip_prefix(real.root()).expect("the JVM is inside the installation");
+        let at = root.join(relative);
+        std::fs::create_dir_all(at.parent().expect("the JVM is not the root")).unwrap();
+        link_dir(home, &at);
 
         let install = Installation::at(&root).expect("the mirror is not a valid installation");
         Some(Mirror {
@@ -134,11 +139,20 @@ fn link(target: &Path, at: &Path) {
     #[cfg(unix)]
     std::os::unix::fs::symlink(target, at).unwrap();
     #[cfg(windows)]
-    if target.is_dir() {
-        std::os::windows::fs::symlink_dir(target, at).unwrap();
-    } else {
-        std::os::windows::fs::symlink_file(target, at).unwrap();
-    }
+    std::os::windows::fs::symlink_file(target, at).unwrap();
+}
+
+/// Link a directory, the way the crate itself does.
+///
+/// A junction on Windows rather than a symbolic link, for the same reason
+/// `placement` uses one: a symbolic link needs a privilege an ordinary account
+/// does not hold, and a test that only passes when run elevated is a test that
+/// says nothing about how the product behaves.
+fn link_dir(target: &Path, at: &Path) {
+    #[cfg(unix)]
+    std::os::unix::fs::symlink(target, at).unwrap();
+    #[cfg(windows)]
+    junction::create(target, at).unwrap();
 }
 
 /// The environment these tests need, and what to do when it is missing.

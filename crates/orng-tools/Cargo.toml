@@ -20,3 +20,8 @@ tempfile.workspace = true
 # ask for a junction.
 [target.'cfg(windows)'.dependencies]
 junction = "2"
+
+# The prepare tests mirror an installation, and mirroring its JVM means linking
+# a directory. Same reason, same call.
+[target.'cfg(windows)'.dev-dependencies]
+junction = "2"

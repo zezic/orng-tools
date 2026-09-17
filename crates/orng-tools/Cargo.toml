@@ -13,3 +13,10 @@ orng-catalog.workspace = true
 thiserror.workspace = true
 uuid.workspace = true
 tempfile.workspace = true
+
+# Windows only, and only for one call. Linking the library folders needs a
+# directory junction rather than a symbolic link, because a symbolic link there
+# needs a privilege an ordinary account does not hold, and std has no way to
+# ask for a junction.
+[target.'cfg(windows)'.dependencies]
+junction = "2"

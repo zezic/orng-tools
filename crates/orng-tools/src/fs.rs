@@ -51,8 +51,20 @@ pub(crate) fn create_dir_all(path: &Path) -> Result<()> {
     std::fs::create_dir_all(path).map_err(|source| error(path, source))
 }
 
+/// Remove an entry itself, following nothing.
+///
+/// A pair, one per platform, because a link to a directory is a different kind
+/// of thing on each and the call that removes one refuses the other. Only
+/// `placement` needs them, and only ever for the platform it is built for.
+#[cfg(unix)]
 pub(crate) fn remove_file(path: &Path) -> Result<()> {
     std::fs::remove_file(path).map_err(|source| error(path, source))
+}
+
+/// On Windows a junction is a directory, and removing it leaves its target be.
+#[cfg(windows)]
+pub(crate) fn remove_dir(path: &Path) -> Result<()> {
+    std::fs::remove_dir(path).map_err(|source| error(path, source))
 }
 
 /// The paths directly inside a directory, or none if there is no such directory.

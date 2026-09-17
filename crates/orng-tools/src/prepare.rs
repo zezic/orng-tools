@@ -31,8 +31,8 @@ use bitwig_registry::guard;
 
 use crate::backup::staging_path;
 use crate::{
-    Backup, Binding, BuildId, Error, GuardState, Installation, OrngHome, Result, RunState,
-    UserLibrary, fs, inject, placement, running_state,
+    Backup, Binding, BuildId, Destination, Error, GuardState, Installation, Result, RunState, fs,
+    inject, placement, running_state,
 };
 use crate::placement::Strategy;
 
@@ -139,10 +139,7 @@ pub fn inspect(install: &Installation) -> Result<Condition> {
 /// cannot be patched is refused here rather than half way through a write.
 #[derive(Debug)]
 pub struct Plan {
-    install: Installation,
-    library: UserLibrary,
-    home: OrngHome,
-    placement: Strategy,
+    to: Destination,
     backup: Backup,
     build: BuildId,
     binding: Binding,
@@ -155,19 +152,14 @@ pub struct Plan {
 
 impl Plan {
     /// Resolve an installation and work out the edit it needs.
-    pub fn compute(
-        install: &Installation,
-        library: &UserLibrary,
-        home: &OrngHome,
-        placement: Strategy,
-    ) -> Result<Self> {
-        let installed = Jar::open(&install.jar())?;
+    pub fn compute(to: &Destination) -> Result<Self> {
+        let installed = Jar::open(&to.install.jar())?;
         let binding = Binding::resolve(&installed)?;
 
         // A backup that cannot be named for its build is a backup that cannot be
         // found again, and restoring the wrong original is worse than refusing.
         let build = binding.build.clone().ok_or(Error::UnrecognisedBuild)?;
-        let backup = Backup::location(home, &build);
+        let backup = Backup::location(&to.home, &build);
 
         // Patch the pristine copy, not whatever is installed now. Resolution is
         // repeated against it because it is a different file, even though it is
@@ -185,23 +177,12 @@ impl Plan {
         // An installation already modified with no pristine copy to work from:
         // patching it again would stack a second edit on the first.
         if guard == GuardState::Disarmed && !backup.exists() {
-            return Err(Error::AlreadyModified(install.jar()));
+            return Err(Error::AlreadyModified(to.install.jar()));
         }
 
         let edits = archive_edits(&source, &binding, &guard_class)?;
 
-        Ok(Plan {
-            install: install.clone(),
-            library: library.clone(),
-            home: home.clone(),
-            placement,
-            backup,
-            build,
-            binding,
-            source,
-            edits,
-            guard,
-        })
+        Ok(Plan { to: to.clone(), backup, build, binding, source, edits, guard })
     }
 
     /// Which Bitwig this prepares. Named in the confirmation and on the backup.
@@ -240,7 +221,7 @@ impl Plan {
     /// never be the ones Bitwig loaded -- which is the whole of what Copy is for.
     fn runs(&self, step: Step) -> bool {
         match step {
-            Step::Link => self.placement == Strategy::Link,
+            Step::Link => self.to.placement == Strategy::Link,
             Step::Backup | Step::Patch | Step::Verify | Step::Activate => true,
         }
     }
@@ -251,15 +232,15 @@ impl Plan {
     /// applying it twice would mean the second run decided nothing.
     pub fn apply(self, mut progress: impl FnMut(Step)) -> Result<()> {
         // Bitwig holds the archive open and would keep running the old one.
-        if let RunState::Running(processes) = running_state(&self.install) {
+        if let RunState::Running(processes) = running_state(&self.to.install) {
             return Err(Error::BitwigRunning(processes));
         }
 
         progress(Step::Backup);
-        self.backup.take(&self.install)?;
+        self.backup.take(&self.to.install)?;
 
         progress(Step::Patch);
-        let target = self.install.jar();
+        let target = self.to.install.jar();
         let staging = Staged::write(&self.source, &target, &self.edits)?;
 
         progress(Step::Verify);
@@ -270,7 +251,7 @@ impl Plan {
 
         if self.runs(Step::Link) {
             progress(Step::Link);
-            placement::ensure_all_links(&self.install, &self.library)?;
+            placement::ensure_all_links(&self.to.install, &self.to.library)?;
         }
         Ok(())
     }
@@ -284,7 +265,7 @@ impl Plan {
     /// preparation added, against the entry list it was computed against. A
     /// retargeted name that resolves to nothing shows up here.
     fn verify(&self, archive: &Path) -> Result<()> {
-        let java = self.install.bundled_java().ok_or(Error::NoBundledJava)?;
+        let java = self.to.install.bundled_java().ok_or(Error::NoBundledJava)?;
         let classes = [
             binary_name(&self.binding.registry.class),
             binary_name(&self.binding.entitlement.class),
@@ -293,10 +274,10 @@ impl Plan {
         ];
 
         let driver = write_verifier()?;
-        let classpath = join_classpath(&[driver.path(), archive, &self.install.libs_jar()]);
+        let classpath = join_classpath(&[driver.path(), archive, &self.to.install.libs_jar()]);
 
         let mut home = std::ffi::OsString::from("-Duser.home=");
-        home.push(self.home.user_home());
+        home.push(self.to.home.user_home());
 
         let output = Command::new(&java)
             .arg(home)

@@ -119,6 +119,90 @@ pub fn toned(palette: Palette, tone: Tone, value: &str) -> RichText {
     RichText::new(value).text_style(text::BODY).color(colour)
 }
 
+/// How loud a row's status is, as the design's own map from status to token.
+///
+/// Transcribed here so that a status added to one screen cannot be drawn a
+/// different shade on another, and so the reason under a row is the same colour
+/// as the word it explains. A status this does not know is drawn as quietly as
+/// `Registered`, which is the design's own fallback: an unfamiliar word should
+/// not shout.
+pub fn status_colour(palette: Palette, status: &str) -> egui::Color32 {
+    match status {
+        "Staged" | "Pending restart" => palette.ink_2,
+        "Changed" | "Update available" => palette.accent_text,
+        "Missing file" | "Conflict" => palette.err_text,
+        _ => palette.ink_3,
+    }
+}
+
+/// What state a row is in, as a word on the right of it.
+pub fn status_chip(ui: &mut Ui, palette: Palette, status: &str) {
+    let colour = status_colour(palette, status);
+    ui.label(RichText::new(status).text_style(text::SMALL).color(colour));
+}
+
+/// The whole window as a drop target, while something is over it.
+///
+/// Painted on the foreground layer rather than composed into a panel, because
+/// the design covers everything - the toolbar and the status bar included - and
+/// a drop is not aimed at any particular region of the window.
+pub fn drop_target(ui: &mut Ui, palette: Palette, heading: &str, files: &[String]) {
+    // The viewport rather than the content area: the whole window is the
+    // target, bars included, and the scrim has to reach the edges of what the
+    // user is dragging over.
+    let window = ui.ctx().viewport_rect();
+    let layer = egui::LayerId::new(egui::Order::Foreground, egui::Id::new("drop-target"));
+    let painter = ui.ctx().layer_painter(layer);
+    painter.rect_filled(window, CornerRadius::ZERO, palette.scrim);
+    painter.rect_stroke(
+        window.shrink(metric::GAP),
+        CornerRadius::ZERO,
+        Stroke::new(metric::HAIRLINE, palette.accent),
+        egui::StrokeKind::Inside,
+    );
+
+    let mut overlay = Ui::new(
+        ui.ctx().clone(),
+        egui::Id::new("drop-target-contents"),
+        egui::UiBuilder::new().layer_id(layer).max_rect(window),
+    );
+    overlay.vertical_centered(|ui| {
+        ui.add_space(window.height() * 0.3);
+        ui.label(RichText::new(heading).text_style(text::HEADING).color(palette.ink));
+        ui.add_space(metric::GAP);
+        // What is being dropped, by name. A count alone cannot be checked
+        // against what the pointer is carrying, and a drop is a decision made
+        // before it lands.
+        for (at, file) in files.iter().enumerate() {
+            // A fixed width, so the block is centred as a block and the names
+            // line up under one another. A row laid out left to right would
+            // take the full width and start at the edge instead.
+            ui.allocate_ui_with_layout(
+                vec2(LISTING_WIDTH, ui.spacing().interact_size.y),
+                Layout::left_to_right(Align::Center),
+                |ui| {
+                    ui.label(
+                        RichText::new(format!("{:>3}", at + 1))
+                            .text_style(text::MONO)
+                            .color(palette.accent_text),
+                    );
+                    ui.add(
+                        egui::Label::new(
+                            RichText::new(file).text_style(text::MONO).color(palette.ink),
+                        )
+                        .truncate(),
+                    );
+                },
+            );
+        }
+    });
+}
+
+/// How wide the list of files being dropped is. Fixed, because it is what
+/// centres the block; a name longer than this is truncated rather than allowed
+/// to move the whole listing sideways.
+const LISTING_WIDTH: f32 = 340.0;
+
 /// One step of a preparation, as a row of the progress list.
 ///
 /// Every step is drawn whether or not this plan runs it. A step that vanished

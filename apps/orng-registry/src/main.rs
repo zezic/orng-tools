@@ -17,6 +17,7 @@
 pub mod app;
 pub mod catalog;
 pub mod session;
+pub mod staging;
 pub mod theme;
 pub mod widget;
 pub mod work;

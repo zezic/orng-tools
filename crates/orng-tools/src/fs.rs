@@ -27,6 +27,18 @@ pub(crate) fn read_to_string_if_exists(path: &Path) -> Result<Option<String>> {
     }
 }
 
+/// Read a file that may legitimately not exist yet, without assuming text.
+///
+/// The document already at a placement target is the case: nothing there is the
+/// ordinary one, and what is there is not a string.
+pub(crate) fn read_if_exists(path: &Path) -> Result<Option<Vec<u8>>> {
+    match std::fs::read(path) {
+        Ok(bytes) => Ok(Some(bytes)),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(None),
+        Err(source) => Err(error(path, source)),
+    }
+}
+
 pub(crate) fn write(path: &Path, contents: impl AsRef<[u8]>) -> Result<()> {
     std::fs::write(path, contents).map_err(|source| error(path, source))
 }

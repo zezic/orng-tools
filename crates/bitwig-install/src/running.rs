@@ -68,7 +68,7 @@ mod tests {
     use super::*;
 
     /// That the scan narrows to one installation is proved where a second one
-    /// exists to narrow against: `orange-tools`' preparation tests run against a
+    /// exists to narrow against: `orng-tools`' preparation tests run against a
     /// copy while the real Bitwig may well be open.
     #[test]
     fn scanning_does_not_panic() {

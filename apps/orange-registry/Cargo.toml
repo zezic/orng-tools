@@ -1,8 +1,0 @@
-[package]
-name = "orange-registry"
-version.workspace = true
-edition.workspace = true
-license = "GPL-3.0-only"
-
-[dependencies]
-orange-tools.workspace = true

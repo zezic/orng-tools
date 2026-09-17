@@ -567,7 +567,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "384b8ab6d37215f3c5301a95a4accb5d64aa607f1fcb26a11b5303878451b4fe"
 
 [[package]]
-name = "orange-catalog"
+name = "orng-catalog"
 version = "0.1.0"
 dependencies = [
  "bitwig-document",
@@ -580,22 +580,22 @@ dependencies = [
 ]
 
 [[package]]
-name = "orange-catalog-lint"
+name = "orng-catalog-lint"
 version = "0.1.0"
 dependencies = [
  "clap 4.6.7",
- "orange-catalog",
+ "orng-catalog",
 ]
 
 [[package]]
-name = "orange-registry"
+name = "orng-registry"
 version = "0.1.0"
 dependencies = [
- "orange-tools",
+ "orng-tools",
 ]
 
 [[package]]
-name = "orange-tools"
+name = "orng-tools"
 version = "0.1.0"
 dependencies = [
  "bitwig-classfile",

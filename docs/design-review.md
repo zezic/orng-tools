@@ -1,4 +1,4 @@
-# Design review: Orange Registry
+# Design review: Orng Registry
 
 Validation of the design handoff against the app's actual behaviour and against the
 Bitwig internals it depends on. Everything below was checked against a real Bitwig Studio
@@ -35,7 +35,7 @@ Recorded compactly because the reasoning is in git, not because it did not matte
 
 ### 1. The entry list is in the wrong place, and the place matters
 
-`SettingsScreen` shows `Library/orange-registry.json`. It is `~/.orange-registry/entries.tsv`.
+`SettingsScreen` shows `Library/orange-registry.json`. It is `~/.orng/entries.tsv`.
 
 The path is not a detail here. Inside the installation's `Library` the list would be
 destroyed by every Bitwig update - and "a Bitwig update costs one preparation, not one
@@ -49,7 +49,7 @@ and no error handling worth the name. It is not JSON and should not be drawn as 
 ### 2. The backups path is wrong
 
 `~/Library/Application Support/OrangeRegistry/backups` appears in Settings, in the plan
-confirmation and on the Restore screen. It is `~/.orange-registry/backups/`, one directory
+confirmation and on the Restore screen. It is `~/.orng/backups/`, one directory
 per Bitwig build, named `<version>-<short revision>`.
 
 Same root as the entry list, for the same reason: a backup of the installation must not be

@@ -384,13 +384,13 @@ impl Header {
 mod tests {
     use super::*;
 
-    /// Custom documents to test against, from `ORANGE_TEST_DOCUMENTS`.
+    /// Custom documents to test against, from `ORNG_TEST_DOCUMENTS`.
     ///
     /// Sample documents are somebody's work and are not redistributed with this
     /// repository, so the path is supplied rather than assumed. Tests that need
     /// them skip when it is unset.
     fn custom_samples() -> Vec<std::path::PathBuf> {
-        let Some(root) = std::env::var_os("ORANGE_TEST_DOCUMENTS") else {
+        let Some(root) = std::env::var_os("ORNG_TEST_DOCUMENTS") else {
             return Vec::new();
         };
         let mut found = Vec::new();

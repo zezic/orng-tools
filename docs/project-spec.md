@@ -1,4 +1,4 @@
-# Orange Tools - project specification
+# Orng Tools - project specification
 
 The stable reference for what this project is, how it works and why it is built the way it
 is. Where this document and another disagree, this one is wrong and should be fixed; it is
@@ -16,13 +16,13 @@ Bitwig Studio only fully trusts content it knows by identity. A `.bwdevice`,
 `.bwmodulator` or `.bwmodule` that a user made themselves has a UUID, but the installation
 has never heard of it, so projects cannot recall it reliably.
 
-**Orange Tools** is a Rust workspace that closes that gap:
+**Orng Tools** is a Rust workspace that closes that gap:
 
 - a set of libraries for reading Bitwig documents and preparing a Bitwig installation to
   accept custom identities, publishable so other people can build on them;
-- **Orange Registry**, an application that lets a user register their own content with one
+- **Orng Registry**, an application that lets a user register their own content with one
   drag and one button;
-- **Orange Catalog**, a curated public repository of community content that Orange Registry
+- **Orng Catalog**, a curated public repository of community content that Orng Registry
   can install from directly.
 
 The user-facing promise is small and should stay small: *your own devices behave like
@@ -39,7 +39,7 @@ In scope:
 - Registering identities with a specific Bitwig installation.
 - Placing documents where the installation resolves them.
 - Making registered content appear and be searchable in Bitwig's browser.
-- Fetching, installing and updating content from Orange Catalog.
+- Fetching, installing and updating content from Orng Catalog.
 - Undoing all of the above.
 
 Out of scope, and intended to stay that way:
@@ -50,7 +50,7 @@ Out of scope, and intended to stay that way:
   sacrifices a stock device per custom one and makes projects non-portable between users
   with different donor mappings.
 - Anything that unlocks Bitwig functionality the user has not paid for. See section 9.
-- Accounts, telemetry, update checks, or any network traffic beyond Orange Catalog.
+- Accounts, telemetry, update checks, or any network traffic beyond Orng Catalog.
 
 ---
 
@@ -64,7 +64,7 @@ meaning in this project, and "catalog" means only the public repository.
 | **Core Registry** | Bitwig's internal list of every identity it treats as native. What preparation teaches to read our entries. |
 | **Bitwig library** | `Library/` inside the installation: `devices/`, `modulators/`, `modules/`. Where registered paths resolve. |
 | **User library** | The user's own content folder, under `Documents` or `$HOME`. Survives Bitwig updates. |
-| **Orange Catalog** | The public repository of community content. The only thing this project calls a catalog. |
+| **Orng Catalog** | The public repository of community content. The only thing this project calls a catalog. |
 | **Entry list** | This project's durable record of what it has registered. The prepared installation reads it at startup. |
 | **Kind** | `Device`, `Modulator` or `Module`. Fixed by Bitwig; a property of a document, never a user choice. |
 | **Registration** | One piece of custom content as this project records it: identity, kind, name, path, description, keywords. |
@@ -185,8 +185,8 @@ Layered bottom-up; each knows nothing of the layers above.
 | `bitwig-document` | Reading and re-identifying documents. All three serializations. No knowledge of installations. |
 | `bitwig-classfile` | Class-file and archive surgery. Constant pool scanning and rewriting, bytecode editing, archive rewriting. No knowledge of Bitwig. |
 | `bitwig-registry` | Locating Bitwig's internals structurally; reading the Core Registry; the tamper guard. |
-| `orange-tools` | The facade: registrations, the entry list, description bundles, document placement, the transaction. |
-| `orange-registry` | The application. |
+| `orng-tools` | The facade: registrations, the entry list, description bundles, document placement, the transaction. |
+| `orng-registry` | The application. |
 
 The split is by what each layer knows, not by convenience. `bitwig-classfile` has no Bitwig
 concepts in it and is independently useful; `bitwig-document` needs no installation.
@@ -320,7 +320,7 @@ is offered only before an identity has been registered.
 
 **6.7 The document is the source of truth for identity.** Anything derivable from a
 document is read from it rather than restated alongside it. Applies to the entry list and
-to Orange Catalog manifests alike.
+to Orng Catalog manifests alike.
 
 **6.8 The backup is the patch source, not the installed file.** A backup is taken once per
 build and never overwritten, and every preparation of that build patches it rather than
@@ -331,9 +331,9 @@ because there is then nothing pristine to patch.
 
 ---
 
-## 7. Orange Catalog
+## 7. Orng Catalog
 
-A public repository of community content that Orange Registry installs from, so users get a
+A public repository of community content that Orng Registry installs from, so users get a
 curated view of what exists instead of hunting for downloads.
 
 ### 7.1 What it actually is
@@ -341,19 +341,19 @@ curated view of what exists instead of hunting for downloads.
 Not a file host. Content is 20 to 30 KB per item; the entire Bitwig factory device set is
 4.7 MB. Hosting is a non-problem.
 
-Orange Catalog is an **identity authority**. Its job is to guarantee that a UUID means one
+Orng Catalog is an **identity authority**. Its job is to guarantee that a UUID means one
 thing, permanently, across contributors who do not know each other. Every rule below
 follows from that.
 
 ### 7.2 Layout
 
 ```
-orange-catalog/
+orng-catalog/
   content/
     <author>/
       <slug>/
         <name>.bwdevice        the document; any of the three kinds
-        orange.toml            what the document cannot say
+        orng.toml            what the document cannot say
         README.md              optional
   owners.toml                  author -> GitHub account
   index.json                   generated, never hand-edited
@@ -365,7 +365,7 @@ kind and the index republishes it; a path that stated it too would be a third co
 in step, against decision 6.7. Ownership is also per author, so an author owns one prefix
 rather than three, and their items stay together for whoever reviews them.
 
-`orange.toml` carries only what is not already inside the document - version, author,
+`orng.toml` carries only what is not already inside the document - version, author,
 licence, minimum Bitwig version, homepage, superseded identities. Identity, name, kind,
 description and category are read from the document itself, per decision 6.7, and CI fails
 a manifest that tries to restate them.
@@ -430,7 +430,7 @@ a reviewed index rather than trusted for coming from the right domain.
 ### 7.6 What this adds to the app
 
 - A second top-level view for browsing, which the current single-view design does not have.
-- Provenance on each registration: local file, or Orange Catalog item at a version.
+- Provenance on each registration: local file, or Orng Catalog item at a version.
 - An `Update available` status, distinct from a locally modified file - different cause,
   different remedy.
 - Author, version and the merged commit visible before installing. A document is a DSP
@@ -460,7 +460,7 @@ Built and tested against a real installation:
 Not built yet:
 
 - The application.
-- Orange Catalog and its validator.
+- Orng Catalog and its validator.
 
 ---
 

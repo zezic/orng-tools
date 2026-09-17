@@ -1,4 +1,4 @@
-# Orange Tools
+# Orng Tools
 
 Register your own devices, modulators and Grid modules with [Bitwig Studio](https://www.bitwig.com),
 so that projects recall them reliably and they behave like Bitwig's own content.
@@ -25,10 +25,10 @@ crates/
   bitwig-document    reading and re-identifying Bitwig documents
   bitwig-classfile   class-file and archive surgery; knows nothing of Bitwig
   bitwig-registry    locating Bitwig's internals structurally; reading its registry
-  orange-catalog     the community repository format and the rules that validate it
-  orange-tools       the facade: registrations, entry list, placement, descriptions
+  orng-catalog     the community repository format and the rules that validate it
+  orng-tools       the facade: registrations, entry list, placement, descriptions
 apps/
-  orange-registry    the application
+  orng-registry    the application
 docs/                specifications and design
 ```
 
@@ -45,7 +45,7 @@ Tests that need a Bitwig installation find it automatically and skip when there 
 Tests that need sample documents skip unless you point them at some:
 
 ```bash
-ORANGE_TEST_DOCUMENTS=/path/to/your/devices cargo test --workspace
+ORNG_TEST_DOCUMENTS=/path/to/your/devices cargo test --workspace
 ```
 
 No Bitwig content is redistributed here, and none ever will be.
@@ -79,8 +79,8 @@ local law. Never redistribute a modified installation or a backup.
 Per crate, because one dependency forces copyleft on part of the workspace and
 there is no reason to spread it further.
 
-- `bitwig-install`, `bitwig-document`, `orange-catalog`: **MIT OR Apache-2.0**
-- `bitwig-classfile`, `bitwig-registry`, `orange-tools`, `orange-registry`:
+- `bitwig-install`, `bitwig-document`, `orng-catalog`: **MIT OR Apache-2.0**
+- `bitwig-classfile`, `bitwig-registry`, `orng-tools`, `orng-registry`:
   **GPL-3.0-only**, because they link [Krakatau](https://github.com/Storyyeller/Krakatau)
 
 So reading Bitwig documents or working with the catalog format needs nothing

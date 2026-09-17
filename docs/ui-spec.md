@@ -1,6 +1,6 @@
 # Registry manager - UI requirements
 
-App name: **Orange Registry** (binary `orange-registry`).
+App name: **Orng Registry** (binary `orng-registry`).
 
 This document specifies **what must exist in the UI and how it must behave**. It does
 not specify visual design. Layout sketches here are structural hints only; the designer
@@ -514,8 +514,8 @@ Same window, install not prepared yet:
 
   | | |
   | --- | --- |
-  | Entry list | `~/.orange-registry/entries.tsv` |
-  | Backups | `~/.orange-registry/backups/<version>-<short revision>/` |
+  | Entry list | `~/.orng-registry/entries.tsv` |
+  | Backups | `~/.orng-registry/backups/<version>-<short revision>/` |
   | The archive | `Contents/Java/bitwig.jar` on macOS |
   | Description bundles | `Contents/Resources/localization/` on macOS |
 

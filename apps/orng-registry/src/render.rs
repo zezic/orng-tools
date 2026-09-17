@@ -15,6 +15,7 @@ use orng_tools::{Condition, GuardState, Helper, Installation, Manifest, RunState
 
 use crate::app::{App, View};
 use crate::session::{Found, Session};
+use crate::catalog::Fetching;
 use crate::work::{Preparing, State};
 
 /// The window's own size, so what is rendered is what would be seen.
@@ -88,6 +89,26 @@ fn shot_preparing(name: &str, preparing: Preparing) {
     // A fixed number of frames, not "until it settles". A preparation in flight
     // asks for a repaint every hundred milliseconds because it is waiting on
     // another thread, so it never settles and never will.
+    harness.run_steps(3);
+    harness.snapshot(name);
+}
+
+/// Render the catalog view with a fetch held still.
+fn shot_catalog(name: &str, fetching: Fetching) {
+    let root = fixture(name);
+    let session = found(&root, Helper::Present, GuardState::Disarmed);
+    let mut app: Option<App> = None;
+    let mut session = Some(session);
+    let mut fetching = Some(fetching);
+    let mut harness = Harness::builder().with_size(SIZE).build(move |ctx| {
+        let app = app.get_or_insert_with(|| {
+            let mut app = App::with(ctx, session.take().expect("built once"));
+            app.set_catalog(fetching.take().expect("built once"));
+            app.show_view(View::Catalog);
+            app
+        });
+        app.draw(ctx);
+    });
     harness.run_steps(3);
     harness.snapshot(name);
 }
@@ -174,5 +195,23 @@ fn a_preparation_that_failed() {
             ],
             Some(Err("the patched archive did not load under the bundled JVM".to_owned())),
         ),
+    );
+}
+
+/// The catalog as it is published today, drawn from a real index rather than a
+/// made-up one, so what is rendered is a shape the catalog actually produces.
+#[test]
+fn the_catalog_view() {
+    let index = orng_catalog::Index::parse(include_str!("../tests/published-index.json"))
+        .expect("the sample index does not parse");
+    shot_catalog("catalog", Fetching::frozen(Ok(index)));
+}
+
+/// An index that did not verify. Nothing is listed, and the reason is shown.
+#[test]
+fn a_catalog_that_does_not_verify() {
+    shot_catalog(
+        "catalog-refused",
+        Fetching::frozen(Err("the signature does not match this index under this key".to_owned())),
     );
 }

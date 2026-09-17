@@ -15,6 +15,7 @@
 //! ORNG Registry: register your own content with Bitwig Studio.
 
 pub mod app;
+pub mod catalog;
 pub mod session;
 pub mod theme;
 pub mod widget;

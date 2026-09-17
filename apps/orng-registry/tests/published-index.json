@@ -1,0 +1,25 @@
+{
+  "schema": 2,
+  "revision": "bd1f83732b8b093154e7956baa724e9855ba8995",
+  "items": [
+    {
+      "uuid": "8b330d22-73fa-4ba5-a42f-2f2300cbd8bf",
+      "kind": "device",
+      "name": "VOLSHAPER",
+      "author": "caviio",
+      "slug": "volshaper",
+      "version": "1.0.0",
+      "min_bitwig": "6.1",
+      "license": "TBA",
+      "description": "Beat-synced volume LFO with a drawable curve",
+      "keywords": [
+        "volshaper",
+        "audio fx"
+      ],
+      "path": "content/caviio/volshaper/VOLSHAPER.bwdevice",
+      "digest": "bfdab5de7d0cf6981d6e7252afb8c925071161174788e03916040eb785f3b29a",
+      "size": 23544,
+      "merged_in": "175add8af8422d4b749467c187952dd6204fcadb"
+    }
+  ]
+}

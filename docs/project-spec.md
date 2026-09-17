@@ -546,7 +546,12 @@ junction exists to avoid, and a build agent is elevated.
 
 Known gaps:
 
-- Nothing has run on Linux yet.
+- Nothing has run on Linux yet, including the settings directory path, which is the one
+  Windows got wrong.
+- `AppData::config_json` and `AppData::lock_file` name files nothing reads. Run detection
+  scans processes instead, so the lock is not used and neither name has been checked against
+  a Windows or Linux installation. Whichever the application ends up needing should be
+  verified against one before it is trusted.
 - Preparation writes inside the installation, which on Windows is under `Program Files` and
   needs elevation. Detecting that and asking for it is the application's, and unbuilt.
 

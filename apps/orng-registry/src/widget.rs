@@ -170,6 +170,33 @@ pub fn small_button(ui: &mut Ui, palette: Palette, icon: &str, label: &str) -> R
         .on_hover_cursor(egui::CursorIcon::PointingHand)
 }
 
+/// A stack of lines, centred in the bar it sits in.
+///
+/// egui places a child `Ui` at the top of what is available, because when it is
+/// positioned nobody knows yet how tall it will be - so a two-line block inside
+/// a centring layout sits against the top edge instead of in the middle. The
+/// block is therefore measured first, in a detached sizing pass, and then
+/// allocated at that height so the parent's alignment has something to centre.
+///
+/// The same two-pass shape as [`empty_state`], and for the same reason.
+pub fn centred_block(ui: &mut Ui, contents: impl Fn(&mut Ui)) {
+    let mut probe = Ui::new(
+        ui.ctx().clone(),
+        ui.id().with("centred-measure"),
+        egui::UiBuilder::new()
+            .sizing_pass()
+            .invisible()
+            .max_rect(ui.available_rect_before_wrap()),
+    );
+    contents(&mut probe);
+    let height = probe.min_rect().height();
+    ui.allocate_ui_with_layout(
+        vec2(ui.available_width(), height),
+        Layout::top_down(Align::Min),
+        |ui| contents(ui),
+    );
+}
+
 /// The search field: one filled, rounded box holding the glyph and the text.
 ///
 /// The icon is *inside* the field in the bundle, not sitting on the bar beside

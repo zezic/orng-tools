@@ -749,10 +749,10 @@ impl App {
                 ui.add_space(metric::GAP);
                 ui.with_layout(Layout::left_to_right(Align::Center), |ui| {
                     let (summary, tone, note) = self.summary();
-                    ui.vertical(|ui| {
+                    widget::centred_block(ui, |ui| {
                         ui.add(
                             egui::Label::new(
-                                RichText::new(summary)
+                                RichText::new(&summary)
                                     .font(font::plain(font::CONTROL))
                                     .color(tone.colour(palette)),
                             )
@@ -761,7 +761,7 @@ impl App {
                         if !note.is_empty() {
                             ui.add(
                                 egui::Label::new(
-                                    RichText::new(note)
+                                    RichText::new(&note)
                                         .font(font::plain(font::NOTE))
                                         .color(palette.ink_3),
                                 )

@@ -188,10 +188,22 @@ pub fn search_field(ui: &mut Ui, palette: Palette, query: &mut String, hint: &st
                         .font(font::icon(ui.ctx(), font::ICON))
                         .color(palette.ink_3),
                 );
+                // Stated, not inherited: a bar zeroes egui's own item spacing so
+                // that the design's gaps are the only ones, and this is one of
+                // the design's gaps.
+                ui.add_space(metric::TIGHT);
+                // What is left of the field once the glyph, the gap and the two
+                // margins have taken theirs. The constant is the whole box, so
+                // the box is what matches the bundle rather than the text area
+                // inside it.
+                let text = metric::SEARCH_FIELD
+                    - font::ICON
+                    - metric::TIGHT
+                    - 2.0 * metric::TOOL_GAP;
                 ui.add(
                     egui::TextEdit::singleline(query)
                         .hint_text(hint)
-                        .desired_width(metric::SEARCH_WIDTH)
+                        .desired_width(text)
                         .font(font::plain(font::CONTROL))
                         // The frame is the one drawn above; a second one inside
                         // it is a box in a box.
@@ -568,13 +580,30 @@ pub fn empty_state(ui: &mut Ui, palette: Palette, empty: &Empty<'_>) -> Pressed 
         corner_marks(ui, palette, region);
     }
 
+    // The design centres the block in its region. Immediate mode cannot know how
+    // tall the block is until it has drawn it, so it is drawn twice: once in a
+    // sizing pass that produces no geometry, to be measured, and then for real
+    // with the leftover halved above it. A fraction of the region guessed
+    // instead - which is what this did - puts the block wherever the region
+    // happens to be tall.
+    let mut probe = Ui::new(
+        ui.ctx().clone(),
+        ui.id().with("empty-measure"),
+        egui::UiBuilder::new().sizing_pass().invisible().max_rect(region),
+    );
+    block(&mut probe, palette, empty);
+    let measured = probe.min_rect().height();
+    ui.add_space(((region.height() - measured) / 2.0).max(0.0));
+    block(ui, palette, empty)
+}
+
+fn block(ui: &mut Ui, palette: Palette, empty: &Empty<'_>) -> Pressed {
     let mut pressed = Pressed::Nothing;
     let title_size = if empty.minor { font::SUBHEADING } else { font::HEADING };
     let icon_size = if empty.minor { font::ICON_SMALL } else { font::ICON_LARGE };
     let icon_ink = if empty.inviting { palette.accent } else { palette.ink_3 };
 
     ui.vertical_centered(|ui| {
-        ui.add_space(region.height() * 0.24);
         ui.label(RichText::new(empty.icon).font(font::icon(ui.ctx(), icon_size)).color(icon_ink));
         ui.add_space(metric::GAP);
         ui.label(

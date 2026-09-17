@@ -47,5 +47,5 @@ raw-window-handle = "0.6"
 # The synthetic document fixture, so that what a test drops is built by the
 # crate that knows the format rather than by a second copy of its header.
 orng-tools = { workspace = true, features = ["testing"] }
-egui_kittest = { version = "0.36", features = ["wgpu", "snapshot"] }
+egui_kittest = { version = "0.36", features = ["wgpu", "snapshot", "eframe"] }
 tempfile.workspace = true

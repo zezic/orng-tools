@@ -13,6 +13,7 @@ use orng_tools::{OrngHome, Registration, RunState, Step, Strategy, UserLibrary};
 use crate::session::{Found, Session};
 use crate::theme::{self, Palette, metric, text};
 use crate::widget;
+use crate::catalog::Fetching;
 use crate::work::Preparing;
 
 /// Which top-level view is showing. Two, as the design has it.
@@ -35,6 +36,11 @@ pub struct App {
     /// Whether the machine has been re-read since the preparation ended. It is
     /// read once, not every frame: the answer costs seconds.
     reread: bool,
+    /// The published catalog, once somebody has asked for it. Not fetched on
+    /// opening: this application is useful with no network at all, and a window
+    /// that reaches for one before being asked is a window that hangs on a
+    /// train.
+    catalog: Option<Fetching>,
 }
 
 impl App {
@@ -50,7 +56,15 @@ impl App {
         let palette = Palette::DARK;
         theme::install_fonts(ctx);
         theme::apply(ctx, palette);
-        App { session, view: View::Local, palette, dark: true, preparing: None, reread: false }
+        App {
+            session,
+            view: View::Local,
+            palette,
+            dark: true,
+            preparing: None,
+            reread: false,
+            catalog: None,
+        }
     }
 
     pub fn show_view(&mut self, view: View) {
@@ -61,6 +75,12 @@ impl App {
     #[cfg(test)]
     pub fn set_preparing(&mut self, preparing: Preparing) {
         self.preparing = Some(preparing);
+    }
+
+    /// Put a catalog on screen without fetching one. Tests only.
+    #[cfg(test)]
+    pub fn set_catalog(&mut self, catalog: Fetching) {
+        self.catalog = Some(catalog);
     }
 
     /// Switch palettes. The toolbar and the render tests share this, so neither
@@ -110,12 +130,10 @@ impl App {
                         progress(ui, self.palette, preparing);
                     }
                     View::Local => local(ui, self.palette, found),
-                    View::Catalog => widget::empty_state(
-                        ui,
-                        self.palette,
-                        "Catalog",
-                        "Browsing ORNG Catalog is not built yet.",
-                    ),
+                    View::Catalog => {
+                        let catalog = self.catalog.get_or_insert_with(Fetching::start);
+                        published(ui, self.palette, catalog);
+                    }
                 },
             });
     }
@@ -131,6 +149,13 @@ impl App {
     /// Take whatever the worker has said, and re-read the machine once it is
     /// done, because what was true before a preparation is not true after one.
     fn pump(&mut self, ctx: &egui::Context) {
+        if let Some(catalog) = &mut self.catalog {
+            if catalog.poll() {
+                ctx.request_repaint();
+            } else if catalog.is_running() {
+                ctx.request_repaint_after(std::time::Duration::from_millis(100));
+            }
+        }
         let Some(preparing) = &mut self.preparing else { return };
         if preparing.poll() {
             ctx.request_repaint();
@@ -352,4 +377,49 @@ fn row(ui: &mut egui::Ui, palette: Palette, entry: &Registration, index: usize) 
             widget::kind_tag(ui, palette, entry.kind);
         });
     });
+}
+
+/// The Catalog view: what ORNG Catalog publishes, once it has been proved.
+fn published(ui: &mut egui::Ui, palette: Palette, catalog: &Fetching) {
+    match catalog.outcome.as_ref() {
+        None => widget::empty_state(ui, palette, "Fetching the catalog", "Checking its signature."),
+        Some(Err(why)) => {
+            widget::empty_state(
+                ui,
+                palette,
+                "The catalog could not be read",
+                "Nothing is installed from an index that does not verify.",
+            );
+            ui.add_space(metric::TIGHT);
+            ui.vertical_centered(|ui| {
+                ui.label(RichText::new(why).text_style(text::MONO).color(palette.ink_3));
+            });
+        }
+        Some(Ok(index)) if index.items.is_empty() => {
+            widget::empty_state(ui, palette, "The catalog is empty", "Nothing is published yet.")
+        }
+        Some(Ok(index)) => {
+            egui::ScrollArea::vertical().auto_shrink([false, false]).show(ui, |ui| {
+                for (at, entry) in index.items.iter().enumerate() {
+                    widget::row(ui, palette, at, |ui| {
+                        ui.vertical(|ui| {
+                            ui.add_space(metric::TIGHT);
+                            ui.label(
+                                RichText::new(&entry.name).text_style(text::BODY).color(palette.ink),
+                            );
+                            ui.label(
+                                RichText::new(format!("{}  {}", entry.author, entry.version))
+                                    .text_style(text::MONO)
+                                    .color(palette.ink_3),
+                            );
+                        });
+                        ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                            ui.add_space(metric::PAD);
+                            widget::kind_tag(ui, palette, entry.kind.into());
+                        });
+                    });
+                }
+            });
+        }
+    }
 }

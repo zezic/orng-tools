@@ -13,6 +13,11 @@ orng-tools.workspace = true
 # features are kept because they are what supply wgpu's platform backends;
 # turning them off builds a wgpu with no backend and panics on the first frame.
 eframe = { version = "0.33", features = ["wgpu"] }
+orng-catalog.workspace = true
+
+# Blocking, which is what suits a fetch already running on a worker thread, and
+# rustls so there is no system TLS library to depend on across three platforms.
+ureq = { version = "3", default-features = false, features = ["rustls"] }
 
 # Rendering the interface headlessly, so a change can be looked at rather than
 # reasoned about. egui places widgets in ways that are hard to predict from the

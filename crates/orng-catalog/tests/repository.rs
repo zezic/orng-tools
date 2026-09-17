@@ -12,12 +12,14 @@ use orng_catalog::{
     CONTENT_DIR, History, Index, Item, Problem, Revision, Severity, scan, validate,
 };
 
-/// Documents to build a tree from, supplied via `ORNG_TEST_DOCUMENTS`.
+/// Documents to build a tree from.
 ///
 /// Sample documents are somebody's work and are not redistributed here, so the
-/// path is given rather than assumed. Tests skip when it is unset.
+/// path is given rather than assumed.
+const DOCUMENTS: &str = "ORNG_TEST_DOCUMENTS";
+
 fn sources() -> Vec<PathBuf> {
-    let Some(root) = std::env::var_os("ORNG_TEST_DOCUMENTS") else {
+    let Some(root) = std::env::var_os(DOCUMENTS) else {
         return Vec::new();
     };
     let mut found = Vec::new();
@@ -83,10 +85,26 @@ impl Drop for Fixture {
     }
 }
 
+/// The environment these tests need, and what to do when it is missing.
+///
+/// Opting **out** rather than in. A test whose subject is absent used to return
+/// and report as passed, which is indistinguishable in a summary line from one
+/// that ran - so a machine with no Bitwig quietly tested nothing and said 75
+/// passing. Now the absence fails the run unless the caller states that it
+/// expects it, which is a thing only continuous integration has any business
+/// saying.
+const SKIP: &str = "ORNG_SKIP_BITWIG_TESTS";
+
 macro_rules! sources_or_skip {
     () => {{
         let sources = sources();
         if sources.len() < 2 {
+            if std::env::var_os(SKIP).is_none() {
+                panic!(
+                    "{DOCUMENTS} names no readable documents; \
+                     set it, or set {SKIP}=1 to skip these tests"
+                );
+            }
             eprintln!("no sample documents, skipping");
             return;
         }

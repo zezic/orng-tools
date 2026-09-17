@@ -18,14 +18,25 @@ fn jar() -> Option<Jar> {
     Some(jar)
 }
 
+/// The environment these tests need, and what to do when it is missing.
+///
+/// Opting **out** rather than in. A test whose subject is absent used to return
+/// and report as passed, which is indistinguishable in a summary line from one
+/// that ran - so a machine with no Bitwig quietly tested nothing and said 75
+/// passing. Now the absence fails the run unless the caller states that it
+/// expects it, which is a thing only continuous integration has any business
+/// saying.
+const SKIP: &str = "ORNG_SKIP_BITWIG_TESTS";
+
 macro_rules! jar_or_skip {
     () => {
         match jar() {
             Some(jar) => jar,
-            None => {
+            None if std::env::var_os(SKIP).is_some() => {
                 eprintln!("no Bitwig Studio installed, skipping");
                 return;
             }
+            None => panic!("no Bitwig Studio installed; set {SKIP}=1 to skip these tests"),
         }
     };
 }

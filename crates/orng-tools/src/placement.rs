@@ -140,6 +140,12 @@ pub fn ensure_link(install: &Installation, library: &UserLibrary, kind: Kind) ->
 
 /// Windows cannot create a symlink without elevation, but an unprivileged user
 /// can create a directory junction, which resolves identically here.
+///
+/// FIXME: this does not do that. `std::os::windows::fs::symlink_dir` creates a
+/// symlink, which needs `SeCreateSymbolicLinkPrivilege` or Developer Mode, so
+/// an ordinary Windows account fails the link step of preparation. A junction
+/// needs `FSCTL_SET_REPARSE_POINT`, which std does not expose. Untested on
+/// Windows, and not to be believed until it is.
 #[cfg(windows)]
 fn symlink_dir(target: &Path, link: &Path) -> std::io::Result<()> {
     std::os::windows::fs::symlink_dir(target, link)

@@ -1,0 +1,89 @@
+# What master has to keep true.
+#
+# Deliberately not on every push. Feature work happens on branches and is not
+# checked here; this exists to keep `master` from breaking, and to say so on the
+# one platform triple nobody has all three of locally. Use the manual trigger to
+# check a branch before merging it.
+#
+# Three platforms because ORNG Registry targets three. The parts that differ by
+# platform are real and already written - where an installation lives, and
+# whether a link is a symlink or a directory junction - so a compile that only
+# ever happens on macOS proves the least interesting third of it.
+
+name: Check
+
+on:
+  push:
+    branches: [master]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+  # Opting out, not in. Absent this, the tests that need a real Bitwig Studio
+  # *fail* rather than quietly reporting as passed, which is the only way a
+  # machine that has one cannot silently stop testing with it. No runner has
+  # Bitwig on it, so every runner has to say so out loud, here.
+  ORNG_SKIP_BITWIG_TESTS: 1
+
+jobs:
+  check:
+    name: ${{ matrix.os }}
+    strategy:
+      # One platform failing should not hide the state of the other two.
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Cache the build
+        uses: actions/cache@v6
+        with:
+          path: |
+            ~/.cargo/registry/index
+            ~/.cargo/registry/cache
+            ~/.cargo/git/db
+            target
+          key: cargo-${{ matrix.os }}-${{ hashFiles('Cargo.lock') }}
+          restore-keys: cargo-${{ matrix.os }}-
+
+      - name: Report the toolchain
+        run: |
+          rustc --version
+          cargo --version
+          rustup component add clippy
+
+      # Debug rather than release: nothing here measures speed, and the
+      # workspace links a Java bytecode assembler that is slow to optimise.
+      - name: Clippy
+        run: cargo clippy --workspace --all-targets -- -D warnings
+
+      - name: Test
+        run: cargo test --workspace
+
+  validator:
+    name: The catalog's validator still installs
+    runs-on: ubuntu-latest
+    steps:
+      - name: Install it the way the catalog does
+        # ORNG Catalog pins a commit of this repository and installs the lint
+        # from it to gate every merge. If that stops building, the catalog stops
+        # accepting contributions and the first to find out is a contributor.
+        # This is the same command that repository runs, against this commit.
+        run: |
+          cargo install --git ${{ github.server_url }}/${{ github.repository }} \
+            --rev ${{ github.sha }} --locked orng-catalog-lint
+          orng-catalog-lint --version
+
+      - name: The commands the workflows call still exist
+        # A rename or a dropped flag here breaks the catalog silently, because
+        # its workflows pin an older commit and keep passing until someone bumps
+        # the pin. Cheaper to fail on this side.
+        run: |
+          orng-catalog-lint check --help > /dev/null
+          orng-catalog-lint owners --help > /dev/null
+          orng-catalog-lint index --help | grep -q -- --from-git

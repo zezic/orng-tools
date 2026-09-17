@@ -185,11 +185,18 @@ Layered bottom-up; each knows nothing of the layers above.
 | `bitwig-document` | Reading and re-identifying documents. All three serializations. No knowledge of installations. |
 | `bitwig-classfile` | Class-file and archive surgery. Constant pool scanning and rewriting, bytecode editing, archive rewriting. No knowledge of Bitwig. |
 | `bitwig-registry` | Locating Bitwig's internals structurally; reading the Core Registry; the tamper guard. |
+| `orng-catalog` | The catalog repository format: manifests, the index, the ownership and identity rules. No knowledge of installations. |
 | `orng-tools` | The facade: registrations, the entry list, description bundles, document placement, the transaction. |
 | `orng-registry` | The application. |
 
 The split is by what each layer knows, not by convenience. `bitwig-classfile` has no Bitwig
 concepts in it and is independently useful; `bitwig-document` needs no installation.
+
+`orng-tools` depends on `orng-catalog`, in that direction only. A registration records
+where its document came from (5.2), and a catalog item's version is what that record holds,
+so the two must agree on the version type rather than each declaring one. The catalog crate
+stays free of installation concepts and of this one, which is what keeps it, and the lint
+binary built on it, permissively licensed.
 
 ### 5.2 A prepared installation
 
@@ -224,6 +231,24 @@ registers each row. Consequences that matter:
 - A Bitwig update costs **one** preparation, not one operation per registered item.
 - The archive is never a source of truth for what is registered, so it cannot drift from
   the record and there is no half-applied state to detect.
+
+The list is tab-separated, and the injected class reads it with `split("\t")`: no parser,
+no dependency, no error handling worth the name in a class that must not throw. It reads
+the **first four columns** - identity, kind, name, library path - and accepts any row with
+at least that many. Columns after them are the application's business:
+
+| | |
+| --- | --- |
+| 1 to 4 | What the injected class registers |
+| 5, 6 | Description and search keywords, applied by the app when it writes the bundles |
+| 7, 8 | Version and source (7.6), which only the app reads |
+
+That asymmetry is why the list can grow: an installation prepared before a column was added
+keeps working against a longer list, so a format change costs a parser change here and not
+a re-preparation. A marker line states the format, and a reader that does not know the
+number refuses the file rather than reading it under a guessed layout. Source is the last
+column and never empty, because the column that goes missing is the empty one an editor
+stripping trailing whitespace would eat.
 
 ### 5.3 Obfuscated names are never persisted
 
@@ -445,9 +470,14 @@ when told to, so the command stays a projection of the tree everywhere else.
 ### 7.6 What this adds to the app
 
 - A second top-level view for browsing, which the current single-view design does not have.
-- Provenance on each registration: local file, or Orng Catalog item at a version.
+- Provenance on each registration: local file, or Orng Catalog item at a version. Recorded
+  in the entry list (5.2) as one value and not as a pair of optional fields, so that "a
+  catalog item at no version" and "a local file at version 2.0.1" cannot be written down.
 - An `Update available` status, distinct from a locally modified file - different cause,
-  different remedy.
+  different remedy. Comparing digests only ever says that a file **differs**; it takes the
+  recorded source to say why. A local file has nothing upstream, so a difference is the
+  user's own edit. A catalog item carries the version installed, so the same difference can
+  be read against the published one and reported as an update.
 - Author, version and the merged commit visible before installing. A document is a DSP
   graph that Bitwig executes; review is the only trust boundary and users should see who
   signed off.
@@ -472,10 +502,16 @@ Built and tested against a real installation:
   list and register every row through Bitwig's own registration method, under Bitwig's own
   JVM, and to report rather than throw when the list cannot be applied.
 
+- The catalog's rules and its validator, including the ownership check, and both schema
+  changes the design was promised: the per-item merging commit in the index (7.5), and
+  version and source in the entry list (5.2, 7.6). The entry list's format marker is now
+  checked on read rather than only written, and a list written before the catalog existed
+  still loads, as local content.
+
 Not built yet:
 
 - The application.
-- Orng Catalog and its validator.
+- The catalog repository's own continuous integration.
 
 ---
 

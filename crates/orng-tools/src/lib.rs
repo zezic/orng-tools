@@ -42,6 +42,7 @@ pub use bitwig_document::{BitwigVersion, Document, Identity, Kind, Serialization
 pub use bitwig_install::{AppData, Installation, RunState, UserLibrary, running_state};
 pub use bitwig_registry::{Anchor, Binding, BuildId, Entry, GuardState};
 pub use home::OrngHome;
+pub use orng_catalog::manifest::ItemVersion;
 pub use placement::{Placement, Strategy};
 pub use manifest::Manifest;
 pub use prepare::{Plan, Step};
@@ -145,11 +146,36 @@ pub struct Registration {
     pub description: String,
     /// Words that find the entry when typed into the browser.
     pub keywords: Vec<String>,
+    /// Where the document came from, and what may be said about updating it.
+    pub provenance: Provenance,
+}
+
+/// Where a registered document came from.
+///
+/// This is what separates an update from an edit. Comparing digests only ever
+/// says that a file differs; it takes a recorded source to say *why*. A local
+/// file has nothing upstream, so a difference is the user's own change. A
+/// catalog item carries the version that was installed, so the same difference
+/// can be read against the published one and reported as an update.
+///
+/// An enum and not a pair of optional fields, because "a catalog item with no
+/// version" and "a local file at version 2.0.1" are states that must not be
+/// expressible.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Provenance {
+    /// A file the user chose themselves. Nothing upstream to compare against.
+    Local,
+    /// An Orng Catalog item, at the version that was installed.
+    Catalog { version: ItemVersion },
 }
 
 impl Registration {
     /// Derive a registration from a document, with defaults good enough that a
     /// user who edits nothing still gets a searchable entry.
+    ///
+    /// Always [`Provenance::Local`]: this reads a file the user pointed at. A
+    /// catalog install knows its version and says so when it builds the
+    /// registration.
     pub fn from_document(document: &Document, file_name: &str) -> Result<Self> {
         let identity = document.identity();
         let kind = document.kind();
@@ -163,6 +189,7 @@ impl Registration {
                 .clone()
                 .unwrap_or_else(|| format!("Custom {}", kind.label().to_lowercase())),
             keywords: identity.suggested_keywords(),
+            provenance: Provenance::Local,
         })
     }
 }

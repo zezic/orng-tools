@@ -27,18 +27,27 @@ const SIZE: egui::Vec2 = egui::vec2(1040.0, 680.0);
 
 /// A fixed place to build a fake installation.
 ///
-/// Not a temporary directory, deliberately. The interface prints the
-/// installation's path, so a random one lands in the rendered image and no two
-/// runs can ever match. A snapshot has to be a function of the code alone.
+/// **Relative, and that is the whole point.** The interface draws the
+/// installation's path, so whatever this returns ends up in the rendered image.
+/// A temporary directory puts a random name there and no two runs can match; an
+/// absolute one puts *this machine's* home directory there and no two machines
+/// can match, which is how every snapshot but `no-installation` came to fail on
+/// every continuous integration runner while passing here.
+///
+/// Cargo runs a test binary with the package directory as its working
+/// directory - the same thing `tests/snapshots` is already resolved against - so
+/// a relative path is a real location and a constant string at the same time.
 fn fixture(name: &str) -> std::path::PathBuf {
-    let target = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-        .parent()
-        .and_then(std::path::Path::parent)
-        .expect("the crate is two below the workspace")
-        .join("target/render-fixtures");
-    let root = target.join(name);
+    let root = std::path::Path::new("target/render-fixtures").join(name);
     let _ = std::fs::remove_dir_all(&root);
     root
+}
+
+/// The installation inside a fixture, named as an installation is named: the
+/// path is drawn, and a fixture that does not look like one teaches the reader
+/// to expect something else.
+fn install_root(fixture: &std::path::Path) -> std::path::PathBuf {
+    fixture.join("Bitwig Studio.app")
 }
 
 fn entries() -> Manifest {
@@ -56,11 +65,11 @@ fn entries() -> Manifest {
     Manifest::parse(rows).expect("the sample entry list does not parse")
 }
 
-fn destination(root: &std::path::Path) -> Destination {
+fn destination(fixture: &std::path::Path) -> Destination {
     Destination {
-        install: orng_tools::testing::install(root),
-        library: UserLibrary::at(&root.join("Library")),
-        home: OrngHome::at(root),
+        install: orng_tools::testing::install(&install_root(fixture)),
+        library: UserLibrary::at(&fixture.join("Library")),
+        home: OrngHome::at(fixture),
         placement: Strategy::Link,
     }
 }
@@ -121,6 +130,33 @@ fn dropped(root: &std::path::Path, to: &Destination, entries: &Manifest) -> Vec<
     staging::read(&paths, entries, to, &[])
 }
 
+/// Lay a state out, and compare it against the stored picture.
+///
+/// **Running the harness is worth doing everywhere.** It lays every state out,
+/// which is where a panic in a layout shows up, and it fails if the interface
+/// keeps asking to be redrawn - so it passing is the check that no timer has
+/// crept back in.
+///
+/// **Comparing pixels needs a renderer**, and a continuous integration runner on
+/// Linux has none: `egui_kittest` asks wgpu for an adapter and there is not one,
+/// not even a software one. The renderer is built lazily on the first
+/// comparison, so laying out costs nothing there and only the picture is given
+/// up.
+///
+/// Opt out, never opt in, and never silently. Absent the variable this compares
+/// and fails, so a machine that has stopped checking the pictures has to say so
+/// out loud - the same discipline `ORNG_SKIP_BITWIG_TESTS` exists for.
+fn look<S>(harness: &mut Harness<'_, S>, name: &str) {
+    harness.run();
+    let skipping = std::env::var_os("ORNG_SKIP_RENDER_SNAPSHOTS")
+        .is_some_and(|value| !value.is_empty());
+    if skipping {
+        eprintln!("no renderer here: laid {name} out without looking at it");
+        return;
+    }
+    harness.snapshot(name);
+}
+
 /// Render one state, with work held still, and write it out.
 fn shot_applying(name: &str, applying: Applying) {
     let root = fixture(name);
@@ -136,8 +172,7 @@ fn shot_applying(name: &str, applying: Applying) {
         });
         app.draw(ctx);
     });
-    harness.run();
-    harness.snapshot(name);
+    look(&mut harness, name);
 }
 
 /// Render the list with documents dropped on it and not yet written.
@@ -159,8 +194,7 @@ fn shot_staged(name: &str, helper: Helper, guard: GuardState) {
         });
         app.draw(ctx);
     });
-    harness.run();
-    harness.snapshot(name);
+    look(&mut harness, name);
 }
 
 /// Render the window with files held over it but not yet dropped.
@@ -187,8 +221,7 @@ fn shot_dragging(name: &str, over: &[&str]) {
         .iter()
         .map(|file| egui::HoveredFile { path: Some(drop.join(file)), ..Default::default() })
         .collect();
-    harness.run();
-    harness.snapshot(name);
+    look(&mut harness, name);
 }
 
 /// Render the catalog view with a fetch held still.
@@ -207,8 +240,7 @@ fn shot_catalog(name: &str, fetching: Fetching) {
         });
         app.draw(ctx);
     });
-    harness.run();
-    harness.snapshot(name);
+    look(&mut harness, name);
 }
 
 /// Render one state and write it out under `name`.
@@ -222,8 +254,7 @@ fn shot(name: &str, session: Session, view: View, dark: bool) {
         app.show_view(view);
         app.draw(ctx);
     });
-    harness.run();
-    harness.snapshot(name);
+    look(&mut harness, name);
 }
 
 #[test]

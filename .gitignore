@@ -8,3 +8,14 @@
 
 # Design handoff archive; the extracted bundle beside it is what gets read.
 /docs/*.zip
+
+# What UPDATE_SNAPSHOTS leaves beside a regenerated picture: the previous one
+# and a difference map, both for looking at once and neither a record of
+# anything.
+apps/orng-registry/tests/snapshots/*.old.png
+apps/orng-registry/tests/snapshots/*.diff.png
+
+# Cargo does not only write to the workspace root. The render tests build
+# their fixtures under the package that owns them, because the path they draw
+# has to be relative for a snapshot to be a function of the code.
+target/

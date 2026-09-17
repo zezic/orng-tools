@@ -538,13 +538,17 @@ Built and tested against a real installation:
   checked on read rather than only written, and a list written before the catalog existed
   still loads, as local content.
 
+Verified on Windows on ARM64, against Bitwig Studio 6.1: the whole suite, including the
+anchors, the factory registry, the tamper guard, and the prepare transaction end to end
+under Bitwig's own bundled JVM. Linking was checked against a token that genuinely lacks
+`SeCreateSymbolicLinkPrivilege`, because an elevated one cannot reproduce the failure a
+junction exists to avoid, and a build agent is elevated.
+
 Known gaps:
 
-- **Nothing here has ever run on Windows.** It compiles and type-checks for the target, and
-  the linking tests are synthetic so every platform runs them, but no line of this has met a
-  real Windows filesystem. The privileged case is the one to distrust: a build agent
-  typically runs elevated, so the very failure junctions exist to avoid cannot reproduce on
-  one.
+- Nothing has run on Linux yet.
+- Preparation writes inside the installation, which on Windows is under `Program Files` and
+  needs elevation. Detecting that and asking for it is the application's, and unbuilt.
 
 Not built yet:
 

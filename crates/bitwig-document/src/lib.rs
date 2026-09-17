@@ -430,11 +430,23 @@ mod tests {
             .collect()
     }
 
+    /// Returning from a test that found nothing to test is how a suite reports
+    /// seventy-nine passes while exercising none of them. Only a runner, which
+    /// has no Bitwig and no samples, has any business asking for that.
+    fn skip_or_fail() {
+        assert!(
+            std::env::var_os("ORNG_SKIP_BITWIG_TESTS").is_some(),
+            "no sample documents; point ORNG_TEST_DOCUMENTS at some, \
+             or set ORNG_SKIP_BITWIG_TESTS=1 to skip these tests"
+        );
+        eprintln!("no sample documents, skipping");
+    }
+
     #[test]
     fn reads_every_serialization_in_the_wild() {
         let all: Vec<_> = custom_samples().into_iter().chain(factory_samples(12)).collect();
         if all.is_empty() {
-            eprintln!("no sample documents, skipping");
+            skip_or_fail();
             return;
         }
         let mut seen = std::collections::BTreeSet::new();
@@ -454,7 +466,7 @@ mod tests {
     fn rewriting_the_uuid_is_reversible_and_length_preserving() {
         let all: Vec<_> = custom_samples().into_iter().chain(factory_samples(4)).collect();
         if all.is_empty() {
-            eprintln!("no sample documents, skipping");
+            skip_or_fail();
             return;
         }
         for path in &all {

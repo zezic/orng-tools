@@ -621,14 +621,29 @@ the row; and `Add files...` is there because drag and drop may not be the only w
 press runs both modes when both are pending, which is also what puts the description
 bundles back after a Bitwig update has replaced them.
 
+The three regions `ui-spec.md` requires, drawn to the design bundle's own measurements
+rather than to an approximation of them: the install bar naming the installation, its
+build, its path, its registry badge, the guard and the backup; the list, with search, the
+kind filters and sections dividing pending work from what is registered; and the action
+bar carrying the summary, the mode it will run, and the one primary action. A row is a
+grid, so identities and statuses line up down the list. Every state renders headlessly
+into `apps/orng-registry/tests/snapshots`, and the fixture paths are relative so that the
+pictures are a function of the code rather than of the machine that drew them.
+
 Not built yet:
 
 - Installing from the catalog: fetching a document by path, checking it against the digest
-  the index carries, and registering it.
-- Removing an entry, and the choice of whether its document goes with it.
+  the index carries, and registering it. The catalog view has no toolbar of its own yet,
+  so its search, kind filters and `All / Installed / Updatable` switch are missing.
+- Row actions: `Reveal file`, `Remove`, `Assign new UUID`, and the choice of whether a
+  removed entry's document goes with it. The design reserves a column for them; this draws
+  no column rather than an empty one.
+- The `Show factory entries` toggle. Reading Bitwig's own 428 entries means parsing a class
+  out of the archive, which takes about a second, so it needs a worker of its own; a toggle
+  that did nothing would be worse than no toggle.
 - The plan confirmation the Prepare install mode is supposed to show before it runs.
 - Everything else the design draws: Settings, About, Restore, the inspector, the update
-  modal, search and the kind filters.
+  modal. The overflow control lists them; none of them opens anything yet.
 
 ---
 

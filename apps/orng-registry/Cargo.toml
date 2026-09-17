@@ -25,6 +25,7 @@ ureq = { version = "3", default-features = false, features = ["rustls"] }
 # already runs, so nothing here links a toolkit and no runner has to install
 # one to build this.
 rfd = { version = "0.15", default-features = false, features = ["xdg-portal", "tokio"] }
+jiff = { version = "0.2.37", default-features = false, features = ["std", "tz-system"] }
 
 # Rendering the interface headlessly, so a change can be looked at rather than
 # reasoned about. egui places widgets in ways that are hard to predict from the

@@ -65,6 +65,22 @@ fn entries() -> Manifest {
     Manifest::parse(rows).expect("the sample entry list does not parse")
 }
 
+/// A build to name in the install bar. Bitwig's own shape: a version, and forty
+/// hex characters of revision that the bar shows the first eight of.
+fn build() -> Option<orng_tools::BuildId> {
+    Some(orng_tools::BuildId {
+        version: orng_tools::BitwigVersion::parse("6.1").expect("a version"),
+        revision: "94a904110c7f2b3e6d5a81f409cbe27d3a16b850".to_owned(),
+    })
+}
+
+/// The date the sample backup was taken, as the session would have formatted it.
+///
+/// A string and not an instant: an instant is rendered in the time zone of
+/// whoever renders it, so a picture of one taken here and a picture taken on a
+/// runner eight hours behind would disagree about the day.
+const BACKUP_TAKEN: &str = "14 Sep 2026";
+
 fn destination(fixture: &std::path::Path) -> Destination {
     Destination {
         install: orng_tools::testing::install(&install_root(fixture)),
@@ -84,11 +100,29 @@ fn found_with(
     guard: GuardState,
     entries: Manifest,
 ) -> Session {
+    running_found(root, helper, guard, entries, RunState::Clear)
+}
+
+fn running_found(
+    root: &std::path::Path,
+    helper: Helper,
+    guard: GuardState,
+    entries: Manifest,
+    running: RunState,
+) -> Session {
     Session::Found(Box::new(Found {
         to: destination(root),
-        condition: Condition { build: None, helper, guard },
-        running: RunState::Clear,
+        condition: Condition { build: build(), helper, guard },
+        running,
         entries,
+        backup: match helper {
+            // A prepared installation has been through preparation, and
+            // preparation takes a backup before it writes. A fixed instant, so
+            // the date in the picture is the same on every machine and in every
+            // year.
+            Helper::Present => Some(BACKUP_TAKEN.to_owned()),
+            Helper::Absent => None,
+        },
     }))
 }
 
@@ -342,6 +376,76 @@ fn the_entries_being_written_after_a_preparation() {
             None,
         ),
     );
+}
+
+/// The state a user reaches the morning after a Bitwig release: an installation
+/// is selected and nothing inside it could be located. Nothing can be listed and
+/// nothing can be applied, so the region is given over to saying so - and the
+/// copy must not read as the user's fault, because it is not.
+#[test]
+fn a_build_that_was_not_recognised() {
+    shot(
+        "unknown-build",
+        Session::Unreadable {
+            root: "/Applications/Bitwig Studio.app".to_owned(),
+            why: "no class in this archive registers devices/*.bwdevice".to_owned(),
+        },
+        View::Local,
+        true,
+    );
+}
+
+
+/// Bitwig is open and a preparation is pending, which is the one thing that
+/// stops the primary action. It blocks only this mode: in the cheap one the
+/// banner never appears at all.
+#[test]
+fn bitwig_is_running() {
+    let root = fixture("running");
+    shot(
+        "running",
+        running_found(
+            &root,
+            Helper::Absent,
+            GuardState::Armed,
+            entries(),
+            RunState::Running(vec!["BitwigStudio".to_owned(), "BitwigAudioEngine".to_owned()]),
+        ),
+        View::Local,
+        true,
+    );
+}
+
+/// A build whose guard site is not in a shape this version recognises.
+/// Preparation refuses before it looks at anything else, so the badge, the
+/// banner and the button all have to agree about that.
+#[test]
+fn a_guard_this_build_does_not_recognise() {
+    let root = fixture("unknown-guard");
+    shot(
+        "unknown-guard",
+        found(&root, Helper::Absent, GuardState::Unknown),
+        View::Local,
+        true,
+    );
+}
+
+/// The list narrowed to nothing. Minor, and it still has to offer a way out.
+#[test]
+fn the_filters_match_nothing() {
+    let root = fixture("no-match");
+    let session = found(&root, Helper::Present, GuardState::Disarmed);
+    let mut app: Option<App> = None;
+    let mut session = Some(session);
+    let mut harness = Harness::builder().with_size(SIZE).build(move |ctx| {
+        let app = app.get_or_insert_with(|| {
+            let mut app = App::with(ctx, session.take().expect("built once"));
+            app.set_query("wavesh");
+            app
+        });
+        app.draw(ctx);
+    });
+    look(&mut harness, "no-match");
 }
 
 /// The everyday state: pending work pinned above what is registered, with each

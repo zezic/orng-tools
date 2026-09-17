@@ -427,6 +427,21 @@ that one URL and then individual documents by path: plain HTTPS, no API, no toke
 account, no git client. Each row carries a hash and size, so a download is verified against
 a reviewed index rather than trusted for coming from the right domain.
 
+The index carries **two kinds of revision, which must not stand in for one another**: one
+for the whole file, naming the commit it was generated from, and one per item, naming the
+change that published that item. The per-item one is what the app shows before installing,
+because it is the review a user is being asked to trust; the file-wide one traces only the
+index. On merge both are read out of the checkout - `HEAD` for the file, and for each item
+`git log -1 --first-parent` over its directory. **`--first-parent` is what makes that the
+merging commit**: without it git answers with the contributor's own commit from inside the
+branch, which nobody reviewed and which is not on the published history at all. A squash
+merge gives the same answer either way.
+
+This is also why an index generated in a pull request cannot fill the per-item field: the
+commit that merges a contribution does not exist while it is still a pull request. The
+field is left empty rather than guessed at, and the lint's `index` command asks git only
+when told to, so the command stays a projection of the tree everywhere else.
+
 ### 7.6 What this adds to the app
 
 - A second top-level view for browsing, which the current single-view design does not have.

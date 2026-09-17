@@ -8,7 +8,9 @@
 
 use std::path::{Path, PathBuf};
 
-use orng_catalog::{CONTENT_DIR, Index, Item, Problem, Severity, scan, validate};
+use orng_catalog::{
+    CONTENT_DIR, History, Index, Item, Problem, Revision, Severity, scan, validate,
+};
 
 /// Documents to build a tree from, supplied via `ORNG_TEST_DOCUMENTS`.
 ///
@@ -106,13 +108,31 @@ fn a_well_formed_tree_validates_and_indexes() {
     let report = validate::check(&items);
     assert!(report.is_mergeable(), "{:?}", report.problems);
 
-    let index = Index::build(&items, Some("abc123".into()));
+    // History as continuous integration supplies it: the index's own commit, and
+    // the merging commit of one item but not the others.
+    let index_revision = Revision::new(&"a".repeat(40)).unwrap();
+    let merge_revision = Revision::new(&"b".repeat(40)).unwrap();
+    let mut history = History::at(index_revision.clone());
+    history.record(items[0].dir(), merge_revision.clone());
+
+    let index = Index::build(&items, &history);
     assert_eq!(index.items.len(), items.len());
+    assert_eq!(index.revision, Some(index_revision));
     for entry in &index.items {
         assert_eq!(entry.digest.len(), 64, "digest is not a sha-256");
         assert!(entry.size > 0);
         assert!(entry.path.starts_with(&format!("{CONTENT_DIR}/example/")));
         assert!(!entry.name.is_empty());
+    }
+
+    // The merging commit lands on the item it belongs to, and the rest stay
+    // empty rather than inheriting the index-wide revision.
+    let indexed = |item: &Item| {
+        index.items.iter().find(|e| e.uuid == item.identity.uuid).expect("item is indexed").clone()
+    };
+    assert_eq!(indexed(&items[0]).merged_in, Some(merge_revision));
+    for item in &items[1..] {
+        assert_eq!(indexed(item).merged_in, None);
     }
     // The index must survive the trip it actually makes: serialize, publish, parse.
     assert_eq!(Index::parse(&index.to_json()).unwrap(), index);
@@ -153,7 +173,7 @@ fn a_published_identity_may_not_change() {
     let sources = sources_or_skip!();
     let fixture = Fixture::new("identity-changed");
     let dir = fixture.add("example", "item", &sources[0], "1.0.0");
-    let published = Index::build(&fixture.items(), None);
+    let published = Index::build(&fixture.items(), &History::default());
 
     // Replace the document with a different one under the same slug.
     for entry in std::fs::read_dir(&dir).unwrap().flatten() {
@@ -178,7 +198,7 @@ fn changed_content_must_raise_the_version() {
     let sources = sources_or_skip!();
     let fixture = Fixture::new("content-changed");
     let dir = fixture.add("example", "item", &sources[0], "1.0.0");
-    let published = Index::build(&fixture.items(), None);
+    let published = Index::build(&fixture.items(), &History::default());
 
     // Re-identify the document in place: same slug, same version, new bytes.
     // This is the update that would reach back into existing projects.
@@ -213,7 +233,7 @@ fn a_version_may_not_go_backwards() {
     let sources = sources_or_skip!();
     let fixture = Fixture::new("version-backwards");
     let dir = fixture.add("example", "item", &sources[0], "2.0.0");
-    let published = Index::build(&fixture.items(), None);
+    let published = Index::build(&fixture.items(), &History::default());
 
     fixture.write_manifest(&dir, "example", "1.9.0");
     let report = validate::check_against(&fixture.items(), &published);

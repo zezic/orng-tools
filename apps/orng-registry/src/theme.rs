@@ -293,6 +293,8 @@ pub mod font {
     pub const MONO_TIGHT: f32 = 10.0;
     /// An empty state's headline.
     pub const HEADING: f32 = 16.5;
+    /// The headline of a dialog, which is a smaller surface than a screen.
+    pub const DIALOG_TITLE: f32 = 14.0;
     /// The headline of a minor empty state, which is a sentence and not a
     /// heading.
     pub const SUBHEADING: f32 = 13.0;

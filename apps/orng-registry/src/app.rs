@@ -20,7 +20,7 @@
 use std::collections::BTreeSet;
 use std::path::PathBuf;
 
-use eframe::egui::{self, Align, Layout, RichText, vec2};
+use eframe::egui::{self, Align, Layout, vec2};
 use orng_tools::{Kind, Registration, RunState, Step, Update};
 
 use crate::catalog::Fetching;
@@ -644,7 +644,7 @@ impl App {
         let revision = found.revision();
         if !revision.is_empty() {
             ui.label(
-                RichText::new(revision).font(font::mono(font::MONO_TIGHT)).color(palette.ink_2),
+                font::run(revision, font::mono(font::MONO_TIGHT)).color(palette.ink_2),
             )
             .on_hover_text(found.revision_in_full());
             ui.add_space(metric::GAP);
@@ -916,8 +916,7 @@ impl App {
                     widget::centred_block(ui, |ui| {
                         ui.add(
                             egui::Label::new(
-                                RichText::new(&summary)
-                                    .font(font::plain(font::CONTROL))
+                                font::run(&summary, font::plain(font::CONTROL))
                                     .color(tone.colour(palette)),
                             )
                             .truncate(),
@@ -925,8 +924,7 @@ impl App {
                         if !note.is_empty() {
                             ui.add(
                                 egui::Label::new(
-                                    RichText::new(&note)
-                                        .font(font::plain(font::NOTE))
+                                    font::run(&note, font::plain(font::NOTE))
                                         .color(palette.ink_3),
                                 )
                                 .truncate(),
@@ -1133,13 +1131,13 @@ fn over(path: &PathBuf) -> widget::Hovering {
 
 /// The installation's name, the loudest thing in the window.
 fn title(ui: &mut egui::Ui, text: &str, ink: egui::Color32) {
-    ui.label(RichText::new(text).font(font::emphasis(ui.ctx(), font::INSTALL_TITLE)).color(ink));
+    ui.label(font::run(text, font::emphasis(ui.ctx(), font::INSTALL_TITLE)).color(ink));
 }
 
 /// Where it is, truncated, and whole on hover.
 fn path(ui: &mut egui::Ui, palette: Palette, root: &str) {
     ui.add(
-        egui::Label::new(RichText::new(root).font(font::mono(font::MONO)).color(palette.ink_3))
+        egui::Label::new(font::run(root, font::mono(font::MONO)).color(palette.ink_3))
             .truncate(),
     )
     .on_hover_text(root);
@@ -1148,8 +1146,7 @@ fn path(ui: &mut egui::Ui, palette: Palette, root: &str) {
 /// What state the registry is in, coloured as the design colours it.
 fn badge(ui: &mut egui::Ui, palette: Palette, label: &str) {
     ui.label(
-        RichText::new(label)
-            .font(font::plain(font::CHIP))
+        font::run(label, font::plain(font::CHIP))
             .color(widget::badge_colour(palette, label)),
     );
 }
@@ -1242,8 +1239,7 @@ fn row(ui: &mut egui::Ui, palette: Palette, entry: &Registration) {
         widget::cell(ui, columns.name, Align::Min, |ui| {
             ui.add(
                 egui::Label::new(
-                    RichText::new(&entry.name)
-                        .font(font::emphasis(ui.ctx(), font::ROW_NAME))
+                    font::run(&entry.name, font::emphasis(ui.ctx(), font::ROW_NAME))
                         .color(palette.ink),
                 )
                 .truncate(),
@@ -1256,8 +1252,7 @@ fn row(ui: &mut egui::Ui, palette: Palette, entry: &Registration) {
         widget::cell(ui, columns.status, Align::Min, |ui| {
             let status = "Registered";
             ui.label(
-                RichText::new(status)
-                    .font(font::plain(font::CHIP))
+                font::run(status, font::plain(font::CHIP))
                     .color(widget::status_colour(palette, status)),
             );
         });
@@ -1272,7 +1267,7 @@ fn identity(ui: &mut egui::Ui, palette: Palette, entry: &Registration) {
     let response = ui
         .add(
             egui::Label::new(
-                RichText::new(short_uuid(entry)).font(font::mono(font::MONO)).color(palette.ink_3),
+                font::run(short_uuid(entry), font::mono(font::MONO)).color(palette.ink_3),
             )
             .sense(egui::Sense::click()),
         )
@@ -1291,14 +1286,13 @@ fn staged_row(ui: &mut egui::Ui, palette: Palette, staged: &Staged) {
             match staged.registration() {
                 Some(registration) => widget::kind_label(ui, palette, registration.kind),
                 None => {
-                    ui.label(RichText::new("-").font(font::plain(font::CHIP)).color(palette.ink_3));
+                    ui.label(font::run("-", font::plain(font::CHIP)).color(palette.ink_3));
                 }
             }
         });
         widget::cell(ui, columns.name, Align::Min, |ui| {
             ui.label(
-                RichText::new(&staged.label)
-                    .font(font::emphasis(ui.ctx(), font::ROW_NAME))
+                font::run(&staged.label, font::emphasis(ui.ctx(), font::ROW_NAME))
                     .color(if staged.is_ready() { palette.ink } else { palette.ink_2 }),
             );
             // The reason sits beside the name, in the colour of the status it
@@ -1308,8 +1302,7 @@ fn staged_row(ui: &mut egui::Ui, palette: Palette, staged: &Staged) {
                 ui.add_space(BESIDE_THE_NAME);
                 ui.add(
                     egui::Label::new(
-                        RichText::new(why)
-                            .font(font::plain(font::NOTE))
+                        font::run(why, font::plain(font::NOTE))
                             .color(widget::status_colour(palette, staged.status())),
                     )
                     .truncate(),
@@ -1319,13 +1312,12 @@ fn staged_row(ui: &mut egui::Ui, palette: Palette, staged: &Staged) {
         widget::cell(ui, columns.uuid, Align::Min, |ui| match staged.registration() {
             Some(registration) => identity(ui, palette, registration),
             None => {
-                ui.label(RichText::new("-").font(font::mono(font::MONO)).color(palette.ink_3));
+                ui.label(font::run("-", font::mono(font::MONO)).color(palette.ink_3));
             }
         });
         widget::cell(ui, columns.status, Align::Min, |ui| {
             ui.label(
-                RichText::new(staged.status())
-                    .font(font::plain(font::CHIP))
+                font::run(staged.status(), font::plain(font::CHIP))
                     .color(widget::status_colour(palette, staged.status())),
             );
         });
@@ -1409,15 +1401,13 @@ fn published(ui: &mut egui::Ui, palette: Palette, catalog: &Fetching) {
                         // left of one line.
                         widget::stacked_cell(ui, columns.name, |ui| {
                             ui.label(
-                                RichText::new(&entry.name)
-                                    .font(font::emphasis(ui.ctx(), font::ROW_NAME))
+                                font::run(&entry.name, font::emphasis(ui.ctx(), font::ROW_NAME))
                                     .color(palette.ink),
                             );
                             ui.add_space(UNDER_THE_NAME);
                             ui.add(
                                 egui::Label::new(
-                                    RichText::new(&entry.description)
-                                        .font(font::plain(font::NOTE))
+                                    font::run(&entry.description, font::plain(font::NOTE))
                                         .color(palette.ink_3),
                                 )
                                 .truncate(),
@@ -1429,8 +1419,7 @@ fn published(ui: &mut egui::Ui, palette: Palette, catalog: &Fetching) {
                         widget::cell(ui, columns.author, Align::Min, |ui| {
                             ui.add(
                                 egui::Label::new(
-                                    RichText::new(entry.author.to_string())
-                                        .font(font::plain(font::CHIP))
+                                    font::run(entry.author.to_string(), font::plain(font::CHIP))
                                         .color(palette.ink_2),
                                 )
                                 .truncate(),
@@ -1438,8 +1427,7 @@ fn published(ui: &mut egui::Ui, palette: Palette, catalog: &Fetching) {
                         });
                         widget::cell(ui, columns.version, Align::Min, |ui| {
                             ui.label(
-                                RichText::new(entry.version.to_string())
-                                    .font(font::mono(font::MONO))
+                                font::run(entry.version.to_string(), font::mono(font::MONO))
                                     .color(palette.ink_3),
                             );
                         });

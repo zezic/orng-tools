@@ -18,7 +18,7 @@
 //! a global, so a preview or a test can draw the same widget in either theme.
 
 use eframe::egui::{
-    self, Align, Color32, CornerRadius, Frame, Layout, Margin, Rect, Response, RichText, Sense,
+    self, Align, Color32, CornerRadius, Frame, Layout, Margin, Rect, Response, Sense,
     Stroke, Ui, vec2,
 };
 use orng_tools::Kind;
@@ -48,12 +48,14 @@ pub fn page(palette: Palette) -> Frame {
 /// design does. Not an underline and not a radio button: this is a switch
 /// between two activities, and it has to read as one of them being held.
 pub fn view_tab(ui: &mut Ui, palette: Palette, label: &str, current: bool) -> Response {
-    let text = RichText::new(label)
-        .font(if current {
+    let text = font::run(
+        label,
+        if current {
             font::emphasis(ui.ctx(), font::CONTROL)
         } else {
             font::plain(font::CONTROL)
-        })
+        },
+    )
         .color(if current { palette.ink } else { palette.ink_3 });
 
     ui.add(
@@ -77,16 +79,12 @@ pub fn filter_chip(ui: &mut Ui, palette: Palette, label: &str, count: usize, on:
     text.append(
         label,
         0.0,
-        egui::TextFormat { font_id: font::plain(font::CHIP), color: ink, ..Default::default() },
+        egui::TextFormat { color: ink, ..font::format(font::plain(font::CHIP)) },
     );
     text.append(
         &count.to_string(),
         metric::TIGHT,
-        egui::TextFormat {
-            font_id: font::mono(font::MONO_TIGHT),
-            color: palette.ink_3,
-            ..Default::default()
-        },
+        egui::TextFormat { color: palette.ink_3, ..font::format(font::mono(font::MONO_TIGHT)) },
     );
 
     ui.add(
@@ -130,10 +128,9 @@ fn labelled_icon(
         icon,
         0.0,
         egui::TextFormat {
-            font_id: font::icon(ui.ctx(), font::ICON),
             color: icon_ink,
             valign: Align::Center,
-            ..Default::default()
+            ..font::format(font::icon(ui.ctx(), font::ICON))
         },
     );
     if !label.is_empty() {
@@ -141,10 +138,9 @@ fn labelled_icon(
             label,
             gap,
             egui::TextFormat {
-                font_id: font::plain(size),
                 color: ink,
                 valign: Align::Center,
-                ..Default::default()
+                ..font::format(font::plain(size))
             },
         );
     }
@@ -201,7 +197,7 @@ fn empty_button(
     size: f32,
     pad: f32,
 ) -> Response {
-    let button = egui::Button::new(RichText::new(label).font(font::plain(size)).color(palette.ink_2))
+    let button = egui::Button::new(font::run(label, font::plain(size)).color(palette.ink_2))
         .stroke(Stroke::NONE)
         .corner_radius(CornerRadius::same(metric::RADIUS))
         .min_size(vec2(0.0, metric::EMPTY_CONTROL));
@@ -314,8 +310,7 @@ pub fn search_field(ui: &mut Ui, palette: Palette, query: &mut String, hint: &st
             ui.set_height(metric::CONTROL);
             ui.horizontal_centered(|ui| {
                 ui.label(
-                    RichText::new(icon::SEARCH)
-                        .font(font::icon(ui.ctx(), font::ICON))
+                    font::run(icon::SEARCH, font::icon(ui.ctx(), font::ICON))
                         .color(palette.ink_3),
                 );
                 // Stated, not inherited: a bar zeroes egui's own item spacing so
@@ -351,18 +346,16 @@ pub fn check(ui: &mut Ui, palette: Palette, label: &str, on: bool) -> Response {
         mark,
         0.0,
         egui::TextFormat {
-            font_id: font::mono(font::MONO),
             color: if on { palette.accent } else { palette.ink_3 },
-            ..Default::default()
+            ..font::format(font::mono(font::MONO))
         },
     );
     text.append(
         label,
         metric::TIGHT,
         egui::TextFormat {
-            font_id: font::plain(font::CHIP),
             color: if on { palette.ink_2 } else { palette.ink_3 },
-            ..Default::default()
+            ..font::format(font::plain(font::CHIP))
         },
     );
     ui.add(
@@ -397,10 +390,9 @@ pub fn primary_button(
         label,
         0.0,
         egui::TextFormat {
-            font_id: font::emphasis(ui.ctx(), font::ACTION),
             color: ink,
             valign: Align::Center,
-            ..Default::default()
+            ..font::format(font::emphasis(ui.ctx(), font::ACTION))
         },
     );
     if !icon.is_empty() {
@@ -408,10 +400,9 @@ pub fn primary_button(
             icon,
             metric::TOOL_GAP,
             egui::TextFormat {
-                font_id: font::icon(ui.ctx(), font::ICON),
                 color: ink,
                 valign: Align::Center,
-                ..Default::default()
+                ..font::format(font::icon(ui.ctx(), font::ICON))
             },
         );
     }
@@ -444,7 +435,7 @@ pub fn primary_button(
 /// primary click, which is the press the design draws.
 pub fn overflow(ui: &mut Ui, palette: Palette, menu: impl FnOnce(&mut Ui)) {
     let button = egui::Button::new(
-        RichText::new(icon::OVERFLOW).font(font::icon(ui.ctx(), font::ICON)).color(palette.ink_2),
+        font::run(icon::OVERFLOW, font::icon(ui.ctx(), font::ICON)).color(palette.ink_2),
     )
     .stroke(Stroke::NONE)
     .corner_radius(CornerRadius::same(metric::RADIUS))
@@ -592,11 +583,10 @@ pub fn section(ui: &mut Ui, palette: Palette, title: &str, tone: Color32, count:
             .max_rect(rect.shrink2(vec2(metric::PAD, 0.0)))
             .layout(Layout::left_to_right(Align::Center)),
     );
-    line.label(RichText::new(title).font(font::emphasis(ui.ctx(), font::CHIP)).color(tone));
+    line.label(font::run(title, font::emphasis(ui.ctx(), font::CHIP)).color(tone));
     line.with_layout(Layout::right_to_left(Align::Center), |ui| {
         ui.label(
-            RichText::new(count.to_string())
-                .font(font::mono(font::MONO_TIGHT))
+            font::run(count.to_string(), font::mono(font::MONO_TIGHT))
                 .color(palette.ink_3),
         );
     });
@@ -776,7 +766,7 @@ pub fn kind_label(ui: &mut Ui, palette: Palette, kind: Kind) {
         Kind::Modulator => "Modulator",
         Kind::Module => "Grid module",
     };
-    ui.label(RichText::new(label).font(font::plain(font::CHIP)).color(palette.ink_3));
+    ui.label(font::run(label, font::plain(font::CHIP)).color(palette.ink_3));
 }
 
 /// How loud a row's status is, as the design's own map from status to token.
@@ -885,13 +875,11 @@ pub fn banner(ui: &mut Ui, palette: Palette, banner: &Banner<'_>) -> Answered {
                 ui.vertical(|ui| {
                     ui.spacing_mut().item_spacing.y = BETWEEN_THE_LINES;
                     ui.label(
-                        RichText::new(banner.title)
-                            .font(font::emphasis(ui.ctx(), font::CONTROL))
+                        font::run(banner.title, font::emphasis(ui.ctx(), font::CONTROL))
                             .color(banner.tone.colour(palette)),
                     );
                     ui.label(
-                        RichText::new(banner.body)
-                            .font(font::plain(font::NOTE))
+                        font::run(banner.body, font::plain(font::NOTE))
                             .color(banner.tone.supporting(palette)),
                     );
                 });
@@ -939,7 +927,7 @@ const BETWEEN_THE_LINES: f32 = 4.0;
 /// Put a banner away. A square control at its right end, as the design has it.
 fn dismiss(ui: &mut Ui, palette: Palette) -> Response {
     let button = egui::Button::new(
-        RichText::new(icon::DISMISS).font(font::icon(ui.ctx(), font::ICON)).color(palette.ink_3),
+        font::run(icon::DISMISS, font::icon(ui.ctx(), font::ICON)).color(palette.ink_3),
     )
     .stroke(Stroke::NONE)
     .corner_radius(CornerRadius::same(metric::RADIUS))
@@ -956,7 +944,7 @@ fn dismiss(ui: &mut Ui, palette: Palette) -> Response {
 /// the wash it sits on rather than over a fill of its own.
 fn outlined_button(ui: &mut Ui, colour: Color32, label: &str) -> Response {
     let button = egui::Button::new(
-        RichText::new(label).font(font::emphasis(ui.ctx(), font::CONTROL)).color(colour),
+        font::run(label, font::emphasis(ui.ctx(), font::CONTROL)).color(colour),
     )
     .fill(Color32::TRANSPARENT)
     .stroke(Stroke::new(metric::HAIRLINE, colour))
@@ -1063,11 +1051,10 @@ fn block(ui: &mut Ui, palette: Palette, empty: &Empty<'_>) -> Pressed {
         // Stated gap by gap below, so egui's own spacing does not land between
         // the lines on top of the design's.
         ui.spacing_mut().item_spacing.y = 0.0;
-        ui.label(RichText::new(empty.icon).font(font::icon(ui.ctx(), icon_size)).color(icon_ink));
+        ui.label(font::run(empty.icon, font::icon(ui.ctx(), icon_size)).color(icon_ink));
         ui.add_space(stack::AFTER_ICON);
         ui.label(
-            RichText::new(empty.title)
-                .font(font::emphasis(ui.ctx(), title_size))
+            font::run(empty.title, font::emphasis(ui.ctx(), title_size))
                 .color(palette.ink),
         );
         ui.add_space(stack::AFTER_TITLE);
@@ -1077,7 +1064,7 @@ fn block(ui: &mut Ui, palette: Palette, empty: &Empty<'_>) -> Pressed {
             |ui| {
                 ui.spacing_mut().item_spacing.y = 0.0;
                 ui.label(
-                    RichText::new(empty.body).font(font::plain(font::CONTROL)).color(palette.ink_2),
+                    font::run(empty.body, font::plain(font::CONTROL)).color(palette.ink_2),
                 );
                 if empty.extensions {
                     ui.add_space(stack::AFTER_BODY);
@@ -1090,8 +1077,7 @@ fn block(ui: &mut Ui, palette: Palette, empty: &Empty<'_>) -> Pressed {
                         Layout::top_down(Align::Center),
                         |ui| {
                             ui.label(
-                                RichText::new(aside)
-                                    .font(font::plain(font::CHIP))
+                                font::run(aside, font::plain(font::CHIP))
                                     .color(palette.ink_3),
                             );
                         },
@@ -1141,7 +1127,7 @@ fn block(ui: &mut Ui, palette: Palette, empty: &Empty<'_>) -> Pressed {
                 Layout::top_down(Align::Center),
                 |ui| {
                     ui.label(
-                        RichText::new(foot).font(font::plain(font::NOTE)).color(palette.ink_3),
+                        font::run(foot, font::plain(font::NOTE)).color(palette.ink_3),
                     );
                 },
             );
@@ -1155,11 +1141,7 @@ fn block(ui: &mut Ui, palette: Palette, empty: &Empty<'_>) -> Pressed {
 /// line of three words.
 fn extensions(ui: &mut Ui, palette: Palette) {
     let mut line = egui::text::LayoutJob::default();
-    let mono = || egui::TextFormat {
-        font_id: font::mono(font::MONO),
-        color: palette.ink_3,
-        ..Default::default()
-    };
+    let mono = || egui::TextFormat { color: palette.ink_3, ..font::format(font::mono(font::MONO)) };
     // The one list, from the module that decides what a drop takes. A second
     // copy of it here is a second thing to remember when a fourth extension
     // arrives.
@@ -1281,13 +1263,12 @@ pub fn progress_dialog(ui: &mut Ui, palette: Palette, progress: &Progress<'_>) {
             .show(ui, |ui| {
                 ui.set_width(ui.available_width());
                 ui.label(
-                    RichText::new(progress.title)
-                        .font(font::emphasis(ui.ctx(), font::DIALOG_TITLE))
+                    font::run(progress.title, font::emphasis(ui.ctx(), font::DIALOG_TITLE))
                         .color(palette.ink),
                 );
                 ui.add_space(UNDER_A_TITLE);
                 ui.label(
-                    RichText::new(progress.step).font(font::plain(font::NOTE)).color(palette.ink_3),
+                    font::run(progress.step, font::plain(font::NOTE)).color(palette.ink_3),
                 );
             });
 
@@ -1315,7 +1296,7 @@ pub fn progress_dialog(ui: &mut Ui, palette: Palette, progress: &Progress<'_>) {
             .show(ui, |ui| {
                 ui.set_width(ui.available_width());
                 ui.label(
-                    RichText::new(progress.note).font(font::plain(font::NOTE)).color(palette.ink_3),
+                    font::run(progress.note, font::plain(font::NOTE)).color(palette.ink_3),
                 );
             });
 
@@ -1330,8 +1311,7 @@ pub fn progress_dialog(ui: &mut Ui, palette: Palette, progress: &Progress<'_>) {
                     let percent = format!("{}%", (progress.through * 100.0).round());
                     ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                         ui.label(
-                            RichText::new(percent)
-                                .font(font::mono(font::MONO_TIGHT))
+                            font::run(percent, font::mono(font::MONO_TIGHT))
                                 .color(palette.ink_3),
                         );
                         ui.add_space(ALONG_A_STEP);
@@ -1398,7 +1378,7 @@ fn step_row(ui: &mut Ui, palette: Palette, at: usize, step: &StepLine<'_>) {
         egui::UiBuilder::new().max_rect(rect).layout(Layout::left_to_right(Align::Center)),
     );
     line.spacing_mut().item_spacing.x = 0.0;
-    line.label(RichText::new(number).font(font::mono(font::MONO_TIGHT)).color(number_ink));
+    line.label(font::run(number, font::mono(font::MONO_TIGHT)).color(number_ink));
     line.add_space(ALONG_A_STEP);
 
     // The mark is a shape and not a character, so a step that has not been
@@ -1409,16 +1389,18 @@ fn step_row(ui: &mut Ui, palette: Palette, at: usize, step: &StepLine<'_>) {
     }
     line.add_space(ALONG_A_STEP);
 
-    let label = RichText::new(step.label)
-        .font(if emphasis {
+    let label = font::run(
+        step.label,
+        if emphasis {
             font::emphasis(line.ctx(), font::CONTROL)
         } else {
             font::plain(font::CONTROL)
-        })
+        },
+    )
         .color(label_ink);
     line.with_layout(Layout::right_to_left(Align::Center), |ui| {
         if !meta.is_empty() {
-            ui.label(RichText::new(meta).font(font::mono(font::MONO_TIGHT)).color(palette.ink_3));
+            ui.label(font::run(meta, font::mono(font::MONO_TIGHT)).color(palette.ink_3));
         }
         ui.with_layout(Layout::left_to_right(Align::Center), |ui| {
             ui.add(egui::Label::new(label).truncate());
@@ -1503,14 +1485,12 @@ pub fn drop_target(ui: &mut Ui, palette: Palette, heading: &str, files: &[Hoveri
         ui.vertical_centered(|ui| {
             ui.spacing_mut().item_spacing.y = 0.0;
             ui.label(
-                RichText::new(icon::DROP)
-                    .font(font::icon(ui.ctx(), font::ICON_LARGE))
+                font::run(icon::DROP, font::icon(ui.ctx(), font::ICON_LARGE))
                     .color(palette.accent),
             );
             ui.add_space(BETWEEN_OVERLAY_PARTS);
             ui.label(
-                RichText::new(heading)
-                    .font(font::emphasis(ui.ctx(), font::HEADING))
+                font::run(heading, font::emphasis(ui.ctx(), font::HEADING))
                     .color(palette.ink),
             );
             // What is being dropped, by name. A count alone cannot be checked
@@ -1549,19 +1529,18 @@ fn listing(ui: &mut Ui, palette: Palette, files: &[Hovering]) {
         );
         line.spacing_mut().item_spacing.x = 0.0;
         line.label(
-            RichText::new(number)
-                .font(font::mono(font::MONO_TIGHT))
+            font::run(number, font::mono(font::MONO_TIGHT))
                 .color(if file.accepted { palette.accent_text } else { palette.ink_3 }),
         );
         line.add_space(BESIDE_A_NUMBER);
-        let mut name = RichText::new(&file.name).font(font::mono(font::MONO)).color(ink);
+        let mut name = font::run(&file.name, font::mono(font::MONO)).color(ink);
         if !file.accepted {
             name = name.strikethrough();
         }
         line.with_layout(Layout::right_to_left(Align::Center), |ui| {
             if !file.note.is_empty() {
                 ui.label(
-                    RichText::new(&file.note).font(font::plain(font::NOTE)).color(palette.ink_3),
+                    font::run(&file.note, font::plain(font::NOTE)).color(palette.ink_3),
                 );
             }
             ui.with_layout(Layout::left_to_right(Align::Center), |ui| {

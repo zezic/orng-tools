@@ -1664,7 +1664,7 @@ pub fn detail(ui: &mut Ui, palette: Palette, item: &Detailed<'_>) -> Detailing {
         ui.add_space(metric::UNDER_A_FIELD_LABEL);
         footnote(ui, palette, "Editable in Local once installed.");
 
-        rule(ui, palette, metric::BETWEEN_GROUPS);
+        rule(ui, palette, metric::BETWEEN_DETAIL_GROUPS);
 
         if let Some((label, _)) = item.provenance {
             let reviewed = format!("Reviewed in {label}");
@@ -2721,6 +2721,28 @@ mod tests {
         // An action is sized by its icon as well, by five - the rule a menu
         // item is laid out by, and the same icon.
         assert_eq!(metric::PANEL_ACTION - font::ICON, 2.0 * 5.0);
+    }
+
+    /// The two panels are one shape apart from the air between their groups.
+    ///
+    /// Both bundles state 272 wide, a 40-tall header and a `13px 12px` body, and
+    /// then disagree: `Inspector.dc.html`'s body column is `gap:14px` and
+    /// `CatalogDetail.dc.html`'s is `gap:13px`. The hairline between two groups
+    /// is a child of that column, so the air around it is that gap - which is
+    /// why `rule` takes it rather than stating one.
+    ///
+    /// This pins the pair against the bundles. That the rule actually *uses*
+    /// the caller's is what `catalog-detail.png` holds: hardcoding either one
+    /// moves everything below the rule in the other panel by two.
+    #[test]
+    fn the_two_panels_space_their_groups_as_their_own_bundles_do() {
+        assert_eq!(metric::BETWEEN_GROUPS, 14.0, "the inspector's");
+        assert_eq!(metric::BETWEEN_DETAIL_GROUPS, 13.0, "the catalog detail's");
+        assert_ne!(
+            metric::BETWEEN_GROUPS,
+            metric::BETWEEN_DETAIL_GROUPS,
+            "two numbers a pixel apart are the kind a reader rounds to one"
+        );
     }
 
     /// The overflow menu, against the bundle with the menu forced open and

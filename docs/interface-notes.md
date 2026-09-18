@@ -169,3 +169,18 @@ picture then differs by a day west of Denver.
 
 **Render fixtures use paths relative to the package directory.** An absolute one puts
 the machine's home directory into the image and every runner disagrees.
+
+**And they are written out rather than joined.** `Path::display` prints back the
+separators it was given; `Path::join` contributes the platform's own. A fixture built
+with `join` reads `target/render-fixtures\unprepared\Bitwig Studio.app` on Windows,
+which is two glyphs no other machine draws, in the one string the install bar puts on
+screen. Seventeen of the nineteen snapshots failed there and only there; the two that
+passed are the two that draw their path from a literal.
+
+**The picture is a function of the code, and that has been measured rather than
+assumed.** egui rasterises text itself into its own atlas, so the renderer underneath
+changes nothing. The proof: substituting the two separators `join` would have added
+reproduced Windows's own pixel counts on macOS *exactly*, snapshot for snapshot - 30,
+33, 22, 15, 28, 24 and the rest. Nothing else in nineteen images differed between
+Metal and DirectX. So a snapshot that disagrees across platforms is reporting a real
+difference in what was drawn, and is worth reading rather than re-recording.

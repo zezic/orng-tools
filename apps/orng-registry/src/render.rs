@@ -39,8 +39,16 @@ const SIZE: egui::Vec2 = egui::vec2(metric::WINDOW[0], metric::WINDOW[1]);
 /// Cargo runs a test binary with the package directory as its working
 /// directory - the same thing `tests/snapshots` is already resolved against - so
 /// a relative path is a real location and a constant string at the same time.
+///
+/// **Written out rather than joined, and that is the rest of the point.**
+/// `Path::display` prints back the separators it was given and `join` adds the
+/// platform's own, so a joined fixture reads
+/// `target/render-fixtures\unprepared\Bitwig Studio.app` on Windows - two glyphs
+/// no other machine draws, in the one string the window puts on screen. Windows
+/// takes a forward slash everywhere its API is concerned, so only the drawn text
+/// changes, and the drawn text is what is being compared. Asserted below.
 fn fixture(name: &str) -> std::path::PathBuf {
-    let root = std::path::Path::new("target/render-fixtures").join(name);
+    let root = std::path::PathBuf::from(format!("target/render-fixtures/{name}"));
     let _ = std::fs::remove_dir_all(&root);
     root
 }
@@ -49,7 +57,22 @@ fn fixture(name: &str) -> std::path::PathBuf {
 /// path is drawn, and a fixture that does not look like one teaches the reader
 /// to expect something else.
 fn install_root(fixture: &std::path::Path) -> std::path::PathBuf {
-    fixture.join("Bitwig Studio.app")
+    std::path::PathBuf::from(format!("{}/Bitwig Studio.app", fixture.display()))
+}
+
+/// The path the install bar draws, spelled the same on every platform.
+///
+/// This is the only assertion here that cannot fail on the machine it was
+/// written on, and it is kept for the machine it can: `join` put a backslash in
+/// this string on Windows and every snapshot that draws a fixture - seventeen of
+/// nineteen - failed there and nowhere else, by the twenty to thirty pixels two
+/// glyphs cost. The two that passed are the two that draw a path from a literal.
+#[test]
+fn the_drawn_installation_path_is_not_a_function_of_the_platform() {
+    assert_eq!(
+        install_root(&fixture("separators")).display().to_string(),
+        "target/render-fixtures/separators/Bitwig Studio.app"
+    );
 }
 
 fn entries() -> Manifest {

@@ -320,6 +320,10 @@ pub mod metric {
     pub const VERSION_COLUMN: f32 = 56.0;
     pub const CATALOG_STATUS_COLUMN: f32 = 142.0;
     pub const CATALOG_ACTIONS_COLUMN: f32 = 92.0;
+    /// The same two beside the detail panel, where the author and the version
+    /// have gone the way the identity goes on a registered row.
+    pub const NARROW_CATALOG_STATUS_COLUMN: f32 = 108.0;
+    pub const NARROW_CATALOG_ACTIONS_COLUMN: f32 = 122.0;
     /// A catalog row carries a description under the name, so it is taller than
     /// a registered one.
     pub const CATALOG_ROW: f32 = 48.0;
@@ -375,6 +379,20 @@ pub mod metric {
     pub const BETWEEN_PANEL_ACTIONS: f32 = 4.0;
     /// From a panel action's icon to its label.
     pub const ALONG_A_PANEL_ACTION: f32 = 7.0;
+    /// The catalog's detail panel, which is the inspector's opposite number and
+    /// is measured a shade tighter: its groups are 13 apart where the
+    /// inspector's are 14, and the row of an icon and its line is 8 where the
+    /// inspector's source row is 7. Read off the shell probed with it open.
+    pub const BETWEEN_DETAIL_GROUPS: f32 = 13.0;
+    pub const ALONG_A_DETAIL_LINE: f32 = 8.0;
+    /// The panel that says a newer device has replaced this one: a wash, and a
+    /// control to go and look at it.
+    pub const NOTICE_PAD_X: f32 = 11.0;
+    pub const NOTICE_PAD_Y: f32 = 10.0;
+    pub const IN_A_NOTICE: f32 = 6.0;
+    /// A control inside one, which is shorter than a bar's.
+    pub const NOTICE_CONTROL: f32 = 26.0;
+    pub const NOTICE_CONTROL_PAD: f32 = 10.0;
     /// The inspector's shadow, `-18px 0 40px` in the design: cast to the left,
     /// because the panel is over the list rather than beside it.
     pub const PANEL_SHADOW_REACH: i8 = -18;

@@ -20,12 +20,26 @@ use std::time::Duration;
 
 use orng_catalog::{Index, PublicKey, Signature};
 
+/// The catalog itself, which is a repository: this is where the review of an
+/// item happened and where a link to the change that published it goes.
+const REPOSITORY: &str = "https://github.com/zezic/orng-catalog";
+
 /// Where the catalog publishes. A release per merge, so this URL always serves
 /// an index tied to one reviewed commit.
 const INDEX_URL: &str =
     "https://github.com/zezic/orng-catalog/releases/latest/download/index.json";
 const SIGNATURE_URL: &str =
     "https://github.com/zezic/orng-catalog/releases/latest/download/index.json.sig";
+
+/// Where a published change can be read, which is what the detail panel's
+/// `Reviewed in` leads to.
+///
+/// Built here rather than at the point of drawing, because the repository this
+/// application trusts is this module's business: an index that arrived over the
+/// network must not be able to say where its own review happened.
+pub fn commit(revision: &orng_catalog::Revision) -> String {
+    format!("{REPOSITORY}/commit/{revision}")
+}
 
 /// The key ORNG Catalog signs with.
 ///
@@ -171,5 +185,9 @@ mod tests {
         assert_eq!(index, signature);
         assert!(INDEX_URL.starts_with("https://"), "the index is fetched over plain HTTP");
         assert!(SIGNATURE_URL.starts_with("https://"));
+        // And from the repository the links in the detail panel lead into. A
+        // link to a commit in some other repository is a link to a review that
+        // did not happen.
+        assert!(INDEX_URL.starts_with(REPOSITORY), "{INDEX_URL} is not published by {REPOSITORY}");
     }
 }

@@ -75,6 +75,27 @@ impl Update {
         self.place.push((registration, document));
     }
 
+    /// Change what the list says about an identity that is already in it,
+    /// without touching the document.
+    ///
+    /// What [`Update::add`] is for content, this is for words: the description
+    /// and the search keywords live in the bundles rather than in the document,
+    /// so editing them places nothing and rewrites the three bundles from the
+    /// list, exactly as every other change to it does.
+    ///
+    /// **Refuses an identity the list does not carry.** Inserting one here
+    /// would register an entry with no document behind it, which is the
+    /// `Missing file` state arrived at by accident; adding content is
+    /// [`Update::add`]'s job and it takes the document that proves the entry.
+    pub fn revise(&mut self, registration: Registration) {
+        assert!(
+            self.entries.entries().iter().any(|entry| entry.uuid == registration.uuid),
+            "{} is not registered, so there is nothing to revise",
+            registration.name
+        );
+        self.entries.insert(registration);
+    }
+
     /// Take an identity out of the list.
     ///
     /// The document file is left where it is. Whether it goes too is a choice
@@ -220,6 +241,52 @@ mod tests {
         // The entry goes; the file it named stays. Deleting it is a choice made
         // on the removal, and the default is to keep it.
         assert!(machine.placed(Kind::Device, "DROPPED.bwdevice").is_file());
+    }
+
+    /// Editing the words is a change to the bundles and to the list, and to
+    /// nothing else: the document is not rewritten and not placed again.
+    ///
+    /// Worth its own test because the bundle is keyed by the entry's *name*,
+    /// so a revision that quietly re-derived the registration from the document
+    /// would put the new words under the old key and Bitwig would go on reading
+    /// the ones that were replaced.
+    #[test]
+    fn revising_an_entry_rewrites_its_words_and_leaves_its_document_alone() {
+        let machine = machine();
+        let (registration, document) = staged(Kind::Device, "DISPERSER");
+
+        let mut update = Update::to(Manifest::default());
+        update.add(registration.clone(), document.clone());
+        let entries = update.apply(&machine.to).unwrap();
+        let placed = machine.placed(Kind::Device, "DISPERSER.bwdevice");
+        let written = std::fs::metadata(&placed).unwrap().len();
+
+        let edited = Registration {
+            description: "Allpass diffusion network".to_owned(),
+            keywords: vec!["smear".to_owned(), "allpass".to_owned()],
+            ..registration.clone()
+        };
+        let mut update = Update::to(entries);
+        update.revise(edited);
+        let entries = update.apply(&machine.to).unwrap();
+
+        let bundle = machine.bundle(Kind::Device);
+        assert!(bundle.contains("device.disperser.desc=Allpass diffusion network"), "{bundle}");
+        assert!(bundle.contains("device.disperser.keywords=smear allpass"), "{bundle}");
+        assert_eq!(entries.entries().len(), 1, "a revision added a second row");
+        assert_eq!(std::fs::metadata(&placed).unwrap().len(), written, "the document was rewritten");
+        assert_eq!(std::fs::read(&placed).unwrap(), document.bytes());
+    }
+
+    /// Revising is for an identity the list already carries. Letting it insert
+    /// one would register an entry with no document behind it, which is the
+    /// `Missing file` state reached by accident rather than by anything going
+    /// wrong.
+    #[test]
+    #[should_panic(expected = "is not registered")]
+    fn revising_something_that_is_not_registered_is_refused() {
+        let (registration, _) = staged(Kind::Device, "NEVER ADDED");
+        Update::to(Manifest::default()).revise(registration);
     }
 
     /// The order exists so that a failure leaves a state the user can act on.

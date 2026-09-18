@@ -666,15 +666,32 @@ fn the_overflow_menu() {
 /// the placement is read off the disk rather than assumed.
 #[test]
 fn the_inspector() {
-    let root = fixture("inspector");
+    shot_inspector("inspector", true);
+}
+
+/// The same panel in light, which is where its shadow can actually be seen.
+///
+/// The panel is the first thing to draw on `panel_2`, in a field fill, on the
+/// accent with ink over it, and on a tone wash - four of the palette's slots
+/// that nothing else in the window uses - and its shadow is the one colour here
+/// derived from the design rather than stated by it. A dark picture proves none
+/// of that.
+#[test]
+fn the_inspector_in_light() {
+    shot_inspector("inspector-light", false);
+}
+
+fn shot_inspector(name: &str, dark: bool) {
+    let root = fixture(name);
     let session = found(&root, Helper::Present, GuardState::Disarmed);
     let mut session = Some(session);
     let mut harness = Harness::builder().with_size(SIZE).build_eframe(move |cc| {
         let mut app = App::with(&cc.egui_ctx, session.take().expect("built once"));
+        app.set_theme(dark, &cc.egui_ctx);
         app.set_inspecting(VOLSHAPER.parse().expect("a sample identity"));
         app
     });
-    look(&mut harness, "inspector");
+    look(&mut harness, name);
 }
 
 /// The catalog entry in [`entries`], by identity.
@@ -732,6 +749,56 @@ fn a_row_opens_the_inspector_and_the_panel_closes_itself() {
         harness.query_by_label(shortened).is_some(),
         "the inspector's own control did not close it"
     );
+}
+
+/// A word typed into the keyword field becomes a keyword.
+///
+/// The one interaction in the panel that is not a press, and the reason the
+/// panel exists at all: what a registered device's description and keywords say
+/// is what makes it findable in Bitwig's browser. Asserted through the panel
+/// rather than against the buffer behind it, because "Enter commits the word"
+/// is a statement about the field and not about a `Vec`.
+#[test]
+fn a_word_typed_into_the_inspector_becomes_a_keyword() {
+    use egui::accesskit::Role;
+
+    let root = fixture("keywords");
+    let session = found(&root, Helper::Present, GuardState::Disarmed);
+    let mut session = Some(session);
+    let mut harness = Harness::builder().with_size(SIZE).build_eframe(move |cc| {
+        let mut app = App::with(&cc.egui_ctx, session.take().expect("built once"));
+        app.set_inspecting(VOLSHAPER.parse().expect("a sample identity"));
+        app
+    });
+    harness.run();
+
+    // The lower of the panel's two fields. The description is above it, and
+    // both are inside the panel rather than out on the toolbar.
+    let panel = metric::WINDOW[0] - metric::INSPECTOR;
+    let adding = harness
+        .get_all_by_role(Role::TextInput)
+        .filter(|node| node.rect().left() > panel)
+        .max_by(|a, b| a.rect().top().total_cmp(&b.rect().top()))
+        .expect("the panel has nowhere to add a keyword");
+    adding.focus();
+    adding.type_text("reverb");
+    harness.run();
+    harness.key_press(egui::Key::Enter);
+    harness.run();
+
+    assert!(
+        harness.query_by_label("reverb").is_some(),
+        "the word was typed and pressing Enter did not make it a keyword"
+    );
+    // And it is still the field the next one goes into: Enter means "and
+    // another", not "and that is the last".
+    let panel = metric::WINDOW[0] - metric::INSPECTOR;
+    let still = harness
+        .get_all_by_role(Role::TextInput)
+        .filter(|node| node.rect().left() > panel)
+        .max_by(|a, b| a.rect().top().total_cmp(&b.rect().top()))
+        .expect("the field went away");
+    assert!(still.is_focused(), "Enter dropped the user out of the list they were writing");
 }
 
 /// An index that did not verify. Nothing is listed, and the reason is shown.

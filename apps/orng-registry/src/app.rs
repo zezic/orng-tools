@@ -28,7 +28,7 @@ use crate::session::{Badge, Found, Session};
 use crate::staging::{self, Reading, Staged};
 use crate::theme::{self, Palette, font, metric};
 use crate::widget::{self, Tone, icon};
-use crate::work::{Applying, Stage, Work};
+use crate::work::{Applying, Errand, Stage, Work};
 
 /// Which top-level view is showing. Two, as the design has it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -97,6 +97,15 @@ pub struct App {
     /// at whatever had moved into it. An identity either is still registered or
     /// is not, and the panel closes when it is not.
     inspecting: Option<Uuid>,
+    /// What is in the inspector's two editable fields, and which entry it
+    /// belongs to.
+    ///
+    /// Beside the session rather than in it. The session is read from the
+    /// machine and re-read whenever the machine changes, and a half-typed
+    /// description is neither: writing into the entry as the user typed would
+    /// mean the list on screen disagreed with the list on disk, and re-reading
+    /// would throw away what was being written.
+    editing: Option<Editing>,
     /// The published catalog, once somebody has asked for it. Not fetched on
     /// opening: this application is useful with no network at all, and a window
     /// that reaches for one before being asked is a window that hangs on a
@@ -128,6 +137,7 @@ impl App {
             applying: None,
             outcome: None,
             inspecting: None,
+            editing: None,
             catalog: None,
         }
     }
@@ -263,14 +273,21 @@ impl App {
         let item = widget::Inspected {
             kind: entry.kind,
             name: &entry.name,
-            description: &entry.description,
-            keywords: &entry.keywords,
             uuid: &identity,
             path: entry.library_path.as_str(),
             source: &source,
             source_icon,
             placement: &placement,
         };
+
+        // The buffer follows the panel. Opening another row must not carry the
+        // last one's words into it, and an entry list that has just been
+        // written must not take back what is being typed into this one.
+        if !matches!(&self.editing, Some(editing) if editing.uuid == uuid) {
+            let words = widget::Words::of(&entry.description, &entry.keywords);
+            self.editing = Some(Editing { uuid, words });
+        }
+        let words = &mut self.editing.as_mut().expect("set just above").words;
 
         let mut pressed = widget::Inspecting::Nothing;
         let panel = egui::Panel::right("inspector")
@@ -280,17 +297,62 @@ impl App {
             // than by a line.
             .show_separator_line(false)
             .frame(widget::panel(palette))
-            .show(ui, |ui| pressed = widget::inspector(ui, palette, &item))
+            .show(ui, |ui| pressed = widget::inspector(ui, palette, &item, words))
             .response
             .rect;
 
         match pressed {
-            widget::Inspecting::Closed => self.inspecting = None,
+            // The panel closing is the last chance a field has to be finished
+            // with, and the one people take: the way to stop editing is to shut
+            // the thing you were editing in.
+            widget::Inspecting::Closed => {
+                self.write_words(ui.ctx());
+                self.inspecting = None;
+                self.editing = None;
+            }
+            widget::Inspecting::Edited => self.write_words(ui.ctx()),
             widget::Inspecting::CopiedUuid => ui.ctx().copy_text(uuid.to_string()),
             widget::Inspecting::Reveal => reveal(placement.path()),
             widget::Inspecting::Nothing => {}
         }
         Some(panel)
+    }
+
+    /// Write what is in the inspector's fields, if it differs from what the
+    /// entry says.
+    ///
+    /// Through the worker a press of the primary action already uses, because
+    /// it is the same operation: the description and the search keywords live
+    /// in the installation's own bundles, so changing them rewrites all three
+    /// of those and then the entry list, in that order and idempotently.
+    ///
+    /// Silent when nothing changed, which is most of the time - leaving a field
+    /// untouched is still leaving it.
+    fn write_words(&mut self, ctx: &egui::Context) {
+        // Nothing starts on top of something already running. The window has
+        // one piece of work at a time, and a preparation must not be replaced
+        // by a description. The buffer keeps what was typed and the next time
+        // a field is left it is written, so nothing is lost and nothing is
+        // claimed to have been saved that was not.
+        if self.applying.is_some() {
+            return;
+        }
+        let Some(editing) = &self.editing else { return };
+        let Session::Found(found) = &self.session else { return };
+        let Some(entry) = found.entries.entries().iter().find(|e| e.uuid == editing.uuid) else {
+            return;
+        };
+        let Some(revised) = revised(entry, &editing.words) else { return };
+
+        let mut update = Update::to(found.entries.clone());
+        update.revise(revised);
+        self.applying = Some(Applying::start(
+            Work::Entries,
+            Errand::Edit,
+            found.to.clone(),
+            update,
+            ctx.clone(),
+        ));
     }
 
     /// The one banner the window is carrying, if it is carrying one.
@@ -390,10 +452,19 @@ impl App {
         // made every screen after a press have to ask whether it had finished.
         let result = result.clone();
         let prepared = applying.prepared();
+        let errand = applying.errand;
         let written = self.ready().count();
         self.applying = None;
 
         match result {
+            // An edit is not announced. The panel is already showing what the
+            // entry now says, and a banner after every description would be the
+            // window reading its own fields back.
+            Ok(entries) if errand == Errand::Edit => {
+                if let Session::Found(found) = &mut self.session {
+                    found.entries = entries;
+                }
+            }
             Ok(entries) => {
                 // What was written is no longer pending. Held until here rather
                 // than cleared when the press started, so that a failure leaves
@@ -418,7 +489,11 @@ impl App {
                     self.outcome = Some(Outcome::Registered { written });
                 }
             }
-            Err(why) => self.outcome = Some(Outcome::Failed { prepared, why }),
+            // A failure is announced either way: an edit that did not reach
+            // the disk is the one thing about it the panel cannot show.
+            Err(why) => {
+                self.outcome = Some(Outcome::Failed { what: Stopped::of(prepared, errand), why });
+            }
         }
     }
 
@@ -530,6 +605,16 @@ impl App {
     }
 }
 
+/// The words in the inspector's fields, and which entry they belong to.
+///
+/// The identity is here so that a panel that has moved to another row cannot
+/// write one entry's words onto another - which is the one way a buffer beside
+/// the data can go wrong, and the only reason it is not a bare pair of strings.
+struct Editing {
+    uuid: Uuid,
+    words: widget::Words,
+}
+
 /// A condition the window has to state, and what can be done about it.
 struct Blocked {
     tone: Tone,
@@ -549,13 +634,39 @@ enum Outcome {
     /// Entries were written into an installation that was already prepared.
     Registered { written: usize },
     Failed {
-        /// Whether this press was preparing the installation, which is what
-        /// decides what it can promise about the state left behind.
-        prepared: bool,
+        /// Which of the three runs stopped, which is what decides what can
+        /// honestly be promised about the state left behind.
+        what: Stopped,
         /// The worker's own words, which go into a bug report rather than onto
         /// the screen.
         why: String,
     },
+}
+
+/// What it was that stopped.
+///
+/// The three differ in what they had already done when they stopped, and
+/// therefore in what the banner may promise. A boolean said only whether a
+/// preparation was involved, which left an edit that could not be written
+/// reporting that nothing had been registered - true, and about the wrong
+/// thing entirely.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Stopped {
+    Preparation,
+    /// A press that was writing entries into an installation already prepared.
+    Registration,
+    /// An edit made in the inspector.
+    Edit,
+}
+
+impl Stopped {
+    fn of(prepared: bool, errand: Errand) -> Stopped {
+        match (prepared, errand) {
+            (true, _) => Stopped::Preparation,
+            (false, Errand::Press) => Stopped::Registration,
+            (false, Errand::Edit) => Stopped::Edit,
+        }
+    }
 }
 
 impl Outcome {
@@ -586,7 +697,7 @@ impl Outcome {
             // which is the design's order. The worker's own words are behind
             // the control, because they are for a bug report and not for the
             // person reading this.
-            Outcome::Failed { prepared: true, .. } => (
+            Outcome::Failed { what: Stopped::Preparation, .. } => (
                 Tone::Err,
                 "The preparation stopped, and your installation was not changed.".to_owned(),
                 "The patched archive is written beside the original and only moved into place \
@@ -594,11 +705,20 @@ impl Outcome {
                     .to_owned(),
                 Some("Copy details"),
             ),
-            Outcome::Failed { prepared: false, .. } => (
+            Outcome::Failed { what: Stopped::Registration, .. } => (
                 Tone::Err,
                 "Nothing was registered.".to_owned(),
                 "The entry list is written last, so it is unchanged. Any document already \
                  placed is left where it is, and applying again finishes the job."
+                    .to_owned(),
+                Some("Copy details"),
+            ),
+            Outcome::Failed { what: Stopped::Edit, .. } => (
+                Tone::Err,
+                "The change was not saved.".to_owned(),
+                "Descriptions and search keywords live in the installation's own files, and \
+                 that is the write that can be refused. The entry list is written after it \
+                 and is unchanged."
                     .to_owned(),
                 Some("Copy details"),
             ),
@@ -1262,7 +1382,8 @@ impl App {
         }
         // What the last press came to is not what this one will come to.
         self.outcome = None;
-        self.applying = Some(Applying::start(work, found.to.clone(), update, ctx.clone()));
+        self.applying =
+            Some(Applying::start(work, Errand::Press, found.to.clone(), update, ctx.clone()));
     }
 }
 
@@ -1385,6 +1506,25 @@ fn step_label(step: Step) -> &'static str {
         Step::Activate => "Activate",
         Step::Link => "Link library folders",
     }
+}
+
+/// The entry as the inspector's fields now state it, or `None` when they state
+/// what it already says.
+///
+/// **Only the two fields, and the rest of the entry carried over.** The
+/// description bundle Bitwig reads is keyed by the entry's display name, and
+/// the library path is what says where the document is; re-deriving either from
+/// anything would put the new words under a key nobody looks up, or point the
+/// registry at a file that is not there.
+fn revised(entry: &Registration, words: &widget::Words) -> Option<Registration> {
+    if entry.description == words.description && entry.keywords == words.keywords {
+        return None;
+    }
+    Some(Registration {
+        description: words.description.clone(),
+        keywords: words.keywords.clone(),
+        ..entry.clone()
+    })
 }
 
 /// Show a document where it lives, in whatever the system uses to look at
@@ -1633,5 +1773,60 @@ fn published(ui: &mut egui::Ui, palette: Palette, catalog: &Fetching) {
                 }
             });
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use orng_tools::LibraryPath;
+
+    fn entry() -> Registration {
+        Registration {
+            uuid: "8b330d22-73fa-4ba5-a42f-2f2300cbd8bf".parse().expect("a sample identity"),
+            kind: Kind::Device,
+            name: "VOLSHAPER".to_owned(),
+            library_path: LibraryPath::new("devices/My Devices/VOLSHAPER.bwdevice")
+                .expect("a library path"),
+            description: "Beat-synced volume LFO".to_owned(),
+            keywords: vec!["volshaper".to_owned()],
+            provenance: Provenance::Catalog {
+                version: "1.0.0".parse().expect("a version"),
+            },
+        }
+    }
+
+    /// Leaving a field untouched is still leaving it, and every field in the
+    /// panel reports that it was left. Without this, closing the inspector on
+    /// an entry nobody edited would rewrite three description bundles and the
+    /// entry list, every time.
+    #[test]
+    fn words_that_say_what_the_entry_already_says_are_not_a_change() {
+        let entry = entry();
+        let words = widget::Words::of(&entry.description, &entry.keywords);
+        assert!(revised(&entry, &words).is_none());
+    }
+
+    /// An edit changes the two fields the panel offers and nothing else.
+    ///
+    /// The name especially: Bitwig's description bundle is keyed by it, so an
+    /// entry whose name moved under an edit would have its new words written
+    /// under a key nothing reads, and the old ones would be what the browser
+    /// went on showing.
+    #[test]
+    fn an_edit_changes_the_words_and_leaves_the_rest_of_the_entry_alone() {
+        let entry = entry();
+        let mut words = widget::Words::of(&entry.description, &entry.keywords);
+        words.description = "Beat-synced volume shaper".to_owned();
+        words.keywords.push("lfo".to_owned());
+
+        let revised = revised(&entry, &words).expect("that is a change");
+        assert_eq!(revised.description, "Beat-synced volume shaper");
+        assert_eq!(revised.keywords, ["volshaper", "lfo"]);
+        assert_eq!(revised.name, entry.name);
+        assert_eq!(revised.uuid, entry.uuid);
+        assert_eq!(revised.kind, entry.kind);
+        assert_eq!(revised.library_path, entry.library_path);
+        assert_eq!(revised.provenance, entry.provenance);
     }
 }

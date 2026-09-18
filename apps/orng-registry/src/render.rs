@@ -532,6 +532,45 @@ fn nothing_registered_yet() {
     );
 }
 
+/// Monospaced runs are set as tightly as the design sets them.
+///
+/// The one text measurement in the bundle that means anything. The mockup
+/// resolves Inter from the network and falls back when there is none, so its
+/// proportional runs are the wrong letterforms at the wrong widths - but it
+/// loads the real Iosevka from `uploads/`, so a mono run there is directly
+/// comparable to one here. `94a90411` at 10px measures 44 wide in the bundle.
+///
+/// Without the design's `-0.05em` this laid out at 48: four pixels on eight
+/// characters, and the same 9% on every identity, path, count and version in
+/// the window. Which is why this is asserted on the advance width rather than
+/// left to a picture - a snapshot shows text that looks like text either way.
+#[test]
+fn monospaced_runs_are_set_as_tightly_as_the_design_sets_them() {
+    let root = fixture("tracking");
+    let session = found(&root, Helper::Present, GuardState::Disarmed);
+    let mut session = Some(session);
+    let mut harness = Harness::builder().with_size(SIZE).build_eframe(move |cc| {
+        App::with(&cc.egui_ctx, session.take().expect("built once"))
+    });
+    harness.run();
+
+    // Laid out through `font::format`, which is what the widgets use: the
+    // tracking lives on the run and not on the `FontId`, so measuring the font
+    // alone would report the untracked width and pass whatever happened.
+    use crate::theme::font;
+    let job = egui::text::LayoutJob::single_section(
+        "94a90411".to_owned(),
+        font::format(font::mono(font::MONO_TIGHT)),
+    );
+    let width = harness.ctx.fonts_mut(|fonts| fonts.layout_job(job)).rect.width();
+    // The bundle's own number, out of `getBoundingClientRect` on that span.
+    const BUNDLE: f32 = 44.0;
+    assert!(
+        (width - BUNDLE).abs() <= 2.0,
+        "the build revision lays out {width} wide, the design draws it {BUNDLE}"
+    );
+}
+
 /// The empty state's pair sits in the middle of the window.
 ///
 /// Asserted against the controls themselves rather than left to a picture. The

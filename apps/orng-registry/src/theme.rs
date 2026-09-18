@@ -383,6 +383,72 @@ pub mod font {
         let bound = ctx.fonts(|fonts| fonts.families().contains(&family));
         if bound { FontId::new(size, family) } else { plain(size) }
     }
+
+    /// How tightly the design sets its monospaced runs. Every Iosevka run in
+    /// the bundle carries this, at every size, without exception - 41 of them.
+    const MONO_EM: f32 = -0.05;
+
+    /// The tracking the design states for a run in this face at this size, in
+    /// points.
+    ///
+    /// **Derived from the font rather than repeated at the call site.** Both
+    /// the family and the size are already in a [`FontId`], so the one place
+    /// that knows what a run is set in is also the place that can say how
+    /// tightly - which is why `run` below takes the font and nothing else.
+    ///
+    /// The design is not consistent about the proportional face and there is no
+    /// formula to find: it tracks 12 at -0.01em, 12.5 at -0.005, 13.5 at
+    /// -0.015, 14 and 16.5 at -0.02, and leaves 11, 11.5 and 13 alone entirely.
+    /// So these are transcribed, and a size the design says nothing about is
+    /// set with nothing rather than interpolated into.
+    pub fn tracking(font: &FontId) -> f32 {
+        let same = |a: f32, b: f32| (a - b).abs() < f32::EPSILON;
+        if font.family == FontFamily::Monospace {
+            return MONO_EM * font.size;
+        }
+        // The icon face is a set of glyphs rather than a run of letters, and
+        // the design tracks none of them.
+        if !matches!(font.family, FontFamily::Proportional | FontFamily::Name(_))
+            || same(font.size, ICON)
+        {
+            return 0.0;
+        }
+        let em = if same(font.size, ACTION) {
+            -0.01
+        } else if same(font.size, ROW_NAME) {
+            -0.005
+        } else if same(font.size, INSTALL_TITLE) {
+            -0.015
+        } else if same(font.size, DIALOG_TITLE) || same(font.size, HEADING) {
+            -0.02
+        } else {
+            0.0
+        };
+        em * font.size
+    }
+
+    /// One run of a [`LayoutJob`](egui::text::LayoutJob), in the given face.
+    ///
+    /// The counterpart to `run` for the places that build a job by hand, so
+    /// those cannot lose the tracking either. Spread it and override what else
+    /// the run needs: `TextFormat { color, valign, ..font::format(f) }`.
+    pub fn format(font: FontId) -> egui::TextFormat {
+        egui::TextFormat {
+            extra_letter_spacing: tracking(&font),
+            font_id: font,
+            ..Default::default()
+        }
+    }
+
+    /// A run of text in the given face, set as the design sets it.
+    ///
+    /// Use this rather than `RichText::new(..).font(..)`: the tracking then
+    /// cannot be left off, because there is no call site left that chooses a
+    /// font without also getting one.
+    pub fn run(text: impl Into<String>, font: FontId) -> egui::RichText {
+        let tracking = tracking(&font);
+        egui::RichText::new(text).font(font).extra_letter_spacing(tracking)
+    }
 }
 
 /// Load the design's faces.

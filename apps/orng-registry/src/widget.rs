@@ -112,6 +112,19 @@ fn with_icon(
     ink: Color32,
     icon_ink: Color32,
 ) -> egui::WidgetText {
+    labelled_icon(ui, icon, label, size, ink, icon_ink, metric::TIGHT)
+}
+
+/// The same, where the design states a gap of its own rather than a bar's.
+fn labelled_icon(
+    ui: &Ui,
+    icon: &str,
+    label: &str,
+    size: f32,
+    ink: Color32,
+    icon_ink: Color32,
+    gap: f32,
+) -> egui::WidgetText {
     let mut job = egui::text::LayoutJob::default();
     job.append(
         icon,
@@ -126,7 +139,7 @@ fn with_icon(
     if !label.is_empty() {
         job.append(
             label,
-            metric::TIGHT,
+            gap,
             egui::TextFormat {
                 font_id: font::plain(size),
                 color: ink,
@@ -333,6 +346,12 @@ pub fn primary_button(
 /// out as its content plus `button_padding`, and takes the larger of the two -
 /// so the padding is zeroed here and the size is the whole of what is asked
 /// for.
+///
+/// **The menu is a `Popup` and not a `Response::context_menu`.** That call ends
+/// in `Popup::context_menu`, which opens on a *secondary* click and closes
+/// explicitly on a primary one, so the three dots did nothing at all when they
+/// were clicked and the menu had never been seen. `Popup::menu` toggles on the
+/// primary click, which is the press the design draws.
 pub fn overflow(ui: &mut Ui, palette: Palette, menu: impl FnOnce(&mut Ui)) {
     let button = egui::Button::new(
         RichText::new(icon::OVERFLOW).font(font::icon(ui.ctx(), font::ICON)).color(palette.ink_2),
@@ -340,12 +359,43 @@ pub fn overflow(ui: &mut Ui, palette: Palette, menu: impl FnOnce(&mut Ui)) {
     .stroke(Stroke::NONE)
     .corner_radius(CornerRadius::same(metric::RADIUS))
     .min_size(vec2(metric::OVERFLOW, metric::TAB));
-    ui.scope(|ui| {
-        ui.spacing_mut().button_padding = egui::Vec2::ZERO;
-        filled_button(ui, Color32::TRANSPARENT, palette.btn_hover, button)
-            .on_hover_cursor(egui::CursorIcon::PointingHand)
-            .context_menu(menu);
-    });
+    let response = ui
+        .scope(|ui| {
+            ui.spacing_mut().button_padding = egui::Vec2::ZERO;
+            filled_button(ui, Color32::TRANSPARENT, palette.btn_hover, button)
+                .on_hover_cursor(egui::CursorIcon::PointingHand)
+        })
+        .inner;
+    egui::Popup::menu(&response)
+        .align(egui::RectAlign::BOTTOM_END)
+        // Anchored to a rect that is the control shifted right, because the
+        // design hangs the menu off the bar and not off the control: the menu
+        // clears the window's edge by eight and the control by twelve.
+        .anchor(response.rect.translate(vec2(metric::MENU_OVERHANG, 0.0)))
+        .gap(metric::MENU_DROP)
+        .frame(menu_frame(palette))
+        .show(|ui| {
+            // The design draws the items touching, and the pitch is the item's
+            // own height. egui's list spacing would add six between each.
+            ui.spacing_mut().item_spacing.y = 0.0;
+            menu(ui);
+        });
+}
+
+/// The surface the overflow menu sits on: a panel, a line around it, and the
+/// one corner in the design rounded by six rather than by three.
+fn menu_frame(palette: Palette) -> egui::Frame {
+    egui::Frame::new()
+        .fill(palette.panel_2)
+        .stroke(Stroke::new(metric::HAIRLINE, palette.line))
+        .corner_radius(CornerRadius::same(metric::MENU_RADIUS))
+        .inner_margin(egui::Margin::same(metric::MENU_MARGIN))
+        .shadow(egui::epaint::Shadow {
+            offset: [0, metric::MENU_SHADOW_DROP],
+            blur: metric::MENU_SHADOW_BLUR,
+            spread: 0,
+            color: palette.menu_shadow,
+        })
 }
 
 /// The icons the design names, by the job each does here rather than by the
@@ -376,18 +426,54 @@ pub mod icon {
     pub const CATALOG: &str = light::PACKAGE;
 }
 
-/// Wide enough for the longest item the menu carries, so the menu does not
-/// change width with what is in it.
-const MENU_WIDTH: f32 = 176.0;
-
 /// One line of the overflow menu.
+///
+/// The width is the design's `min-width` and is set here rather than on the
+/// menu, so the menu is as wide as its widest item asks for and never narrower
+/// than the design draws it. The gap from icon to label is the menu's own,
+/// which is wider than a bar's.
+///
+/// The fill goes through [`filled_button`] for the reason written there: a
+/// `Button::fill` of transparent wins over every state, and the item would
+/// never light up under the pointer.
 pub fn menu_item(ui: &mut Ui, palette: Palette, icon: &str, label: &str) -> Response {
-    ui.add(
-        egui::Button::new(with_icon(ui, icon, label, font::CONTROL, palette.ink, palette.ink_3))
-            .fill(Color32::TRANSPARENT)
-            .stroke(Stroke::NONE)
-            .min_size(vec2(MENU_WIDTH, 0.0)),
-    )
+    let button = egui::Button::new(labelled_icon(
+        ui,
+        icon,
+        label,
+        font::CONTROL,
+        palette.ink,
+        palette.ink_3,
+        metric::MENU_GAP,
+    ))
+    .stroke(Stroke::NONE)
+    .corner_radius(CornerRadius::same(metric::RADIUS))
+    .min_size(vec2(metric::MENU, metric::MENU_ITEM));
+    ui.scope(|ui| {
+        ui.spacing_mut().button_padding = vec2(metric::MENU_PAD_X, metric::MENU_PAD_Y);
+        filled_button(ui, Color32::TRANSPARENT, palette.btn_hover, button)
+            .on_hover_cursor(egui::CursorIcon::PointingHand)
+    })
+    .inner
+}
+
+/// The rule between two groups of menu items: a hairline, inset from the
+/// menu's padding, with equal air above and below.
+pub fn menu_rule(ui: &mut Ui, palette: Palette) {
+    ui.add_space(metric::MENU_RULE_GAP);
+    let (rect, _) = ui.allocate_exact_size(
+        vec2(metric::MENU - 2.0 * metric::MENU_RULE_INSET, metric::HAIRLINE),
+        egui::Sense::hover(),
+    );
+    // Allocated at the item width and then inset, rather than laid out inside a
+    // margin: the menu's width comes from its widest child, and a rule that
+    // asked for the full width would be what decided it.
+    ui.painter().rect_filled(
+        rect.translate(vec2(metric::MENU_RULE_INSET, 0.0)),
+        CornerRadius::ZERO,
+        palette.line,
+    );
+    ui.add_space(metric::MENU_RULE_GAP);
 }
 
 /// The scrolling list, with the rows stacked and nothing between them.
@@ -1439,5 +1525,46 @@ mod tests {
         assert_eq!(edges(columns.version), (494.0, 550.0));
         assert_eq!(edges(columns.status), (562.0, 704.0));
         assert_eq!(edges(columns.actions), (716.0, 808.0));
+    }
+
+    /// The overflow menu, against the bundle with the menu forced open and
+    /// `getBoundingClientRect` asked for every box: the menu 200 by 131 with
+    /// its right edge 8 from the window, four items of 190 by 28 touching, and
+    /// a rule 186 wide 93 below the menu's top.
+    ///
+    /// The design states `min-width:190px` on a box that is not `border-box`,
+    /// so 190 is what the items are laid out at and 200 is what the menu draws
+    /// across. Both are asserted, because reading either one as the other is
+    /// how ten pixels go missing.
+    #[test]
+    fn the_overflow_menu_is_measured_as_the_bundle_measures_it() {
+        let border = 2.0 * metric::HAIRLINE;
+        let padding = 2.0 * f32::from(metric::MENU_MARGIN);
+        assert_eq!(metric::MENU + padding + border, 200.0, "the menu's drawn width");
+
+        // Four items, with the rule and its air between the third and fourth.
+        let rule = 2.0 * metric::MENU_RULE_GAP + metric::HAIRLINE;
+        assert_eq!(
+            border + padding + 4.0 * metric::MENU_ITEM + rule,
+            131.0,
+            "the menu's drawn height"
+        );
+        assert_eq!(
+            metric::HAIRLINE + f32::from(metric::MENU_MARGIN) + 3.0 * metric::MENU_ITEM
+                + metric::MENU_RULE_GAP,
+            93.0,
+            "how far the rule sits below the menu's top"
+        );
+        assert_eq!(metric::MENU - 2.0 * metric::MENU_RULE_INSET, 186.0, "the rule's width");
+
+        // Inside one item: eight of padding, a sixteen-pixel icon, then nine.
+        // The bundle puts the label 33 from the item's left edge.
+        assert_eq!(metric::MENU_PAD_X + font::ICON + metric::MENU_GAP, 33.0);
+        assert_eq!(metric::MENU_ITEM - 2.0 * metric::MENU_PAD_Y, font::ICON);
+
+        // The menu hangs off the bar, not off the control: the control clears
+        // the window's right edge by the bar's own padding and the menu by
+        // eight, so the menu overhangs the control by the difference.
+        assert_eq!(metric::PAD - metric::MENU_OVERHANG, 8.0);
     }
 }

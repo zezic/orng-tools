@@ -83,6 +83,15 @@ pub struct Palette {
     /// Laid over everything when the window is a drop target, so what is behind
     /// it reads as out of reach rather than merely dimmed.
     pub scrim: Color32,
+    /// Under the overflow menu, which floats over the window without a scrim
+    /// and needs an edge of its own to sit on.
+    ///
+    /// The design writes this one as a literal rather than as a token, so it
+    /// states only the dark value: `rgba(0,0,0,.7)`. The light value is the
+    /// same shadow under the ratio the design's own two `--shadow` tokens
+    /// state between the themes, .85 to .22, which is the nearest thing the
+    /// bundle says about how a shadow behaves in light.
+    pub menu_shadow: Color32,
     /// Every other row, over whatever the list sits on.
     pub zebra: Color32,
     /// The wash behind a banner, one per tone.
@@ -124,6 +133,7 @@ impl Palette {
         btn: hex(0x282828),
         btn_hover: hex(0x333333),
         scrim: hexa(0x000000, 189),
+        menu_shadow: hexa(0x000000, 179),
         zebra: hexa(0xffffff, 13),
         ok_bg: hexa(0xf2f2f2, 15),
         warn_bg: hexa(0xff5a1f, 26),
@@ -168,6 +178,7 @@ impl Palette {
         btn: hex(0xe2e2e2),
         btn_hover: hex(0xd8d8d8),
         scrim: hexa(0xffffff, 168),
+        menu_shadow: hexa(0x000000, 46),
         zebra: hexa(0x000000, 11),
         ok_bg: hexa(0x171717, 13),
         warn_bg: hexa(0xe8500f, 26),
@@ -227,9 +238,41 @@ pub mod metric {
     /// uses for the one thing a banner offers.
     pub const OUTLINED: f32 = 28.0;
 
+    /// The overflow menu, measured off the bundle with the menu forced open.
+    ///
+    /// The design states `min-width:190px` on a box that is not
+    /// `border-box`, so 190 is the content and the menu draws 200 across: four
+    /// of padding and one of line on each side. Both numbers are here because
+    /// the items are laid out against the first and the anchor against the
+    /// second.
+    pub const MENU: f32 = 190.0;
+    pub const MENU_MARGIN: i8 = 4;
+    /// One line of it. Taller than its text, because what sets the height is
+    /// the sixteen-pixel icon beside the text with six above and below.
+    pub const MENU_ITEM: f32 = 28.0;
+    pub const MENU_PAD_X: f32 = 8.0;
+    pub const MENU_PAD_Y: f32 = 6.0;
+    /// From a menu item's icon to its label. Wider than a bar's gap: a menu is
+    /// read down a column rather than scanned across a row.
+    pub const MENU_GAP: f32 = 9.0;
+    /// The rule between groups of items, inset from the menu's own padding.
+    pub const MENU_RULE_INSET: f32 = 2.0;
+    pub const MENU_RULE_GAP: f32 = 4.0;
+    /// Below the overflow control, and past its right edge: the design hangs
+    /// the menu off the bar rather than off the control, so its right edge is
+    /// eight from the window where the control's is twelve.
+    pub const MENU_DROP: f32 = 5.0;
+    pub const MENU_OVERHANG: f32 = 4.0;
+    /// The menu's shadow, `0 18px 40px` in the design.
+    pub const MENU_SHADOW_DROP: i8 = 18;
+    pub const MENU_SHADOW_BLUR: u8 = 40;
+
     /// Corner of a control. The design rounds by three, not by six: at these
     /// sizes a six-pixel radius reads as a pill rather than as a soft corner.
     pub const RADIUS: u8 = 3;
+    /// Corner of a surface that floats over the window. The menu is the one
+    /// thing the design rounds by six, and it is not a control.
+    pub const MENU_RADIUS: u8 = 6;
     /// Every separating line in the design is one pixel. Named because it is a
     /// decision, and because an untyped `1.0` is ambiguous to the compiler here.
     pub const HAIRLINE: f32 = 1.0;

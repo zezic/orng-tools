@@ -10,6 +10,7 @@
 //! `tests/snapshots/`, which is both the check and the record of what changed.
 
 use eframe::egui;
+use egui_kittest::kittest::Queryable as _;
 use egui_kittest::Harness;
 use orng_tools::{
     Condition, Destination, GuardState, Helper, Manifest, OrngHome, RunState, Strategy,
@@ -538,6 +539,29 @@ fn the_catalog_view() {
     let index = orng_catalog::Index::parse(include_str!("../tests/published-index.json"))
         .expect("the sample index does not parse");
     shot_catalog("catalog", Fetching::frozen(Ok(index)));
+}
+
+/// The overflow menu, open.
+///
+/// The only state here that has to be *reached* rather than assembled, and the
+/// reason it is worth reaching: the control used to end in
+/// `Response::context_menu`, which opens on a secondary click, so a primary
+/// click on the three dots did nothing and this surface had never been drawn.
+/// A picture of a menu that no press opens is not a thing any other snapshot
+/// can be missing.
+#[test]
+fn the_overflow_menu() {
+    let root = fixture("menu");
+    let session = found(&root, Helper::Present, GuardState::Disarmed);
+    let mut session = Some(session);
+    let mut harness = Harness::builder().with_size(SIZE).build_eframe(move |cc| {
+        App::with(&cc.egui_ctx, session.take().expect("built once"))
+    });
+    harness.run();
+    // By the glyph the control draws, so the press lands on the control the
+    // design names rather than on a position measured off a picture.
+    harness.get_by_label(crate::widget::icon::OVERFLOW).click();
+    look(&mut harness, "menu");
 }
 
 /// An index that did not verify. Nothing is listed, and the reason is shown.

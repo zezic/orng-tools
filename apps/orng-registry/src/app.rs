@@ -560,7 +560,7 @@ impl App {
                     for (icon, label) in items {
                         let _ = widget::menu_item(ui, palette, icon, label);
                     }
-                    ui.separator();
+                    widget::menu_rule(ui, palette);
                     let _ =
                         widget::menu_item(ui, palette, widget::icon::ABOUT, "About ORNG Registry");
                 });

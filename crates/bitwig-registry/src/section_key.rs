@@ -46,6 +46,15 @@ const MIN_ARRAY: usize = 48;
 /// document and had the result parse, so a build that moved the array, or a
 /// second array that happens to be the right length, fails here rather than
 /// three layers up as a corrupt-looking document.
+///
+/// **Call this once per installation, not once per document.** It costs about
+/// 80ms - half of it the archive's central directory, which every jar operation
+/// here pays - and the key it returns is what every later read takes as an
+/// argument. There is deliberately no cache behind it: a key held on disk would
+/// be Bitwig's own material in a file this project wrote, which is the thing
+/// removing it from the source tree was for, and it would go stale the next
+/// time Bitwig updates. Hold it for as long as the resolved installation is
+/// held, and drop it with that.
 pub fn section_key(jar: &Path, verify_against: &Path) -> Result<SectionKey> {
     let sample = std::fs::read(verify_against).map_err(|source| Error::Io {
         path: verify_against.display().to_string(),
@@ -58,10 +67,7 @@ pub fn section_key(jar: &Path, verify_against: &Path) -> Result<SectionKey> {
     let mut tried = 0usize;
     let mut found = None;
 
-    jar.visit_classes(|name, bytes| {
-        if !name.starts_with(SERIAL_PACKAGE) {
-            return std::ops::ControlFlow::Continue(());
-        }
+    jar.visit_classes_under(SERIAL_PACKAGE, |_name, bytes| {
         for array in byte_array_literals(bytes) {
             let Ok(candidate) = SectionKey::new(array) else { continue };
             tried += 1;

@@ -89,7 +89,7 @@ impl Update {
     /// [`Update::add`]'s job and it takes the document that proves the entry.
     pub fn revise(&mut self, registration: Registration) {
         assert!(
-            self.entries.entries().iter().any(|entry| entry.uuid == registration.uuid),
+            self.entries.get(registration.uuid).is_some(),
             "{} is not registered, so there is nothing to revise",
             registration.name
         );

@@ -976,36 +976,71 @@ pub fn badge_colour(palette: Palette, badge: &str) -> Color32 {
     }
 }
 
-/// The frame the inspector sits in.
+/// The frame a side panel sits in.
 ///
 /// No margin of its own: the header is full width and fills to the panel's
 /// edges, and the body puts in the padding the design gives it.
-pub fn panel(palette: Palette) -> Frame {
+fn panel(palette: Palette) -> Frame {
     Frame::new().fill(palette.panel_2).inner_margin(Margin::ZERO)
 }
 
-/// The inspector's shadow, cast to the *left*, because the design slides the
-/// panel over the right of the list rather than standing it beside the list.
+/// Where an open side panel ended up, and the debt it leaves behind.
 ///
-/// **Not the frame's own shadow, and painted after the page rather than with
-/// the panel.** A side panel is claimed before the region it leaves and painted
-/// before it too, so a shadow reaching out of the panel reaches into the page's
-/// own rectangle and the page's fill goes straight over it. Which is why this
-/// takes the panel's rect and is called last.
+/// Handed back by [`aside`] rather than a bare rectangle so that the shadow
+/// cannot be forgotten: it has to be painted later than the panel and by
+/// somebody else, which is exactly the kind of call that goes missing when a
+/// third panel is added. Dropping this instead of paying it is a warning.
+#[must_use = "an aside casts a shadow on the page it falls on"]
+pub struct Aside(Rect);
+
+/// A panel over the right of the list, as the design draws every one of them:
+/// as wide as [`metric::ASIDE`], with no separator line, because the design
+/// separates it from the list by a shadow instead.
 ///
-/// Clipped to what is left of the panel, because a shadow is a filled
-/// rectangle with a blur on it: in a frame the fill is painted over the middle
-/// of it afterwards, and here there is nothing left to do that.
-pub fn panel_shadow(ui: &Ui, palette: Palette, panel: Rect) {
-    let shadow = egui::epaint::Shadow {
-        offset: [metric::PANEL_SHADOW_REACH, 0],
-        blur: metric::PANEL_SHADOW_BLUR,
-        spread: 0,
-        color: palette.panel_shadow,
-    };
-    ui.painter()
-        .with_clip_rect(Rect::everything_left_of(panel.left()))
-        .add(shadow.as_shape(panel, CornerRadius::ZERO));
+/// Claimed before the region it leaves, so that the toolbar and the rows beside
+/// it are laid out in what is left rather than drawn over.
+pub fn aside<T>(
+    ui: &mut Ui,
+    palette: Palette,
+    id: &'static str,
+    contents: impl FnOnce(&mut Ui) -> T,
+) -> (Aside, T) {
+    let mut out = None;
+    let rect = egui::Panel::right(id)
+        .exact_size(metric::ASIDE)
+        .resizable(false)
+        .show_separator_line(false)
+        .frame(panel(palette))
+        .show(ui, |ui| out = Some(contents(ui)))
+        .response
+        .rect;
+    (Aside(rect), out.expect("the panel's contents run once"))
+}
+
+impl Aside {
+    /// The shadow, cast to the *left*, because the design slides the panel over
+    /// the right of the list rather than standing it beside the list.
+    ///
+    /// **Not the frame's own shadow, and painted after the page rather than
+    /// with the panel.** A side panel is claimed before the region it leaves
+    /// and painted before it too, so a shadow reaching out of the panel reaches
+    /// into the page's own rectangle and the page's fill goes straight over it.
+    /// Which is why this takes the panel's rect and is called last.
+    ///
+    /// Clipped to what is left of the panel, because a shadow is a filled
+    /// rectangle with a blur on it: in a frame the fill is painted over the
+    /// middle of it afterwards, and here there is nothing left to do that.
+    pub fn shadow(self, ui: &Ui, palette: Palette) {
+        let shadow = egui::epaint::Shadow {
+            offset: [metric::PANEL_SHADOW_REACH, 0],
+            blur: metric::PANEL_SHADOW_BLUR,
+            spread: 0,
+            color: palette.panel_shadow,
+        };
+        ui.painter()
+            .with_clip_rect(Rect::everything_left_of(self.0.left()))
+            .add(shadow.as_shape(self.0, CornerRadius::ZERO));
+    }
 }
 
 /// What the inspector's two editable fields hold while the panel is open.
@@ -1068,7 +1103,7 @@ pub enum Inspecting {
 
 /// The inspector: everything one entry is, and what can be done about it.
 ///
-/// Drawn into a panel of [`metric::INSPECTOR`] that the caller has already
+/// Drawn into a panel of [`metric::ASIDE`] that the caller has already
 /// taken out of the window, so the list beside it has already been laid out
 /// narrower. The design draws them as siblings for the same reason: the panel
 /// is not an overlay with the list still live underneath.
@@ -1083,57 +1118,58 @@ pub fn inspector(
     // allocated widget, and the header and the body below it are two of them:
     // six pixels went in between, and every field in the panel drew six low.
     ui.spacing_mut().item_spacing.y = 0.0;
-    if inspector_header(ui, palette, item).clicked() {
+    let closed = panel_header(ui, palette, item.name, |ui| {
+        kind_label(ui, palette.ink_3, item.kind);
+    });
+    if closed.clicked() {
         pressed = Inspecting::Closed;
     }
 
-    egui::ScrollArea::vertical().auto_shrink([false, false]).show(ui, |ui| {
-        Frame::new()
-            .inner_margin(Margin::symmetric(metric::PAD as i8, metric::INSPECTOR_PAD_Y as i8))
-            .show(ui, |ui| {
-                ui.set_width(ui.available_width());
-                // The design states every gap in this column, and egui's own
-                // six between widgets is not one of them.
-                ui.spacing_mut().item_spacing.y = 0.0;
+    panel_body(ui, |ui| {
+        label_above(ui, palette, "Display name", metric::UNDER_A_FIELD_LABEL);
+        one_line_field(ui, palette, item.name);
 
-                label_above(ui, palette, "Display name", metric::UNDER_A_FIELD_LABEL);
-                one_line_field(ui, palette, item.name);
+        ui.add_space(metric::BETWEEN_GROUPS);
+        label_above(ui, palette, "Description", metric::UNDER_A_FIELD_LABEL);
+        if paragraph_field(ui, palette, &mut words.description) {
+            pressed = Inspecting::Edited;
+        }
+        ui.add_space(metric::UNDER_A_FIELD_LABEL);
+        footnote(ui, palette, "Shown under the device in Bitwig's browser.");
 
-                ui.add_space(metric::BETWEEN_GROUPS);
-                label_above(ui, palette, "Description", metric::UNDER_A_FIELD_LABEL);
-                if paragraph_field(ui, palette, &mut words.description) {
-                    pressed = Inspecting::Edited;
-                }
-                ui.add_space(metric::UNDER_A_FIELD_LABEL);
-                footnote(ui, palette, "Shown under the device in Bitwig's browser.");
+        ui.add_space(metric::BETWEEN_GROUPS);
+        label_above(ui, palette, "Search keywords", metric::UNDER_A_FIELD_LABEL);
+        if keyword_field(ui, palette, words) {
+            pressed = Inspecting::Edited;
+        }
+        ui.add_space(metric::UNDER_A_FIELD_LABEL);
+        footnote(ui, palette, "Proposed from the name.");
 
-                ui.add_space(metric::BETWEEN_GROUPS);
-                label_above(ui, palette, "Search keywords", metric::UNDER_A_FIELD_LABEL);
-                if keyword_field(ui, palette, words) {
-                    pressed = Inspecting::Edited;
-                }
-                ui.add_space(metric::UNDER_A_FIELD_LABEL);
-                footnote(ui, palette, "Proposed from the name.");
+        rule(ui, palette, metric::BETWEEN_GROUPS);
+        if facts(ui, palette, item) {
+            pressed = Inspecting::CopiedUuid;
+        }
 
-                rule(ui, palette);
-                if facts(ui, palette, item) {
-                    pressed = Inspecting::CopiedUuid;
-                }
-
-                rule(ui, palette);
-                if panel_action(ui, palette, icon::REVEAL, "Reveal file", palette.ink_2).clicked() {
-                    pressed = Inspecting::Reveal;
-                }
-            });
+        rule(ui, palette, metric::BETWEEN_GROUPS);
+        if panel_action(ui, palette, icon::REVEAL, "Reveal file").clicked() {
+            pressed = Inspecting::Reveal;
+        }
     });
     pressed
 }
 
-/// The panel's header: what kind of thing this is, what it is called, and the
-/// one control that puts the panel away.
-fn inspector_header(ui: &mut Ui, palette: Palette, item: &Inspected<'_>) -> Response {
+/// The header both panels wear: what kind of thing this is, what it is called,
+/// and the one control that puts the panel away.
+///
+/// The tag is the caller's, because it is the only thing the two differ in -
+/// the inspector names the kind as a word and the catalog's detail sets it as a
+/// lowercase monospaced tag. Everything else here is one shape in both bundles,
+/// down to the eight between the tag and the name.
+///
+/// Answers whether the close was pressed.
+fn panel_header(ui: &mut Ui, palette: Palette, name: &str, tag: impl FnOnce(&mut Ui)) -> Response {
     let (rect, _) = ui.allocate_exact_size(
-        vec2(ui.available_width(), metric::INSPECTOR_HEADER),
+        vec2(ui.available_width(), metric::ASIDE_HEADER),
         Sense::hover(),
     );
     // A fill of its own, and darker than the panel: the design separates the
@@ -1147,7 +1183,7 @@ fn inspector_header(ui: &mut Ui, palette: Palette, item: &Inspected<'_>) -> Resp
             .layout(Layout::left_to_right(Align::Center)),
     );
     line.spacing_mut().item_spacing.x = 0.0;
-    kind_label(&mut line, palette.ink_3, item.kind);
+    tag(&mut line);
     line.add_space(metric::TOOL_GAP);
 
     // The close first, from the right, so the name is truncated by what is
@@ -1158,8 +1194,7 @@ fn inspector_header(ui: &mut Ui, palette: Palette, item: &Inspected<'_>) -> Resp
         ui.with_layout(Layout::left_to_right(Align::Center), |ui| {
             ui.add(
                 egui::Label::new(
-                    font::run(item.name, font::emphasis(ui.ctx(), font::ROW_NAME))
-                        .color(palette.ink),
+                    font::run(name, font::emphasis(ui.ctx(), font::ROW_NAME)).color(palette.ink),
                 )
                 .truncate(),
             );
@@ -1167,6 +1202,24 @@ fn inspector_header(ui: &mut Ui, palette: Palette, item: &Inspected<'_>) -> Resp
         closed
     })
     .inner
+}
+
+/// The scrolling body a panel puts its fields in, with the padding the design
+/// gives it.
+///
+/// The gaps inside are stated one at a time by whatever is drawn in here: the
+/// design states every one of them, and egui's own six between widgets is not
+/// one of them.
+fn panel_body(ui: &mut Ui, contents: impl FnOnce(&mut Ui)) {
+    egui::ScrollArea::vertical().auto_shrink([false, false]).show(ui, |ui| {
+        Frame::new()
+            .inner_margin(Margin::symmetric(metric::PAD as i8, metric::ASIDE_PAD_Y as i8))
+            .show(ui, |ui| {
+                ui.set_width(ui.available_width());
+                ui.spacing_mut().item_spacing.y = 0.0;
+                contents(ui);
+            });
+    });
 }
 
 /// The heading over a field or a fact, with the air the design puts under it.
@@ -1232,58 +1285,56 @@ fn keyword_field(ui: &mut Ui, palette: Palette, words: &mut Words) -> bool {
     // The design's `min-height` is on the content and not on the box, so an
     // empty keyword field is 27 inside its padding rather than 27 overall.
     keyword_box(ui, palette, metric::KEYWORDS, |ui| {
-        {
-            let mut drop = None;
-            for (at, word) in words.keywords.iter().enumerate() {
-                if keyword(ui, palette, word, true) {
-                    drop = Some(at);
-                }
+        let mut drop = None;
+        for (at, word) in words.keywords.iter().enumerate() {
+            if keyword(ui, palette, word, true) {
+                drop = Some(at);
             }
-            if let Some(at) = drop {
-                words.keywords.remove(at);
-                changed = true;
-            }
+        }
+        if let Some(at) = drop {
+            words.keywords.remove(at);
+            changed = true;
+        }
 
-            // What is left of the row the chips ended on, and never less than
-            // the words in it: `available_width` is the whole row in a wrapped
-            // layout rather than the rest of it, so asking for that put the
-            // field on a line of its own and made a one-keyword box two rows
-            // tall. The floor is what wraps it when there is genuinely no room.
-            const ADD: &str = "add...";
-            let rest = ui.available_size_before_wrap().x;
-            let least = text_width(ui, ADD, font::plain(font::NOTE));
-            let typing = ui.add(
-                egui::TextEdit::singleline(&mut words.adding)
-                    // Named, because egui would otherwise derive its id from
-                    // where it sits in the layout - and it sits after the
-                    // chips, so committing a word moves it, gives it a new id
-                    // and drops the focus that had just been handed back.
-                    .id_salt("add-keyword")
-                    .hint_text(font::run(ADD, font::plain(font::NOTE)).color(palette.ink_3))
-                    .desired_width(rest.max(least))
-                    .font(font::plain(font::NOTE))
-                    .text_color(palette.ink)
-                    .frame(Frame::NONE)
-                    .margin(Margin::ZERO),
-            );
-            // Enter and clicking away are the same statement, and a singleline
-            // field gives up focus on Enter - so both arrive here. Whitespace
-            // separates keywords in the bundle Bitwig reads, so it separates
-            // them here: whatever was typed splits into words.
-            if typing.lost_focus() && !words.adding.trim().is_empty() {
-                for word in words.adding.split_whitespace() {
-                    if !words.keywords.iter().any(|had| had == word) {
-                        words.keywords.push(word.to_owned());
-                        changed = true;
-                    }
+        // What is left of the row the chips ended on, and never less than the
+        // words in it: `available_width` is the whole row in a wrapped layout
+        // rather than the rest of it, so asking for that put the field on a
+        // line of its own and made a one-keyword box two rows tall. The floor
+        // is what wraps it when there is genuinely no room.
+        const ADD: &str = "add...";
+        let rest = ui.available_size_before_wrap().x;
+        let least = text_width(ui, ADD, font::plain(font::NOTE));
+        let typing = ui.add(
+            egui::TextEdit::singleline(&mut words.adding)
+                // Named, because egui would otherwise derive its id from where
+                // it sits in the layout - and it sits after the chips, so
+                // committing a word moves it, gives it a new id and drops the
+                // focus that had just been handed back.
+                .id_salt("add-keyword")
+                .hint_text(font::run(ADD, font::plain(font::NOTE)).color(palette.ink_3))
+                .desired_width(rest.max(least))
+                .font(font::plain(font::NOTE))
+                .text_color(palette.ink)
+                .frame(Frame::NONE)
+                .margin(Margin::ZERO),
+        );
+        // Enter and clicking away are the same statement, and a singleline
+        // field gives up focus on Enter - so both arrive here. Whitespace
+        // separates keywords in the bundle Bitwig reads, so it separates them
+        // here: whatever was typed splits into words.
+        if typing.lost_focus() && !words.adding.trim().is_empty() {
+            for word in words.adding.split_whitespace() {
+                if !words.keywords.iter().any(|had| had == word) {
+                    words.keywords.push(word.to_owned());
+                    changed = true;
                 }
-                words.adding.clear();
-                // Enter means "and another", so the field is handed its focus
-                // back rather than dropping the user out of a list they are
-                // half way through.
-                if ui.input(|input| input.key_pressed(egui::Key::Enter)) {
-                    typing.request_focus();
-                }
+            }
+            words.adding.clear();
+            // Enter means "and another", so the field is handed its focus back
+            // rather than dropping the user out of a list they are half way
+            // through.
+            if ui.input(|input| input.key_pressed(egui::Key::Enter)) {
+                typing.request_focus();
             }
         }
     });
@@ -1364,12 +1415,17 @@ fn field_frame(palette: Palette, margin: Margin) -> Frame {
 }
 
 /// A hairline between two groups, with the group gap on both sides of it.
-fn rule(ui: &mut Ui, palette: Palette) {
-    ui.add_space(metric::BETWEEN_GROUPS);
+///
+/// The gap is the caller's because it is the panel's and not the rule's: in
+/// both bundles the hairline is a child of the body column, so the air around
+/// it is that column's own `gap` - 14 in the inspector and 13 in the catalog's
+/// detail.
+fn rule(ui: &mut Ui, palette: Palette, gap: f32) {
+    ui.add_space(gap);
     let (rect, _) =
         ui.allocate_exact_size(vec2(ui.available_width(), metric::HAIRLINE), Sense::hover());
     ui.painter().rect_filled(rect, CornerRadius::ZERO, palette.line);
-    ui.add_space(metric::BETWEEN_GROUPS);
+    ui.add_space(gap);
 }
 
 /// What is true of this entry rather than what can be typed into it: the
@@ -1468,7 +1524,8 @@ fn placement_chip(ui: &mut Ui, palette: Palette, placement: &Placement) {
 /// only the fill is drawn outside it: allocating the wider box instead would
 /// push the whole action list seven pixels left of everything else in the
 /// panel.
-fn panel_action(ui: &mut Ui, palette: Palette, glyph: &str, label: &str, ink: Color32) -> Response {
+fn panel_action(ui: &mut Ui, palette: Palette, glyph: &str, label: &str) -> Response {
+    let ink = palette.ink_2;
     let (rect, response) = ui.allocate_exact_size(
         vec2(ui.available_width(), metric::PANEL_ACTION),
         Sense::click(),
@@ -1542,161 +1599,127 @@ pub fn detail(ui: &mut Ui, palette: Palette, item: &Detailed<'_>) -> Detailing {
     // For the reason written on the inspector's: the header and the body under
     // it are two allocated widgets, and egui would put six pixels between them.
     ui.spacing_mut().item_spacing.y = 0.0;
-    if detail_header(ui, palette, item).clicked() {
+    let closed = panel_header(ui, palette, item.name, |ui| {
+        ui.label(font::run(kind_tag(item.kind), font::mono(font::MONO_TIGHT)).color(palette.ink_3));
+    });
+    if closed.clicked() {
         pressed = Detailing::Closed;
     }
 
-    egui::ScrollArea::vertical().auto_shrink([false, false]).show(ui, |ui| {
-        Frame::new()
-            .inner_margin(Margin::symmetric(metric::PAD as i8, metric::INSPECTOR_PAD_Y as i8))
-            .show(ui, |ui| {
-                ui.set_width(ui.available_width());
-                ui.spacing_mut().item_spacing.y = 0.0;
+    panel_body(ui, |ui| {
+        if let Some(replacement) = item.replaced_by {
+            if superseded(ui, palette, replacement) {
+                pressed = Detailing::Replacement;
+            }
+            ui.add_space(metric::BETWEEN_DETAIL_GROUPS);
+        }
 
-                if let Some(replacement) = item.replaced_by {
-                    if superseded(ui, palette, replacement) {
-                        pressed = Detailing::Replacement;
-                    }
-                    ui.add_space(metric::BETWEEN_DETAIL_GROUPS);
-                }
-
-                // Who wrote it and which publication this is, on one line: the
-                // author is the trust signal and the version is what an update
-                // is measured against.
-                ui.horizontal(|ui| {
-                    ui.spacing_mut().item_spacing.x = 0.0;
-                    let text = labelled_icon(
-                        ui,
-                        icon::AUTHOR,
-                        item.author,
-                        font::CONTROL,
-                        palette.ink,
-                        palette.ink_3,
-                        metric::ALONG_A_DETAIL_LINE,
-                    );
-                    ui.label(text);
-                    ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                        ui.label(
-                            font::run(item.version, font::mono(font::MONO))
-                                .color(palette.ink_3),
-                        );
-                    });
-                });
-
-                ui.add_space(metric::BETWEEN_DETAIL_GROUPS);
-                ui.label(font::run(item.description, font::plain(font::CONTROL)).color(palette.ink_2));
-
-                ui.add_space(metric::BETWEEN_DETAIL_GROUPS);
-                // Whether this installation can load it at all, which is the
-                // one thing here that is about the machine rather than about
-                // the item, and the one the design colours.
-                let (glyph, ink) = if item.compatible {
-                    (icon::COMPATIBLE, palette.ink_2)
-                } else {
-                    (icon::INCOMPATIBLE, palette.err_text)
-                };
-                let requires = format!("Requires Bitwig {} or newer", item.requires);
-                detail_line(ui, palette, glyph, &requires, ink);
-                ui.add_space(metric::BETWEEN_FACTS);
-                detail_line(ui, palette, icon::LICENCE, item.licence, palette.ink_2);
-
-                ui.add_space(metric::BETWEEN_DETAIL_GROUPS);
-                label_above(ui, palette, "Search keywords", metric::UNDER_A_FIELD_LABEL);
-                // No minimum on this one, unlike the inspector's: a published
-                // item's keywords are the author's and there is nothing to
-                // type into, so the box is as tall as what is in it.
-                keyword_box(ui, palette, metric::KEYWORD, |ui| {
-                    for word in item.keywords {
-                        keyword(ui, palette, word, false);
-                    }
-                });
-                ui.add_space(metric::UNDER_A_FIELD_LABEL);
-                footnote(ui, palette, "Editable in Local once installed.");
-
-                rule(ui, palette);
-
-                if let Some((label, _)) = item.provenance {
-                    let reviewed = format!("Reviewed in {label}");
-                    if detail_line(ui, palette, icon::PROVENANCE, &reviewed, palette.accent_text) {
-                        pressed = Detailing::Provenance;
-                    }
-                    ui.add_space(metric::BETWEEN_FACTS);
-                }
-                if let Some(homepage) = item.homepage {
-                    if detail_line(ui, palette, icon::HOMEPAGE, homepage, palette.accent_text) {
-                        pressed = Detailing::Homepage;
-                    }
-                    ui.add_space(metric::BETWEEN_FACTS);
-                }
-                label_above(ui, palette, "UUID", metric::UNDER_A_FACT);
-                ui.label(font::run(item.uuid, font::mono(font::MONO)).color(palette.ink_3));
+        // Who wrote it and which publication this is, on one line: the author
+        // is the trust signal and the version is what an update is measured
+        // against.
+        ui.horizontal(|ui| {
+            ui.spacing_mut().item_spacing.x = 0.0;
+            let text = labelled_icon(
+                ui,
+                icon::AUTHOR,
+                item.author,
+                font::CONTROL,
+                palette.ink,
+                palette.ink_3,
+                metric::ALONG_A_DETAIL_LINE,
+            );
+            ui.label(text);
+            ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                ui.label(font::run(item.version, font::mono(font::MONO)).color(palette.ink_3));
             });
+        });
+
+        ui.add_space(metric::BETWEEN_DETAIL_GROUPS);
+        ui.label(font::run(item.description, font::plain(font::CONTROL)).color(palette.ink_2));
+
+        ui.add_space(metric::BETWEEN_DETAIL_GROUPS);
+        // Whether this installation can load it at all, which is the one thing
+        // here that is about the machine rather than about the item, and the
+        // one the design colours.
+        let (glyph, ink) = if item.compatible {
+            (icon::COMPATIBLE, palette.ink_2)
+        } else {
+            (icon::INCOMPATIBLE, palette.err_text)
+        };
+        let requires = format!("Requires Bitwig {} or newer", item.requires);
+        detail_fact(ui, glyph, &requires, ink);
+        ui.add_space(metric::BETWEEN_FACTS);
+        detail_fact(ui, icon::LICENCE, item.licence, palette.ink_2);
+
+        ui.add_space(metric::BETWEEN_DETAIL_GROUPS);
+        label_above(ui, palette, "Search keywords", metric::UNDER_A_FIELD_LABEL);
+        // No minimum on this one, unlike the inspector's: a published item's
+        // keywords are the author's and there is nothing to type into, so the
+        // box is as tall as what is in it.
+        keyword_box(ui, palette, metric::KEYWORD, |ui| {
+            for word in item.keywords {
+                keyword(ui, palette, word, false);
+            }
+        });
+        ui.add_space(metric::UNDER_A_FIELD_LABEL);
+        footnote(ui, palette, "Editable in Local once installed.");
+
+        rule(ui, palette, metric::BETWEEN_GROUPS);
+
+        if let Some((label, _)) = item.provenance {
+            let reviewed = format!("Reviewed in {label}");
+            if detail_link(ui, palette, icon::PROVENANCE, &reviewed) {
+                pressed = Detailing::Provenance;
+            }
+            ui.add_space(metric::BETWEEN_FACTS);
+        }
+        if let Some(homepage) = item.homepage {
+            if detail_link(ui, palette, icon::HOMEPAGE, homepage) {
+                pressed = Detailing::Homepage;
+            }
+            ui.add_space(metric::BETWEEN_FACTS);
+        }
+        label_above(ui, palette, "UUID", metric::UNDER_A_FACT);
+        ui.label(font::run(item.uuid, font::mono(font::MONO)).color(palette.ink_3));
     });
     pressed
 }
 
-/// The detail panel's header. The kind is set in the monospaced face here and
-/// lowercased, which is the design's way of making it a tag rather than a word.
-fn detail_header(ui: &mut Ui, palette: Palette, item: &Detailed<'_>) -> Response {
-    let (rect, _) = ui.allocate_exact_size(
-        vec2(ui.available_width(), metric::INSPECTOR_HEADER),
-        Sense::hover(),
-    );
-    ui.painter().rect_filled(rect, CornerRadius::ZERO, palette.panel);
-
-    let mut line = ui.new_child(
-        egui::UiBuilder::new()
-            .max_rect(rect.shrink2(vec2(metric::PAD, 0.0)))
-            .layout(Layout::left_to_right(Align::Center)),
-    );
-    line.spacing_mut().item_spacing.x = 0.0;
-    let tag = match item.kind {
+/// The kind as the detail panel tags it: lowercased and in the monospaced face,
+/// which is the design's way of making it a tag rather than a word.
+///
+/// Not the same words as [`kind_label`]'s - a grid module is tagged `module`
+/// here and named `Grid module` in a list - so the two maps are two facts.
+fn kind_tag(kind: Kind) -> &'static str {
+    match kind {
         Kind::Device => "device",
         Kind::Modulator => "modulator",
         Kind::Module => "module",
-    };
-    line.label(font::run(tag, font::mono(font::MONO_TIGHT)).color(palette.ink_3));
-    line.add_space(metric::TOOL_GAP);
-    line.with_layout(Layout::right_to_left(Align::Center), |ui| {
-        let closed = dismiss(ui, palette);
-        ui.add_space(metric::TOOL_GAP);
-        ui.with_layout(Layout::left_to_right(Align::Center), |ui| {
-            ui.add(
-                egui::Label::new(
-                    font::run(item.name, font::emphasis(ui.ctx(), font::ROW_NAME))
-                        .color(palette.ink),
-                )
-                .truncate(),
-            );
-        });
-        closed
-    })
-    .inner
+    }
 }
 
 /// One line of the detail panel: an icon, and what it is about.
+fn detail_fact(ui: &mut Ui, glyph: &str, text: &str, ink: Color32) {
+    ui.add(egui::Label::new(fact_run(ui, glyph, text, ink, ink)).truncate());
+}
+
+/// The same line drawn as somewhere to go, which is the only kind that senses a
+/// press. Answers whether it was pressed.
 ///
-/// Answers whether it was clicked, which only the two that lead somewhere are
-/// drawn in a colour that invites.
-fn detail_line(ui: &mut Ui, palette: Palette, glyph: &str, text: &str, ink: Color32) -> bool {
-    let leads_somewhere = ink == palette.accent_text;
-    let run = labelled_icon(
-        ui,
-        glyph,
-        text,
-        font::CHIP,
-        ink,
-        if leads_somewhere { palette.ink_3 } else { ink },
-        metric::ALONG_A_DETAIL_LINE,
-    );
-    let label = egui::Label::new(run).truncate();
-    if !leads_somewhere {
-        ui.add(label);
-        return false;
-    }
-    ui.add(label.sense(Sense::click()))
+/// The colour is this function's own rather than the caller's: what makes a
+/// line a link is that it leads somewhere, and reading that back off the ink it
+/// was handed made every future fact drawn in the accent into a link.
+fn detail_link(ui: &mut Ui, palette: Palette, glyph: &str, text: &str) -> bool {
+    let run = fact_run(ui, glyph, text, palette.accent_text, palette.ink_3);
+    ui.add(egui::Label::new(run).truncate().sense(Sense::click()))
         .on_hover_cursor(egui::CursorIcon::PointingHand)
         .clicked()
+}
+
+/// The icon and the words of a detail line, set as one run so the two share a
+/// baseline.
+fn fact_run(ui: &Ui, glyph: &str, text: &str, ink: Color32, icon_ink: Color32) -> egui::WidgetText {
+    labelled_icon(ui, glyph, text, font::CHIP, ink, icon_ink, metric::ALONG_A_DETAIL_LINE)
 }
 
 /// The notice that a newer device has taken this one's place.
@@ -2670,12 +2693,12 @@ mod tests {
     /// is set by the sixteen-pixel icon in them rather than by their text.
     #[test]
     fn the_inspector_is_measured_as_the_bundle_measures_it() {
-        assert_eq!(metric::WINDOW[0] - metric::INSPECTOR, 548.0, "what the list is left");
+        assert_eq!(metric::WINDOW[0] - metric::ASIDE, 548.0, "what the list is left");
 
         // The panel's top is the toolbar's, and its first label sits 53 below
         // that: the header, then the body's own padding. The probe puts it at
         // 125 with the window's content starting at 72.
-        assert_eq!(metric::INSPECTOR_HEADER + metric::INSPECTOR_PAD_Y, 53.0);
+        assert_eq!(metric::ASIDE_HEADER + metric::ASIDE_PAD_Y, 53.0);
         // Then the label, five, and a 27-tall field: 143 in the probe.
         assert_eq!(metric::UNDER_A_FIELD_LABEL + metric::FIELD, 32.0);
 

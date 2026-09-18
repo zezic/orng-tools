@@ -76,6 +76,20 @@ impl Jar {
     /// Visit every `.class` entry, in archive order.
     pub fn visit_classes(
         &self,
+        visit: impl FnMut(&str, &[u8]) -> ControlFlow<()>,
+    ) -> Result<()> {
+        self.visit_classes_under("", visit)
+    }
+
+    /// The same, for one package.
+    ///
+    /// The name is checked before the entry is decompressed, which is the whole
+    /// point: Bitwig's archive holds seventeen thousand classes and inflating
+    /// all of them to read a handful costs a quarter of a second. A caller that
+    /// knows the package should say so.
+    pub fn visit_classes_under(
+        &self,
+        prefix: &str,
         mut visit: impl FnMut(&str, &[u8]) -> ControlFlow<()>,
     ) -> Result<()> {
         let mut archive = self.archive()?;
@@ -85,7 +99,7 @@ impl Jar {
                 .by_index(i)
                 .map_err(|e| Error::Archive(e.to_string()))?;
             let name = entry.name().to_owned();
-            if !name.ends_with(".class") {
+            if !name.ends_with(".class") || !name.starts_with(prefix) {
                 continue;
             }
             buf.clear();

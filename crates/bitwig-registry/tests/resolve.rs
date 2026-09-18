@@ -218,3 +218,4 @@ fn the_section_key_comes_out_of_the_installation_and_opens_its_documents() {
         "an encrypted document must refuse to open without a key"
     );
 }
+

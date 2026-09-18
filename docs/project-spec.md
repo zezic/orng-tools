@@ -176,6 +176,16 @@ package, and what settles the answer is neither a name nor a length but a decryp
 candidate is accepted only once it has opened a real document and the result has parsed.
 It fails closed, and no error it raises carries the material.
 
+**It is resolved once per installation and never cached to disk.** Extraction costs about
+80ms, roughly half of which is the archive's central directory, so the shape that matters
+is the API rather than a cache: every read takes the key as an argument, which makes
+"resolve once, pass it down" the natural way to write a caller and a per-document
+re-extraction the unnatural one. A key written to `~/.orng` would be Bitwig's material in
+a file this project wrote - the thing removing it from the source tree was for, relocated
+to every user's disk - and it would go stale the next time Bitwig updates. It is held for
+as long as the resolved installation is held, and dropped with it, which is the same rule
+`session.rs` already follows for everything else the machine reports.
+
 `bitwig-document` needs no installation, which is why it takes the key as an argument and
 refuses the encrypted form without one. The catalog never supplies one: everything it
 carries is text or plain binary, and an encrypted document in a pull request is Bitwig's

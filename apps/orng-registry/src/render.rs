@@ -532,6 +532,62 @@ fn nothing_registered_yet() {
     );
 }
 
+/// The empty state's pair sits in the middle of the window.
+///
+/// Asserted against the controls themselves rather than left to a picture. The
+/// pair used to be centred from an estimate of how wide the labels would be -
+/// six-and-a-bit pixels a character - which over-stated them by 69 pixels on
+/// this screen and put the block 35 to the left. A snapshot froze that happily,
+/// because a snapshot records what was drawn and has no opinion about where the
+/// middle is.
+#[test]
+fn the_empty_states_controls_are_centred_in_the_window() {
+    let root = fixture("centred");
+    let session = found_with(&root, Helper::Absent, GuardState::Armed, Manifest::default());
+    let mut session = Some(session);
+    let mut harness = Harness::builder().with_size(SIZE).build_eframe(move |cc| {
+        App::with(&cc.egui_ctx, session.take().expect("built once"))
+    });
+    harness.run();
+
+    // By role as well as by label: the label alone matches the button and the
+    // text node inside it, which are not the same rectangle.
+    use egui::accesskit::Role;
+    // Every match, not the first. A control inside a centring layout leaves
+    // more than one node in the accessibility tree - egui lays the block out
+    // once to find out how big it is and once to place it - and they differ in
+    // `y` while sharing `x` and width. Which of them is the drawn one is not
+    // worth depending on, and this is a question about horizontal position, so
+    // the horizontal extremes answer it whichever order they arrive in.
+    let edges = |label: &str| {
+        let rects: Vec<_> = harness
+            .get_all_by_role_and_label(Role::Button, label)
+            .map(|node| node.rect())
+            .collect();
+        assert!(!rects.is_empty(), "{label} is not on this screen");
+        let left = rects.iter().map(|r| r.left()).fold(f32::INFINITY, f32::min);
+        let right = rects.iter().map(|r| r.right()).fold(f32::NEG_INFINITY, f32::max);
+        (left, right)
+    };
+    let (action_left, action_right) = edges("Browse the catalog");
+    let (alt_left, alt_right) = edges("Add files...");
+
+    let middle = (action_left + alt_right) / 2.0;
+    let window = metric::WINDOW[0] / 2.0;
+    assert!(
+        (middle - window).abs() <= 1.0,
+        "the pair is centred on {middle}, the window on {window}"
+    );
+
+    // And they are one block rather than two: the design's gap, not egui's.
+    let gap = alt_left - action_right;
+    assert!(
+        (gap - metric::TOOL_GAP).abs() <= 0.5,
+        "the pair is {gap} apart, the design says {}",
+        metric::TOOL_GAP
+    );
+}
+
 /// The catalog as it is published today, drawn from a real index rather than a
 /// made-up one, so what is rendered is a shape the catalog actually produces.
 #[test]

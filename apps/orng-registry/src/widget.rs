@@ -225,6 +225,54 @@ pub fn empty_alt(ui: &mut Ui, palette: Palette, label: &str) -> Response {
     empty_button(ui, palette, label, font::CONTROL, metric::EMPTY_ALT_PAD)
 }
 
+/// How wide a run of text is once it has been laid out.
+///
+/// Asking the font rather than counting characters. A proportional face has no
+/// per-character width to multiply by, so an estimate is wrong by an amount
+/// that depends on which letters the label happens to contain.
+fn text_width(ui: &Ui, label: &str, font: egui::FontId) -> f32 {
+    ui.painter()
+        .layout_no_wrap(label.to_owned(), font, Color32::PLACEHOLDER)
+        .rect
+        .width()
+}
+
+/// How wide the empty state's controls will be, before either is drawn.
+///
+/// Needed because the pair is centred, and egui cannot centre a row it has not
+/// laid out yet: a horizontal inside a centring column still starts at the
+/// column's left edge. So the width is worked out first and the row is pushed
+/// half the remainder.
+///
+/// This replaced an estimate of six-and-a-bit pixels a character plus a
+/// constant. On the welcome screen that over-stated `Browse the catalog` and
+/// `Add files...` together by 69 pixels, and the pair drew 35 left of centre.
+pub fn empty_controls_width(
+    ui: &Ui,
+    action: Option<&str>,
+    action_is_primary: bool,
+    alt: Option<&str>,
+) -> f32 {
+    let mut width = 0.0;
+    let mut items = 0;
+    if let Some(action) = action {
+        width += if action_is_primary {
+            text_width(ui, action, font::emphasis(ui.ctx(), font::ACTION))
+                + 2.0 * ui.spacing().button_padding.x
+        } else {
+            text_width(ui, action, font::plain(font::ACTION))
+                + 2.0 * metric::EMPTY_ACTION_PAD
+        };
+        items += 1;
+    }
+    if let Some(alt) = alt {
+        width += text_width(ui, alt, font::plain(font::CONTROL))
+            + 2.0 * metric::EMPTY_ALT_PAD;
+        items += 1;
+    }
+    width + metric::TOOL_GAP * (items.max(1) - 1) as f32
+}
+
 /// A stack of lines, centred in the bar it sits in.
 ///
 /// egui places a child `Ui` at the top of what is available, because when it is
@@ -1055,18 +1103,20 @@ fn block(ui: &mut Ui, palette: Palette, empty: &Empty<'_>) -> Pressed {
         if empty.action.is_some() || empty.alt.is_some() {
             ui.add_space(stack::BEFORE_CONTROLS);
             ui.horizontal(|ui| {
-                // Centred as a block. A row laid out left to right inside a
-                // centred column still starts at the left edge of it.
-                let controls = empty.action.iter().chain(empty.alt.iter());
-                let width: f32 = controls
-                    .map(|label| label.len() as f32 * BUTTON_WIDTH_PER_CHAR + BUTTON_PADDING)
-                    .sum::<f32>()
-                    + metric::TOOL_GAP;
-                ui.add_space((ui.available_width() - width) / 2.0);
-                // The design's gap, and the one the centring above assumed.
-                // The style's own is `TIGHT`, so the pair drew six apart while
-                // the block was centred as though it were eight.
+                // The design's gap. The style's own is `TIGHT`, so the pair
+                // drew six apart while the block was centred as though it were
+                // eight - both numbers wrong until the other was.
                 ui.spacing_mut().item_spacing.x = metric::TOOL_GAP;
+                // Centred as a block. A row laid out left to right inside a
+                // centred column still starts at the left edge of it, so the
+                // width has to be known before anything is drawn.
+                let width = empty_controls_width(
+                    ui,
+                    empty.action,
+                    empty.action_is_primary,
+                    empty.alt,
+                );
+                ui.add_space((ui.available_width() - width) / 2.0);
                 if let Some(action) = empty.action {
                     let hit = if empty.action_is_primary {
                         primary_button(ui, palette, action, "", true, "").clicked()
@@ -1131,12 +1181,6 @@ const EITHER_SIDE_OF_A_SEPARATOR: f32 = 10.0;
 /// faces here carry this codepoint - which was checked, because a glyph the
 /// font does not have is drawn as a box in the one place a user is reading.
 pub const SEPARATOR: &str = "\u{b7}";
-
-/// Roughly how wide a character of button text is, for centring a pair of them
-/// before either has been laid out. An estimate, and only ever used to centre:
-/// being a few pixels out moves the block, it does not break it.
-const BUTTON_WIDTH_PER_CHAR: f32 = 6.2;
-const BUTTON_PADDING: f32 = 40.0;
 
 /// The four corner marks the design puts around a full-region empty state.
 fn corner_marks(ui: &Ui, palette: Palette, region: Rect) {

@@ -21,7 +21,7 @@ use eframe::egui::{
     self, Align, Color32, CornerRadius, Frame, Layout, Margin, Rect, Response, Sense,
     Stroke, Ui, vec2,
 };
-use orng_tools::Kind;
+use orng_tools::{Kind, Placement};
 
 use crate::theme::{Palette, font, metric};
 
@@ -73,7 +73,14 @@ pub fn view_tab(ui: &mut Ui, palette: Palette, label: &str, current: bool) -> Re
 /// The count is inside the control rather than beside it: the question a kind
 /// filter answers is "how many of these are there", and a toggle that hides the
 /// answer until it is pressed makes the user press it to find out.
-pub fn filter_chip(ui: &mut Ui, palette: Palette, label: &str, count: usize, on: bool) -> Response {
+pub fn filter_chip(
+    ui: &mut Ui,
+    palette: Palette,
+    label: &str,
+    count: usize,
+    on: bool,
+    width: Width,
+) -> Response {
     let ink = if on { palette.ink } else { palette.ink_3 };
     let mut text = egui::text::LayoutJob::default();
     text.append(
@@ -87,14 +94,22 @@ pub fn filter_chip(ui: &mut Ui, palette: Palette, label: &str, count: usize, on:
         egui::TextFormat { color: palette.ink_3, ..font::format(font::mono(font::MONO_TIGHT)) },
     );
 
-    ui.add(
-        egui::Button::new(text)
-            .fill(if on { palette.btn } else { Color32::TRANSPARENT })
-            .stroke(Stroke::NONE)
-            .corner_radius(CornerRadius::same(metric::RADIUS))
-            .min_size(vec2(0.0, metric::CONTROL)),
-    )
-    .on_hover_cursor(egui::CursorIcon::PointingHand)
+    let button = egui::Button::new(text)
+        .fill(if on { palette.btn } else { Color32::TRANSPARENT })
+        .stroke(Stroke::NONE)
+        .corner_radius(CornerRadius::same(metric::RADIUS))
+        .min_size(vec2(0.0, metric::CONTROL));
+    ui.scope(|ui| {
+        // The design tightens a chip beside the inspector rather than letting
+        // the three of them push the field it shares the toolbar with below
+        // what a search field is worth having.
+        ui.spacing_mut().button_padding.x = match width {
+            Width::Full => metric::CHIP_PAD,
+            Width::Narrow => metric::NARROW_CHIP_PAD,
+        };
+        ui.add(button).on_hover_cursor(egui::CursorIcon::PointingHand)
+    })
+    .inner
 }
 
 /// An icon and a label as one run of text.
@@ -221,6 +236,37 @@ pub fn empty_alt(ui: &mut Ui, palette: Palette, label: &str) -> Response {
     empty_button(ui, palette, label, font::CONTROL, metric::EMPTY_ALT_PAD)
 }
 
+/// How wide a run of widgets comes out, before any of it is drawn.
+///
+/// A pass in a `Ui` that paints nothing and takes no input, so the closure that
+/// answers the question is the closure that draws it, and the two cannot come
+/// to disagree - which a second function returning "how wide this will be"
+/// eventually would. The same trick [`stacked_cell`] uses to place a block
+/// whose height is not known until it has been laid out.
+///
+/// **Laid out left to right rather than in the caller's own layout.** This is
+/// asked from a bar, whose `Ui` is still the panel's top-down one at the point
+/// the question arises; measuring in that stacks the run into a column and
+/// answers with the width of its widest member. Which the toolbar's search
+/// field then took as licence to draw full width over the chips beside it.
+///
+/// The salt keeps two measurements on one line from sharing an id, and with it
+/// the interaction memory of whatever is inside them.
+pub fn measured(ui: &Ui, salt: impl egui::AsIdSalt, contents: impl FnOnce(&mut Ui)) -> f32 {
+    let mut probe = Ui::new(
+        ui.ctx().clone(),
+        ui.id().with(salt),
+        egui::UiBuilder::new()
+            .sizing_pass()
+            .invisible()
+            .max_rect(ui.max_rect())
+            .layout(Layout::left_to_right(Align::Center)),
+    );
+    *probe.spacing_mut() = ui.spacing().clone();
+    contents(&mut probe);
+    probe.min_rect().width()
+}
+
 /// How wide a run of text is once it has been laid out.
 ///
 /// Asking the font rather than counting characters. A proportional face has no
@@ -296,12 +342,44 @@ pub fn centred_block(ui: &mut Ui, contents: impl Fn(&mut Ui)) {
     );
 }
 
+/// How wide the search field draws, on a toolbar with `fixed` pixels already
+/// spoken for.
+///
+/// The field is the toolbar's flexible thing: `flex:1 1 auto` with a 200-pixel
+/// cap and a 64-pixel floor, which across the box is [`metric::SEARCH_FIELD`]
+/// and [`metric::SEARCH_FLOOR`]. What is easy to miss is the second flexible
+/// item - a bare `flex:1 1 0` between the kind chips and the controls at the
+/// right end - because the two grow and shrink *together*. So the field gets
+/// its own content width plus half of whatever the toolbar has left over, and
+/// the gap gets the other half.
+///
+/// Which is why the bundle draws the field 216 across at 820 and 146 at 548,
+/// rather than the 207 that "the field takes what is left" would give.
+///
+/// `content` is measured from the hint rather than from what has been typed,
+/// which the design does not do: its field is sized by whichever text is in it.
+/// A field that widened under the pointer as somebody typed into it would push
+/// every chip beside it along, and nothing is worth that.
+pub fn search_width(available: f32, fixed: f32, content: f32) -> f32 {
+    let spare = available - fixed - content;
+    (content + spare / 2.0).clamp(metric::SEARCH_FLOOR, metric::SEARCH_FIELD)
+}
+
+/// What the search field asks for before anything is shared out: the glyph, the
+/// gap, the hint and the padding on both sides.
+pub fn search_content(ui: &Ui, hint: &str) -> f32 {
+    font::ICON
+        + metric::TIGHT
+        + text_width(ui, hint, font::plain(font::CONTROL))
+        + 2.0 * metric::TOOL_GAP
+}
+
 /// The search field: one filled, rounded box holding the glyph and the text.
 ///
 /// The icon is *inside* the field in the bundle, not sitting on the bar beside
 /// it. That is the difference between a field with an affordance in it and an
 /// icon that happens to be next to a box.
-pub fn search_field(ui: &mut Ui, palette: Palette, query: &mut String, hint: &str) {
+pub fn search_field(ui: &mut Ui, palette: Palette, query: &mut String, hint: &str, width: f32) {
     Frame::new()
         .fill(palette.field)
         .corner_radius(CornerRadius::same(metric::RADIUS))
@@ -318,13 +396,10 @@ pub fn search_field(ui: &mut Ui, palette: Palette, query: &mut String, hint: &st
                 // the design's gaps.
                 ui.add_space(metric::TIGHT);
                 // What is left of the field once the glyph, the gap and the two
-                // margins have taken theirs. The constant is the whole box, so
-                // the box is what matches the bundle rather than the text area
-                // inside it.
-                let text = metric::SEARCH_FIELD
-                    - font::ICON
-                    - metric::TIGHT
-                    - 2.0 * metric::TOOL_GAP;
+                // margins have taken theirs. The width passed in is the whole
+                // box, so the box is what matches the bundle rather than the
+                // text area inside it.
+                let text = width - font::ICON - metric::TIGHT - 2.0 * metric::TOOL_GAP;
                 ui.add(
                     egui::TextEdit::singleline(query)
                         .hint_text(hint)
@@ -505,6 +580,17 @@ pub mod icon {
     pub const UNREADABLE: &str = light::QUESTION;
     pub const NO_MATCH: &str = light::FUNNEL_X;
     pub const CATALOG: &str = light::PACKAGE;
+    /// Show a document where it lives, in the system's own file manager. The
+    /// same glyph as `CHANGE_INSTALL` and a different idea, so it is named
+    /// again rather than borrowed.
+    pub const REVEAL: &str = light::FOLDER_OPEN;
+    /// Where a registered document came from: a file the user chose, or the
+    /// catalog. The catalog's is `CATALOG`.
+    pub const LOCAL_FILE: &str = light::FILE;
+    /// Where a registered document actually is.
+    pub const LINKED: &str = light::LINK;
+    pub const COPIED: &str = light::COPY_SIMPLE;
+    pub const UNRESOLVED: &str = light::LINK_BREAK;
 }
 
 /// One line of the overflow menu.
@@ -723,17 +809,23 @@ impl CatalogColumns {
 }
 
 /// One row of the list: a fixed height, a hover highlight, and its grid.
+///
+/// `selected` is the row the inspector is open on. The design fills it with the
+/// accent at nine per cent and leaves it filled whether or not the pointer is
+/// over it, which is what stops the panel from appearing to be about whichever
+/// row is under the mouse.
 pub fn row(
     ui: &mut Ui,
     palette: Palette,
     width: Width,
+    selected: bool,
     contents: impl FnOnce(&mut Ui, &Columns),
 ) -> Response {
-    let (rect, response) = row_frame(ui, palette, metric::ROW);
+    let (rect, response) = row_frame(ui, palette, metric::ROW, selected);
     let columns = Columns::across(rect, width);
     let mut content = ui.new_child(egui::UiBuilder::new().max_rect(rect));
     contents(&mut content, &columns);
-    response
+    response.on_hover_cursor(egui::CursorIcon::PointingHand)
 }
 
 /// One row of the catalog, which is taller: the description sits under the name.
@@ -742,19 +834,28 @@ pub fn catalog_row(
     palette: Palette,
     contents: impl FnOnce(&mut Ui, &CatalogColumns),
 ) -> Response {
-    let (rect, response) = row_frame(ui, palette, metric::CATALOG_ROW);
+    let (rect, response) = row_frame(ui, palette, metric::CATALOG_ROW, false);
     let columns = CatalogColumns::across(rect);
     let mut content = ui.new_child(egui::UiBuilder::new().max_rect(rect));
     contents(&mut content, &columns);
     response
 }
 
-/// The part both rows share: the space, and the fill that follows the pointer.
-fn row_frame(ui: &mut Ui, palette: Palette, height: f32) -> (Rect, Response) {
+/// The part both rows share: the space, and the fill behind it.
+///
+/// Selection outranks the pointer. A hover says "this is what you would open"
+/// and a selection says "this is what is open", and the second is the one that
+/// has to survive the pointer moving away.
+fn row_frame(ui: &mut Ui, palette: Palette, height: f32, selected: bool) -> (Rect, Response) {
     let (rect, response) =
         ui.allocate_exact_size(vec2(ui.available_width(), height), Sense::click());
-    if response.hovered() {
-        ui.painter().rect_filled(rect, CornerRadius::ZERO, palette.row_hover);
+    let fill = match (selected, response.hovered()) {
+        (true, _) => Some(palette.row_selected),
+        (false, true) => Some(palette.row_hover),
+        (false, false) => None,
+    };
+    if let Some(fill) = fill {
+        ui.painter().rect_filled(rect, CornerRadius::ZERO, fill);
     }
     (rect, response)
 }
@@ -799,13 +900,15 @@ pub fn stacked_cell(ui: &mut Ui, at: Rect, contents: impl Fn(&mut Ui)) {
 /// The design deliberately gives all three the same colour: kind is a fact about
 /// the document, not a status, and colouring it would compete with the states
 /// that do need attention.
-pub fn kind_label(ui: &mut Ui, palette: Palette, kind: Kind) {
+/// The ink is the caller's, because it is not always the same quiet grey: the
+/// design warms a selected row's supporting text, and this is the first of it.
+pub fn kind_label(ui: &mut Ui, ink: Color32, kind: Kind) {
     let label = match kind {
         Kind::Device => "Device",
         Kind::Modulator => "Modulator",
         Kind::Module => "Grid module",
     };
-    ui.label(font::run(label, font::plain(font::CHIP)).color(palette.ink_3));
+    ui.label(font::run(label, font::plain(font::CHIP)).color(ink));
 }
 
 /// How loud a row's status is, as the design's own map from status to token.
@@ -831,6 +934,381 @@ pub fn badge_colour(palette: Palette, badge: &str) -> Color32 {
         "Modified elsewhere" => palette.err_text,
         _ => palette.ink_2,
     }
+}
+
+/// The frame the inspector sits in.
+///
+/// No margin of its own: the header is full width and fills to the panel's
+/// edges, and the body puts in the padding the design gives it.
+pub fn panel(palette: Palette) -> Frame {
+    Frame::new().fill(palette.panel_2).inner_margin(Margin::ZERO)
+}
+
+/// The inspector's shadow, cast to the *left*, because the design slides the
+/// panel over the right of the list rather than standing it beside the list.
+///
+/// **Not the frame's own shadow, and painted after the page rather than with
+/// the panel.** A side panel is claimed before the region it leaves and painted
+/// before it too, so a shadow reaching out of the panel reaches into the page's
+/// own rectangle and the page's fill goes straight over it. Which is why this
+/// takes the panel's rect and is called last.
+///
+/// Clipped to what is left of the panel, because a shadow is a filled
+/// rectangle with a blur on it: in a frame the fill is painted over the middle
+/// of it afterwards, and here there is nothing left to do that.
+pub fn panel_shadow(ui: &Ui, palette: Palette, panel: Rect) {
+    let shadow = egui::epaint::Shadow {
+        offset: [metric::PANEL_SHADOW_REACH, 0],
+        blur: metric::PANEL_SHADOW_BLUR,
+        spread: 0,
+        color: palette.panel_shadow,
+    };
+    ui.painter()
+        .with_clip_rect(Rect::everything_left_of(panel.left()))
+        .add(shadow.as_shape(panel, CornerRadius::ZERO));
+}
+
+/// One entry, as the inspector has to say it.
+///
+/// Everything here is read off the entry and the machine by the caller. The
+/// panel states facts; working out what is true is not a drawing job, and a
+/// widget that reached for the filesystem could not be rendered from a fixture.
+pub struct Inspected<'a> {
+    pub kind: Kind,
+    pub name: &'a str,
+    /// What Bitwig's browser shows under the device.
+    pub description: &'a str,
+    /// The words that find it when typed into that browser.
+    pub keywords: &'a [String],
+    pub uuid: &'a str,
+    /// Where the registry says the document is, relative to the library.
+    pub path: &'a str,
+    /// Where the document came from, drawn as the design draws it: an icon and
+    /// a phrase.
+    pub source: &'a str,
+    pub source_icon: &'a str,
+    /// Where the document actually is, which is a different question.
+    pub placement: &'a Placement,
+}
+
+/// What was pressed in the inspector, if anything was.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Inspecting {
+    Nothing,
+    Closed,
+    CopiedUuid,
+    Reveal,
+}
+
+/// The inspector: everything one entry is, and what can be done about it.
+///
+/// Drawn into a panel of [`metric::INSPECTOR`] that the caller has already
+/// taken out of the window, so the list beside it has already been laid out
+/// narrower. The design draws them as siblings for the same reason: the panel
+/// is not an overlay with the list still live underneath.
+pub fn inspector(ui: &mut Ui, palette: Palette, item: &Inspected<'_>) -> Inspecting {
+    let mut pressed = Inspecting::Nothing;
+    // Before the header, not after it. egui puts `item_spacing` between every
+    // allocated widget, and the header and the body below it are two of them:
+    // six pixels went in between, and every field in the panel drew six low.
+    ui.spacing_mut().item_spacing.y = 0.0;
+    if inspector_header(ui, palette, item).clicked() {
+        pressed = Inspecting::Closed;
+    }
+
+    egui::ScrollArea::vertical().auto_shrink([false, false]).show(ui, |ui| {
+        Frame::new()
+            .inner_margin(Margin::symmetric(metric::PAD as i8, metric::INSPECTOR_PAD_Y as i8))
+            .show(ui, |ui| {
+                ui.set_width(ui.available_width());
+                // The design states every gap in this column, and egui's own
+                // six between widgets is not one of them.
+                ui.spacing_mut().item_spacing.y = 0.0;
+
+                label_above(ui, palette, "Display name", metric::UNDER_A_FIELD_LABEL);
+                one_line_field(ui, palette, item.name);
+
+                ui.add_space(metric::BETWEEN_GROUPS);
+                label_above(ui, palette, "Description", metric::UNDER_A_FIELD_LABEL);
+                paragraph_field(ui, palette, item.description);
+                ui.add_space(metric::UNDER_A_FIELD_LABEL);
+                footnote(ui, palette, "Shown under the device in Bitwig's browser.");
+
+                ui.add_space(metric::BETWEEN_GROUPS);
+                label_above(ui, palette, "Search keywords", metric::UNDER_A_FIELD_LABEL);
+                keyword_field(ui, palette, item.keywords);
+                ui.add_space(metric::UNDER_A_FIELD_LABEL);
+                footnote(ui, palette, "Proposed from the name.");
+
+                rule(ui, palette);
+                if facts(ui, palette, item) {
+                    pressed = Inspecting::CopiedUuid;
+                }
+
+                rule(ui, palette);
+                if panel_action(ui, palette, icon::REVEAL, "Reveal file", palette.ink_2).clicked() {
+                    pressed = Inspecting::Reveal;
+                }
+            });
+    });
+    pressed
+}
+
+/// The panel's header: what kind of thing this is, what it is called, and the
+/// one control that puts the panel away.
+fn inspector_header(ui: &mut Ui, palette: Palette, item: &Inspected<'_>) -> Response {
+    let (rect, _) = ui.allocate_exact_size(
+        vec2(ui.available_width(), metric::INSPECTOR_HEADER),
+        Sense::hover(),
+    );
+    // A fill of its own, and darker than the panel: the design separates the
+    // header from the fields by colour rather than by a line, exactly as it
+    // separates the bars from the working area.
+    ui.painter().rect_filled(rect, CornerRadius::ZERO, palette.panel);
+
+    let mut line = ui.new_child(
+        egui::UiBuilder::new()
+            .max_rect(rect.shrink2(vec2(metric::PAD, 0.0)))
+            .layout(Layout::left_to_right(Align::Center)),
+    );
+    line.spacing_mut().item_spacing.x = 0.0;
+    kind_label(&mut line, palette.ink_3, item.kind);
+    line.add_space(metric::TOOL_GAP);
+
+    // The close first, from the right, so the name is truncated by what is
+    // left rather than pushing the control off the panel.
+    line.with_layout(Layout::right_to_left(Align::Center), |ui| {
+        let closed = dismiss(ui, palette);
+        ui.add_space(metric::TOOL_GAP);
+        ui.with_layout(Layout::left_to_right(Align::Center), |ui| {
+            ui.add(
+                egui::Label::new(
+                    font::run(item.name, font::emphasis(ui.ctx(), font::ROW_NAME))
+                        .color(palette.ink),
+                )
+                .truncate(),
+            );
+        });
+        closed
+    })
+    .inner
+}
+
+/// The heading over a field or a fact, with the air the design puts under it.
+fn label_above(ui: &mut Ui, palette: Palette, label: &str, gap: f32) {
+    ui.label(font::run(label, font::emphasis(ui.ctx(), font::NOTE)).color(palette.ink_2));
+    ui.add_space(gap);
+}
+
+/// The smallest thing the design writes: what Bitwig does with the field above.
+fn footnote(ui: &mut Ui, palette: Palette, text: &str) {
+    ui.label(font::run(text, font::plain(font::FOOTNOTE)).color(palette.ink_3));
+}
+
+/// A field holding one line.
+fn one_line_field(ui: &mut Ui, palette: Palette, text: &str) {
+    field_frame(palette, Margin::symmetric(metric::FIELD_PAD as i8, 0)).show(ui, |ui| {
+        ui.set_width(ui.available_width());
+        ui.set_height(metric::FIELD);
+        ui.horizontal_centered(|ui| {
+            ui.add(
+                egui::Label::new(
+                    font::run(text, font::plain(font::FIELD_VALUE)).color(palette.ink),
+                )
+                .truncate(),
+            );
+        });
+    });
+}
+
+/// A field holding a sentence, which grows with the sentence and never shrinks
+/// below the height the design draws it empty at.
+fn paragraph_field(ui: &mut Ui, palette: Palette, text: &str) {
+    field_frame(
+        palette,
+        Margin::symmetric(metric::FIELD_PAD as i8, metric::PARAGRAPH_PAD_Y as i8),
+    )
+    .show(ui, |ui| {
+        ui.set_width(ui.available_width());
+        ui.set_min_height(metric::PARAGRAPH - 2.0 * metric::PARAGRAPH_PAD_Y);
+        ui.label(font::run(text, font::plain(font::CONTROL)).color(palette.ink));
+    });
+}
+
+/// The box the search keywords sit in.
+fn keyword_field(ui: &mut Ui, palette: Palette, keywords: &[String]) {
+    field_frame(
+        palette,
+        Margin::symmetric(metric::KEYWORDS_PAD_X as i8, metric::KEYWORDS_PAD_Y as i8),
+    )
+    .show(ui, |ui| {
+        ui.set_width(ui.available_width());
+        // The design's `min-height` is on the content and not on the box, so an
+        // empty keyword field is 27 inside its padding rather than 27 overall.
+        ui.set_min_height(metric::KEYWORDS);
+        ui.spacing_mut().item_spacing = vec2(metric::BETWEEN_KEYWORDS, metric::BETWEEN_KEYWORDS);
+        ui.horizontal_wrapped(|ui| {
+            for word in keywords {
+                keyword(ui, palette, word);
+            }
+        });
+    });
+}
+
+/// One keyword: a word on the accent, which is how the design says these are
+/// the entry's own rather than something read off it.
+fn keyword(ui: &mut Ui, palette: Palette, word: &str) {
+    Frame::new()
+        .fill(palette.accent)
+        .corner_radius(CornerRadius::same(metric::RADIUS))
+        .inner_margin(Margin::symmetric(metric::KEYWORD_PAD_X as i8, 0))
+        .show(ui, |ui| {
+            ui.set_height(metric::KEYWORD);
+            ui.horizontal_centered(|ui| {
+                ui.label(font::run(word, font::plain(font::NOTE)).color(palette.accent_ink));
+            });
+        });
+}
+
+/// The surface a field is written on.
+fn field_frame(palette: Palette, margin: Margin) -> Frame {
+    Frame::new()
+        .fill(palette.field)
+        .corner_radius(CornerRadius::same(metric::FIELD_RADIUS))
+        .inner_margin(margin)
+}
+
+/// A hairline between two groups, with the group gap on both sides of it.
+fn rule(ui: &mut Ui, palette: Palette) {
+    ui.add_space(metric::BETWEEN_GROUPS);
+    let (rect, _) =
+        ui.allocate_exact_size(vec2(ui.available_width(), metric::HAIRLINE), Sense::hover());
+    ui.painter().rect_filled(rect, CornerRadius::ZERO, palette.line);
+    ui.add_space(metric::BETWEEN_GROUPS);
+}
+
+/// What is true of this entry rather than what can be typed into it: the
+/// identity, where the registry points, where it came from, and where it is.
+///
+/// Answers whether the identity was copied.
+fn facts(ui: &mut Ui, palette: Palette, item: &Inspected<'_>) -> bool {
+    label_above(ui, palette, "UUID", metric::UNDER_A_FACT);
+    // In a `horizontal`, which takes the height of what is in it. A bare
+    // `with_layout` in a top-down column takes the whole of what is left of the
+    // column instead, and the four facts below this one end up off the panel.
+    //
+    // The control first, from the right, so that the identity is laid out in
+    // what is left of the line rather than pushing the copy off the panel.
+    let copied = ui
+        .horizontal(|ui| {
+            ui.spacing_mut().item_spacing.x = metric::TIGHT;
+            ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                let copy = ui
+                    .add(
+                        egui::Label::new(
+                            font::run(icon::COPY, font::icon(ui.ctx(), font::ICON))
+                                .color(palette.ink_3),
+                        )
+                        .sense(Sense::click()),
+                    )
+                    .on_hover_text("Copy")
+                    .on_hover_cursor(egui::CursorIcon::PointingHand);
+                ui.with_layout(Layout::left_to_right(Align::Center), |ui| {
+                    ui.label(font::run(item.uuid, font::mono(font::MONO)).color(palette.ink_2));
+                });
+                copy.clicked()
+            })
+            .inner
+        })
+        .inner;
+
+    ui.add_space(metric::BETWEEN_FACTS);
+    label_above(ui, palette, "Registered library path", metric::UNDER_A_FACT);
+    ui.label(font::run(item.path, font::mono(font::MONO)).color(palette.ink_2));
+
+    ui.add_space(metric::BETWEEN_FACTS);
+    label_above(ui, palette, "Source", metric::UNDER_A_FACT);
+    ui.label(labelled_icon(
+        ui,
+        item.source_icon,
+        item.source,
+        font::CHIP,
+        palette.ink_2,
+        palette.ink_3,
+        metric::ALONG_A_PANEL_ACTION,
+    ));
+
+    ui.add_space(metric::BETWEEN_FACTS);
+    ui.horizontal(|ui| {
+        ui.spacing_mut().item_spacing.x = metric::TIGHT;
+        ui.label(font::run("Placement", font::emphasis(ui.ctx(), font::NOTE)).color(palette.ink_2));
+        placement_chip(ui, palette, item.placement);
+    });
+    copied
+}
+
+/// Where a registered document actually is, as the design tones it: a link is
+/// the goal state, a copy is merely a fact, and nothing there is an error.
+fn placement_chip(ui: &mut Ui, palette: Palette, placement: &Placement) {
+    let (tone, glyph, label) = match placement {
+        Placement::Linked(_) => (Tone::Ok, icon::LINKED, "linked"),
+        Placement::Copied(_) => (Tone::Neutral, icon::COPIED, "copied"),
+        Placement::Unresolved(_) => (Tone::Err, icon::UNRESOLVED, "unresolved"),
+    };
+    Frame::new()
+        .fill(tone.wash(palette))
+        .corner_radius(CornerRadius::same(metric::RADIUS))
+        .inner_margin(Margin::symmetric(metric::PLACEMENT_PAD_X as i8, 0))
+        .show(ui, |ui| {
+            ui.set_height(metric::PLACEMENT);
+            ui.horizontal_centered(|ui| {
+                ui.label(labelled_icon(
+                    ui,
+                    glyph,
+                    label,
+                    font::FOOTNOTE,
+                    tone.colour(palette),
+                    tone.colour(palette),
+                    metric::ALONG_A_CHIP,
+                ));
+            });
+        });
+}
+
+/// One line of the inspector's action list.
+///
+/// Its icon lines up with the labels above it and its fill reaches seven
+/// further out on both sides, which is what the design's `margin:0 -7px`
+/// against `padding:5px 7px` means. So the space is claimed in the column and
+/// only the fill is drawn outside it: allocating the wider box instead would
+/// push the whole action list seven pixels left of everything else in the
+/// panel.
+fn panel_action(ui: &mut Ui, palette: Palette, glyph: &str, label: &str, ink: Color32) -> Response {
+    let (rect, response) = ui.allocate_exact_size(
+        vec2(ui.available_width(), metric::PANEL_ACTION),
+        Sense::click(),
+    );
+    if response.hovered() {
+        ui.painter().rect_filled(
+            rect.expand2(vec2(metric::PANEL_ACTION_PAD_X, 0.0)),
+            CornerRadius::same(metric::FIELD_RADIUS),
+            palette.btn_hover,
+        );
+    }
+    let mut line = ui.new_child(
+        egui::UiBuilder::new().max_rect(rect).layout(Layout::left_to_right(Align::Center)),
+    );
+    let text = labelled_icon(
+        &line,
+        glyph,
+        label,
+        font::CONTROL,
+        ink,
+        ink,
+        metric::ALONG_A_PANEL_ACTION,
+    );
+    line.label(text);
+    response.on_hover_cursor(egui::CursorIcon::PointingHand)
 }
 
 /// Text that has to carry a tone as well as a word.
@@ -1683,6 +2161,65 @@ mod tests {
         // The gap the design states, which is the toolbar's rather than the
         // style's default `TIGHT`.
         assert_eq!(metric::TOOL_GAP, 8.0);
+    }
+
+    /// The search field, against both widths the shell was probed at.
+    ///
+    /// Neither number is "whatever is left", which is the thing worth a test:
+    /// the design gives the field `flex:1 1 auto` and puts a second flexible
+    /// box between the chips and the controls at the right end, so the two
+    /// share what the toolbar has spare. At 820 the field's share would put it
+    /// at 262 and the cap holds it to 216; at 548 the spare is 138 and the
+    /// field takes 69 of it. "The rest" would have drawn 207 there.
+    ///
+    /// The inputs are the bundle's own boxes, out of the two probes: the chips,
+    /// the factory toggle, `Add files...`, four gaps of eight, and the field's
+    /// own content.
+    #[test]
+    fn the_search_field_is_as_wide_as_the_bundle_draws_it() {
+        let gaps = 4.0 * metric::TOOL_GAP;
+        let wide = search_width(796.0, 237.0 + 62.0 + 98.0 + gaps, 157.0);
+        assert_eq!(wide, metric::SEARCH_FIELD, "at 820 the cap is what holds it");
+        let narrow = search_width(524.0, 225.0 + 16.0 + 36.0 + gaps, 77.0);
+        assert_eq!(narrow, 146.0, "beside the inspector");
+    }
+
+    /// The inspector, against the shell probed with the panel open.
+    ///
+    /// Every assertion here is a sum against a number that was measured, not a
+    /// constant against itself: what the list is left, where the first label
+    /// lands, how tall an empty keyword box is, and the two chips whose height
+    /// is set by the sixteen-pixel icon in them rather than by their text.
+    #[test]
+    fn the_inspector_is_measured_as_the_bundle_measures_it() {
+        assert_eq!(metric::WINDOW[0] - metric::INSPECTOR, 548.0, "what the list is left");
+
+        // The panel's top is the toolbar's, and its first label sits 53 below
+        // that: the header, then the body's own padding. The probe puts it at
+        // 125 with the window's content starting at 72.
+        assert_eq!(metric::INSPECTOR_HEADER + metric::INSPECTOR_PAD_Y, 53.0);
+        // Then the label, five, and a 27-tall field: 143 in the probe.
+        assert_eq!(metric::UNDER_A_FIELD_LABEL + metric::FIELD, 32.0);
+
+        // The keyword box holding one row of chips. The design's `min-height`
+        // is on the content and not on the box, so this is 37 and not 27 - the
+        // difference between a box that fits its chips and one that does not.
+        assert_eq!(metric::KEYWORDS + 2.0 * metric::KEYWORDS_PAD_Y, 37.0);
+        assert_eq!(
+            metric::KEYWORDS.max(metric::KEYWORD),
+            metric::KEYWORDS,
+            "a single row of chips does not fill the box, which is the point of the minimum"
+        );
+
+        // The placement chip is sized by the sixteen-pixel icon in it, with one
+        // and a half above and below. The keyword chip beside it holds text
+        // instead and the design draws it one pixel shorter, which is the pair
+        // a reader would otherwise round to the same number.
+        assert_eq!(metric::PLACEMENT - font::ICON, 2.0 * 1.5);
+        assert_eq!(metric::PLACEMENT - metric::KEYWORD, 1.0);
+        // An action is sized by its icon as well, by five - the rule a menu
+        // item is laid out by, and the same icon.
+        assert_eq!(metric::PANEL_ACTION - font::ICON, 2.0 * 5.0);
     }
 
     /// The overflow menu, against the bundle with the menu forced open and

@@ -631,31 +631,65 @@ fn grid<const N: usize>(row: Rect, columns: [Column; N]) -> [Rect; N] {
     })
 }
 
+/// How much of the window the list has.
+///
+/// The inspector takes 272 of the design's 820 and the list draws in what is
+/// left. Not the same row squeezed: the design gives the narrow list a grid of
+/// its own, which drops the identity and shortens the two columns at the right
+/// end. A row standing beside a panel that is already naming one entry in full
+/// does not need to repeat its UUID.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Width {
+    /// The whole page.
+    Full,
+    /// The page beside the inspector.
+    Narrow,
+}
+
 /// The columns of an entry row, as the design's grid has them.
 pub struct Columns {
     pub kind: Rect,
     pub name: Rect,
-    pub uuid: Rect,
+    /// The identity, which only the full grid has room for. `None` is the
+    /// narrow row rather than an empty rectangle, so a caller has to decide what
+    /// to do about it instead of drawing a UUID into nothing.
+    pub uuid: Option<Rect>,
     pub status: Rect,
     /// What the row itself can do. Reserved even while nothing is drawn in it:
     /// the design hides these controls off hover rather than removing them, so
-    /// the four columns before it do not move when the pointer arrives.
+    /// the columns before it do not move when the pointer arrives.
     pub actions: Rect,
 }
 
 impl Columns {
-    fn across(row: Rect) -> Columns {
-        let [kind, name, uuid, status, actions] = grid(
-            row,
-            [
-                Column::Fixed(metric::KIND_COLUMN),
-                Column::Rest,
-                Column::Fixed(metric::UUID_COLUMN),
-                Column::Fixed(metric::STATUS_COLUMN),
-                Column::Fixed(metric::ACTIONS_COLUMN),
-            ],
-        );
-        Columns { kind, name, uuid, status, actions }
+    fn across(row: Rect, width: Width) -> Columns {
+        match width {
+            Width::Full => {
+                let [kind, name, uuid, status, actions] = grid(
+                    row,
+                    [
+                        Column::Fixed(metric::KIND_COLUMN),
+                        Column::Rest,
+                        Column::Fixed(metric::UUID_COLUMN),
+                        Column::Fixed(metric::STATUS_COLUMN),
+                        Column::Fixed(metric::ACTIONS_COLUMN),
+                    ],
+                );
+                Columns { kind, name, uuid: Some(uuid), status, actions }
+            }
+            Width::Narrow => {
+                let [kind, name, status, actions] = grid(
+                    row,
+                    [
+                        Column::Fixed(metric::KIND_COLUMN),
+                        Column::Rest,
+                        Column::Fixed(metric::NARROW_STATUS_COLUMN),
+                        Column::Fixed(metric::NARROW_ACTIONS_COLUMN),
+                    ],
+                );
+                Columns { kind, name, uuid: None, status, actions }
+            }
+        }
     }
 }
 
@@ -688,10 +722,15 @@ impl CatalogColumns {
     }
 }
 
-/// One row of the list: a fixed height, a hover highlight, and five columns.
-pub fn row(ui: &mut Ui, palette: Palette, contents: impl FnOnce(&mut Ui, &Columns)) -> Response {
+/// One row of the list: a fixed height, a hover highlight, and its grid.
+pub fn row(
+    ui: &mut Ui,
+    palette: Palette,
+    width: Width,
+    contents: impl FnOnce(&mut Ui, &Columns),
+) -> Response {
     let (rect, response) = row_frame(ui, palette, metric::ROW);
-    let columns = Columns::across(rect);
+    let columns = Columns::across(rect, width);
     let mut content = ui.new_child(egui::UiBuilder::new().max_rect(rect));
     contents(&mut content, &columns);
     response
@@ -1560,7 +1599,11 @@ mod tests {
 
     /// A row the width of the window the design is drawn at.
     fn a_row(height: f32) -> Rect {
-        Rect::from_min_size(egui::pos2(0.0, 0.0), vec2(metric::WINDOW[0], height))
+        a_row_of(metric::WINDOW[0], height)
+    }
+
+    fn a_row_of(width: f32, height: f32) -> Rect {
+        Rect::from_min_size(egui::pos2(0.0, 0.0), vec2(width, height))
     }
 
     fn edges(cell: Rect) -> (f32, f32) {
@@ -1576,12 +1619,31 @@ mod tests {
     /// design's, and nothing about the picture said so.
     #[test]
     fn an_entry_row_is_divided_as_the_bundle_divides_it() {
-        let columns = Columns::across(a_row(metric::ROW));
+        let columns = Columns::across(a_row(metric::ROW), Width::Full);
         assert_eq!(edges(columns.kind), (12.0, 78.0));
         assert_eq!(edges(columns.name), (90.0, 452.0));
-        assert_eq!(edges(columns.uuid), (464.0, 570.0));
+        assert_eq!(edges(columns.uuid.expect("the full grid carries the identity")), (464.0, 570.0));
         assert_eq!(edges(columns.status), (582.0, 712.0));
         assert_eq!(edges(columns.actions), (724.0, 808.0));
+    }
+
+    /// The same row beside the inspector: `66px minmax(0,1fr) 116px 76px`, and
+    /// no identity at all.
+    ///
+    /// Asserted at 533 rather than at 548, because 533 is what the bundle's own
+    /// list measures once the scrollbar has taken its fifteen - which is the
+    /// state the shell was probed in, so these are its numbers rather than an
+    /// arithmetic of ours. The grid is a function of the rectangle it is given,
+    /// so the width it is asked about is the width the answer is about.
+    #[test]
+    fn the_narrow_row_is_divided_as_the_bundle_divides_it() {
+        const BESIDE_THE_INSPECTOR: f32 = 533.0;
+        let columns = Columns::across(a_row_of(BESIDE_THE_INSPECTOR, metric::ROW), Width::Narrow);
+        assert_eq!(edges(columns.kind), (12.0, 78.0));
+        assert_eq!(edges(columns.name), (90.0, 305.0));
+        assert_eq!(columns.uuid, None, "the narrow grid has no room for an identity");
+        assert_eq!(edges(columns.status), (317.0, 433.0));
+        assert_eq!(edges(columns.actions), (445.0, 521.0));
     }
 
     /// The same, for `CatalogRow`: `66px minmax(0,1fr) 116px 56px 142px 92px`.

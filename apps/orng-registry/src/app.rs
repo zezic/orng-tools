@@ -859,6 +859,7 @@ impl App {
         }
 
         let palette = self.palette;
+        let width = widget::Width::Full;
         widget::list(ui, |ui| {
             // Pending work first, which is the designer's recommendation and
             // the only ordering under which the list answers "what am I about to
@@ -866,12 +867,12 @@ impl App {
             if !shown.is_empty() {
                 widget::section(ui, palette, "Pending", palette.accent_text, shown.len());
                 for pending in &shown {
-                    staged_row(ui, palette, pending);
+                    staged_row(ui, palette, width, pending);
                 }
             }
             widget::section(ui, palette, "Registered", palette.ink_2, registered.len());
             for entry in &registered {
-                row(ui, palette, entry);
+                row(ui, palette, width, entry);
             }
         });
     }
@@ -1231,8 +1232,8 @@ fn short_uuid(registration: &Registration) -> String {
 }
 
 /// One registered entry.
-fn row(ui: &mut egui::Ui, palette: Palette, entry: &Registration) {
-    widget::row(ui, palette, |ui, columns| {
+fn row(ui: &mut egui::Ui, palette: Palette, width: widget::Width, entry: &Registration) {
+    widget::row(ui, palette, width, |ui, columns| {
         widget::cell(ui, columns.kind, Align::Min, |ui| {
             widget::kind_label(ui, palette, entry.kind);
         });
@@ -1246,9 +1247,11 @@ fn row(ui: &mut egui::Ui, palette: Palette, entry: &Registration) {
             )
             .on_hover_text(entry.library_path.as_str());
         });
-        widget::cell(ui, columns.uuid, Align::Min, |ui| {
-            identity(ui, palette, entry);
-        });
+        if let Some(at) = columns.uuid {
+            widget::cell(ui, at, Align::Min, |ui| {
+                identity(ui, palette, entry);
+            });
+        }
         widget::cell(ui, columns.status, Align::Min, |ui| {
             let status = "Registered";
             ui.label(
@@ -1278,8 +1281,8 @@ fn identity(ui: &mut egui::Ui, palette: Palette, entry: &Registration) {
 }
 
 /// One dropped document, and what can be done with it.
-fn staged_row(ui: &mut egui::Ui, palette: Palette, staged: &Staged) {
-    widget::row(ui, palette, |ui, columns| {
+fn staged_row(ui: &mut egui::Ui, palette: Palette, width: widget::Width, staged: &Staged) {
+    widget::row(ui, palette, width, |ui, columns| {
         widget::cell(ui, columns.kind, Align::Min, |ui| {
             // A rejected row has no kind, because nothing readable said what it
             // was. Drawing one would be inventing it.
@@ -1297,8 +1300,10 @@ fn staged_row(ui: &mut egui::Ui, palette: Palette, staged: &Staged) {
             );
             // The reason sits beside the name, in the colour of the status it
             // explains, so an explanation is never louder than the word it
-            // belongs to.
-            if let Some(why) = staged.reason() {
+            // belongs to. It goes with the identity when the inspector is open:
+            // the design drops both rather than truncating a sentence into
+            // whatever the narrow name column has left.
+            if let Some(why) = staged.reason().filter(|_| width == widget::Width::Full) {
                 ui.add_space(BESIDE_THE_NAME);
                 ui.add(
                     egui::Label::new(
@@ -1309,12 +1314,14 @@ fn staged_row(ui: &mut egui::Ui, palette: Palette, staged: &Staged) {
                 );
             }
         });
-        widget::cell(ui, columns.uuid, Align::Min, |ui| match staged.registration() {
-            Some(registration) => identity(ui, palette, registration),
-            None => {
-                ui.label(font::run("-", font::mono(font::MONO)).color(palette.ink_3));
-            }
-        });
+        if let Some(at) = columns.uuid {
+            widget::cell(ui, at, Align::Min, |ui| match staged.registration() {
+                Some(registration) => identity(ui, palette, registration),
+                None => {
+                    ui.label(font::run("-", font::mono(font::MONO)).color(palette.ink_3));
+                }
+            });
+        }
         widget::cell(ui, columns.status, Align::Min, |ui| {
             ui.label(
                 font::run(staged.status(), font::plain(font::CHIP))

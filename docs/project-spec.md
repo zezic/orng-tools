@@ -684,6 +684,14 @@ dialog over the window, holding it still - the scrim takes the pointer as well a
 light - and what a press came to is a banner in the same place afterwards, dismissible,
 carrying `Copy details` when it failed.
 
+The catalog's detail panel, which a catalog row opens: who wrote the item, what it is
+for, whether this installation is new enough to load it, what it is licensed under, its
+keywords, the change that published it, its author's page and its identity. Two of those
+are worked out rather than read: compatibility, from the build beside the item's declared
+minimum, and whether another published item has taken this one's place - which is a fact
+about the whole index and is drawn as the design's notice, with the control that walks
+the panel over to the replacement.
+
 The inspector, which a row opens and which slides over the right of the list: what the
 entry is called, what Bitwig's browser says under it, the words that find it, its
 identity, where the registry points, where the document came from and whether it is
@@ -711,7 +719,8 @@ Not built yet:
 
 - Installing from the catalog: fetching a document by path, checking it against the digest
   the index carries, and registering it. The catalog view has no toolbar of its own yet,
-  so its search, kind filters and `All / Installed / Updatable` switch are missing.
+  so its search, kind filters and `All / Installed / Updatable` switch are missing, and
+  the detail panel is drawn without the footer its `Install` and `Remove` live in.
 - Row actions: `Remove`, `Assign new UUID`, `Locate file`, and the choice of whether a
   removed entry's document goes with it. The column they sit in is reserved, because the
   design reserves it - it hides those controls off hover rather than removing them, so the
@@ -728,7 +737,7 @@ Not built yet:
   out of the archive, which takes about a second, so it needs a worker of its own; a toggle
   that did nothing would be worse than no toggle.
 - The plan confirmation the Prepare install mode is supposed to show before it runs.
-- Everything else the design draws: Settings, About, Restore, `CatalogDetail`, the update
+- Everything else the design draws: Settings, About, Restore, the update
   modal. The overflow control lists them; none of them opens anything yet. Two things live
   in Settings in the bundle and are therefore unreachable until it exists: the tamper guard
   and the backup date, under Diagnostics, and the appearance switch - so light and dark are

@@ -21,7 +21,7 @@ use std::collections::BTreeSet;
 use std::path::PathBuf;
 
 use eframe::egui::{self, Align, Layout, vec2};
-use orng_tools::{Kind, Registration, RunState, Step, Update};
+use orng_tools::{Kind, Provenance, Registration, RunState, Step, Update, Uuid, placement};
 
 use crate::catalog::Fetching;
 use crate::session::{Badge, Found, Session};
@@ -89,6 +89,14 @@ pub struct App {
     /// What the last press came to. Stated as a banner until the user puts it
     /// away, because nothing else will stop being true and take it off screen.
     outcome: Option<Outcome>,
+    /// The entry the inspector is open on, if it is open.
+    ///
+    /// The identity and not the entry itself, nor its place in the list. The
+    /// session is re-read whenever anything is done to the machine, so a
+    /// borrowed row would be stale by the next frame and a position would point
+    /// at whatever had moved into it. An identity either is still registered or
+    /// is not, and the panel closes when it is not.
+    inspecting: Option<Uuid>,
     /// The published catalog, once somebody has asked for it. Not fetched on
     /// opening: this application is useful with no network at all, and a window
     /// that reaches for one before being asked is a window that hangs on a
@@ -119,6 +127,7 @@ impl App {
             reading: None,
             applying: None,
             outcome: None,
+            inspecting: None,
             catalog: None,
         }
     }
@@ -149,6 +158,12 @@ impl App {
     #[cfg(test)]
     pub fn set_query(&mut self, query: &str) {
         self.filter.query = query.to_owned();
+    }
+
+    /// Open the inspector without clicking a row. Tests only.
+    #[cfg(test)]
+    pub fn set_inspecting(&mut self, uuid: Uuid) {
+        self.inspecting = Some(uuid);
     }
 
     /// Switch palettes. The toolbar and the render tests share this, so neither
@@ -188,6 +203,12 @@ impl App {
         // true will still be true after the result has been put away.
         self.said(ui);
 
+        // Before the toolbar and the page, because both are laid out in what
+        // it leaves. The design draws the inspector as the list's sibling and
+        // not as an overlay, which is the same statement: the toolbar beside it
+        // is 548 wide, and so is every row under it.
+        let inspector = self.inspect(ui);
+
         if self.shows_a_list() {
             egui::Panel::top("toolbar")
                 .exact_size(metric::TOOLBAR)
@@ -199,11 +220,77 @@ impl App {
             .frame(widget::page(self.palette))
             .show(ui, |ui| self.page(ui));
 
+        // After the page it falls on, for the reason written on it.
+        if let Some(panel) = inspector {
+            widget::panel_shadow(ui, self.palette, panel);
+        }
+
         // Last, and over everything: while a preparation runs the window is
         // held still, and the list behind it is what the work is being done to.
         if let Some(applying) = self.applying.as_ref().filter(|a| a.steps.is_some()) {
             progress(ui, self.palette, applying);
         }
+    }
+
+    /// The inspector, if a row has been opened.
+    ///
+    /// Everything it states is worked out here rather than in the widget: where
+    /// the document came from is a fact about the entry and where it actually
+    /// is is a fact about the disk, and a panel that went looking for either
+    /// could not be drawn from a fixture.
+    /// Answers where the panel ended up, so that the shadow it casts on the
+    /// list can be painted once the list is there to catch it.
+    fn inspect(&mut self, ui: &mut egui::Ui) -> Option<egui::Rect> {
+        let palette = self.palette;
+        let uuid = self.inspecting?;
+        let Session::Found(found) = &self.session else { return None };
+        let Some(entry) = found.entries.entries().iter().find(|entry| entry.uuid == uuid) else {
+            // Applied, removed, or gone from a list that was read again. There
+            // is nothing left to inspect, so the panel closes rather than
+            // standing empty.
+            self.inspecting = None;
+            return None;
+        };
+
+        let (source, source_icon) = match &entry.provenance {
+            Provenance::Local => ("Local file".to_owned(), widget::icon::LOCAL_FILE),
+            Provenance::Catalog { version } => {
+                (format!("ORNG Catalog {} {version}", widget::SEPARATOR), widget::icon::CATALOG)
+            }
+        };
+        let placement = placement::inspect(&found.to.install, entry);
+        let identity = uuid.to_string();
+        let item = widget::Inspected {
+            kind: entry.kind,
+            name: &entry.name,
+            description: &entry.description,
+            keywords: &entry.keywords,
+            uuid: &identity,
+            path: entry.library_path.as_str(),
+            source: &source,
+            source_icon,
+            placement: &placement,
+        };
+
+        let mut pressed = widget::Inspecting::Nothing;
+        let panel = egui::Panel::right("inspector")
+            .exact_size(metric::INSPECTOR)
+            .resizable(false)
+            // The design separates the panel from the list by a shadow rather
+            // than by a line.
+            .show_separator_line(false)
+            .frame(widget::panel(palette))
+            .show(ui, |ui| pressed = widget::inspector(ui, palette, &item))
+            .response
+            .rect;
+
+        match pressed {
+            widget::Inspecting::Closed => self.inspecting = None,
+            widget::Inspecting::CopiedUuid => ui.ctx().copy_text(uuid.to_string()),
+            widget::Inspecting::Reveal => reveal(placement.path()),
+            widget::Inspecting::Nothing => {}
+        }
+        Some(panel)
     }
 
     /// The one banner the window is carrying, if it is carrying one.
@@ -692,29 +779,90 @@ impl App {
             })
             .collect();
 
-        ui.horizontal_centered(|ui| {
-            widget::search_field(ui, palette, &mut self.filter.query, "Search name or UUID");
-            ui.add_space(metric::TOOL_GAP);
-            for (kind, count) in counts {
-                let on = self.filter.kinds.contains(&kind);
-                if widget::filter_chip(ui, palette, plural(kind), count, on).clicked() {
-                    if on {
-                        self.filter.kinds.remove(&kind);
-                    } else {
-                        self.filter.kinds.insert(kind);
-                    }
-                }
-                ui.add_space(metric::SNUG);
-            }
+        // Read out of the filter before anything below borrows it, because the
+        // field beside the chips is written into while they are being drawn.
+        let kinds: Vec<(Kind, usize, bool)> = counts
+            .into_iter()
+            .map(|(kind, count)| (kind, count, self.filter.kinds.contains(&kind)))
+            .collect();
 
-            ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                if widget::small_button(ui, palette, widget::icon::ADD_FILES, "Add files...")
-                    .clicked()
-                {
-                    self.add_files(ui);
+        let width = self.width();
+        let hint = match width {
+            widget::Width::Full => "Search name or UUID",
+            widget::Width::Narrow => "Search",
+        };
+        // The design drops the labels from the controls at the right end when
+        // the inspector is open, and leaves the glyph to say what they are.
+        let add_files = match width {
+            widget::Width::Full => "Add files...",
+            widget::Width::Narrow => "",
+        };
+
+        // Drawn as two closures because they are laid out twice: once to find
+        // out how wide they are and once for real. The field between them is
+        // the flexible one and cannot be given its share until everything that
+        // is not flexible has taken its own, and a second function stating
+        // those widths would be free to drift from the one that draws them.
+        let chips = |ui: &mut egui::Ui| -> Option<Kind> {
+            let mut toggled = None;
+            for (at, (kind, count, on)) in kinds.iter().enumerate() {
+                if at > 0 {
+                    ui.add_space(metric::SNUG);
                 }
-            });
+                if widget::filter_chip(ui, palette, plural(*kind), *count, *on, width).clicked() {
+                    toggled = Some(*kind);
+                }
+            }
+            toggled
+        };
+        let tail = |ui: &mut egui::Ui| -> bool {
+            let pressed = widget::small_button(ui, palette, widget::icon::ADD_FILES, add_files);
+            match width {
+                widget::Width::Full => pressed.clicked(),
+                widget::Width::Narrow => pressed.on_hover_text("Add files...").clicked(),
+            }
+        };
+
+        // Five boxes in the design and four here, because the factory toggle is
+        // not built: the field, the chips, the flexible gap, and `Add files...`.
+        // Three gaps between the four.
+        const BETWEEN_TOOLBAR_GROUPS: f32 = 3.0 * metric::TOOL_GAP;
+        let fixed = widget::measured(ui, "chips", |ui| {
+            chips(ui);
+        }) + widget::measured(ui, "tail", |ui| {
+            tail(ui);
+        }) + BETWEEN_TOOLBAR_GROUPS;
+        let field = widget::search_width(
+            ui.available_width(),
+            fixed,
+            widget::search_content(ui, hint),
+        );
+
+        let mut toggled = None;
+        let mut adding = false;
+        ui.horizontal_centered(|ui| {
+            widget::search_field(ui, palette, &mut self.filter.query, hint, field);
+            ui.add_space(metric::TOOL_GAP);
+            toggled = chips(ui);
+            ui.with_layout(Layout::right_to_left(Align::Center), |ui| adding = tail(ui));
         });
+
+        if let Some(kind) = toggled {
+            if self.filter.kinds.contains(&kind) {
+                self.filter.kinds.remove(&kind);
+            } else {
+                self.filter.kinds.insert(kind);
+            }
+        }
+        if adding {
+            self.add_files(ui);
+        }
+    }
+
+    /// How much of the window the list has, which is the one thing the
+    /// inspector changes about everything beside it.
+    fn width(&self) -> widget::Width {
+        if self.inspecting.is_some() { widget::Width::Narrow } else { widget::Width::Full }
     }
 
     /// Region two: whatever the current view has to show.
@@ -859,7 +1007,12 @@ impl App {
         }
 
         let palette = self.palette;
-        let width = widget::Width::Full;
+        let open = self.inspecting;
+        let width = self.width();
+        // What the list was clicked on, taken after it has been drawn: opening
+        // the panel changes how wide every row is, and changing that half way
+        // down a list draws the rest of it to a different grid.
+        let mut opened = None;
         widget::list(ui, |ui| {
             // Pending work first, which is the designer's recommendation and
             // the only ordering under which the list answers "what am I about to
@@ -872,9 +1025,17 @@ impl App {
             }
             widget::section(ui, palette, "Registered", palette.ink_2, registered.len());
             for entry in &registered {
-                row(ui, palette, width, entry);
+                let selected = open == Some(entry.uuid);
+                if row(ui, palette, width, selected, entry).clicked() {
+                    // The same row again closes it, which is what makes the
+                    // panel answerable from the list it is about.
+                    opened = Some(if selected { None } else { Some(entry.uuid) });
+                }
             }
         });
+        if let Some(entry) = opened {
+            self.inspecting = entry;
+        }
     }
 
     /// The drop target, while something is over the window.
@@ -1226,16 +1387,46 @@ fn step_label(step: Step) -> &'static str {
     }
 }
 
+/// Show a document where it lives, in whatever the system uses to look at
+/// files.
+///
+/// Reveal rather than open: opening a `.bwdevice` launches Bitwig Studio, which
+/// is the one thing this application spends its time asking people to close.
+///
+/// A failure is not reported. There is nothing the user could do about a
+/// desktop that will not show a folder, and the file manager is not this
+/// application's to fix; the alternative is a banner about somebody else's
+/// software over the panel that answered the question.
+fn reveal(path: &std::path::Path) {
+    if let Err(why) = opener::reveal(path) {
+        eprintln!("could not reveal {}: {why}", path.display());
+    }
+}
+
 /// The first segment of an identity, which is what a row has room for.
 fn short_uuid(registration: &Registration) -> String {
     registration.uuid.to_string().split('-').next().unwrap_or_default().to_owned()
 }
 
 /// One registered entry.
-fn row(ui: &mut egui::Ui, palette: Palette, width: widget::Width, entry: &Registration) {
-    widget::row(ui, palette, width, |ui, columns| {
+///
+/// Answers whether it was clicked, which is how the inspector is opened: the
+/// design makes the whole row the control rather than putting a disclosure
+/// arrow on it.
+fn row(
+    ui: &mut egui::Ui,
+    palette: Palette,
+    width: widget::Width,
+    selected: bool,
+    entry: &Registration,
+) -> egui::Response {
+    // The design warms the row's supporting text when the inspector is about
+    // it, so a selected row reads as one thing rather than as an ordinary row
+    // with a coloured background behind it.
+    let secondary = if selected { palette.ink_3_warm } else { palette.ink_3 };
+    widget::row(ui, palette, width, selected, |ui, columns| {
         widget::cell(ui, columns.kind, Align::Min, |ui| {
-            widget::kind_label(ui, palette, entry.kind);
+            widget::kind_label(ui, secondary, entry.kind);
         });
         widget::cell(ui, columns.name, Align::Min, |ui| {
             ui.add(
@@ -1249,7 +1440,7 @@ fn row(ui: &mut egui::Ui, palette: Palette, width: widget::Width, entry: &Regist
         });
         if let Some(at) = columns.uuid {
             widget::cell(ui, at, Align::Min, |ui| {
-                identity(ui, palette, entry);
+                identity(ui, secondary, entry);
             });
         }
         widget::cell(ui, columns.status, Align::Min, |ui| {
@@ -1259,18 +1450,18 @@ fn row(ui: &mut egui::Ui, palette: Palette, width: widget::Width, entry: &Regist
                     .color(widget::status_colour(palette, status)),
             );
         });
-    });
+    })
 }
 
 /// An identity, short enough for a column and whole on hover. Clicking copies
 /// it, because a UUID is a thing people paste into bug reports and nobody
 /// transcribes one by hand.
-fn identity(ui: &mut egui::Ui, palette: Palette, entry: &Registration) {
+fn identity(ui: &mut egui::Ui, ink: egui::Color32, entry: &Registration) {
     let full = entry.uuid.to_string();
     let response = ui
         .add(
             egui::Label::new(
-                font::run(short_uuid(entry), font::mono(font::MONO)).color(palette.ink_3),
+                font::run(short_uuid(entry), font::mono(font::MONO)).color(ink),
             )
             .sense(egui::Sense::click()),
         )
@@ -1282,12 +1473,12 @@ fn identity(ui: &mut egui::Ui, palette: Palette, entry: &Registration) {
 
 /// One dropped document, and what can be done with it.
 fn staged_row(ui: &mut egui::Ui, palette: Palette, width: widget::Width, staged: &Staged) {
-    widget::row(ui, palette, width, |ui, columns| {
+    widget::row(ui, palette, width, false, |ui, columns| {
         widget::cell(ui, columns.kind, Align::Min, |ui| {
             // A rejected row has no kind, because nothing readable said what it
             // was. Drawing one would be inventing it.
             match staged.registration() {
-                Some(registration) => widget::kind_label(ui, palette, registration.kind),
+                Some(registration) => widget::kind_label(ui, palette.ink_3, registration.kind),
                 None => {
                     ui.label(font::run("-", font::plain(font::CHIP)).color(palette.ink_3));
                 }
@@ -1316,7 +1507,7 @@ fn staged_row(ui: &mut egui::Ui, palette: Palette, width: widget::Width, staged:
         });
         if let Some(at) = columns.uuid {
             widget::cell(ui, at, Align::Min, |ui| match staged.registration() {
-                Some(registration) => identity(ui, palette, registration),
+                Some(registration) => identity(ui, palette.ink_3, registration),
                 None => {
                     ui.label(font::run("-", font::mono(font::MONO)).color(palette.ink_3));
                 }
@@ -1399,7 +1590,7 @@ fn published(ui: &mut egui::Ui, palette: Palette, catalog: &Fetching) {
                 for entry in &index.items {
                     widget::catalog_row(ui, palette, |ui, columns| {
                         widget::cell(ui, columns.kind, Align::Min, |ui| {
-                            widget::kind_label(ui, palette, entry.kind.into());
+                            widget::kind_label(ui, palette.ink_3, entry.kind.into());
                         });
                         // The name over the description, not beside it. A
                         // catalog row leads with what the item is; the

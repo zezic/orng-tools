@@ -92,6 +92,15 @@ pub struct Palette {
     /// state between the themes, .85 to .22, which is the nearest thing the
     /// bundle says about how a shadow behaves in light.
     pub menu_shadow: Color32,
+    /// Under the inspector, which slides over the right of the list rather than
+    /// beside it. Written as a literal in the design too, and given the light
+    /// value the same way [`Palette::menu_shadow`] is.
+    pub panel_shadow: Color32,
+    /// The row the inspector is about. The design writes this one as a literal
+    /// as well - the accent at nine per cent, which is a shade softer than the
+    /// `--accent-soft` token beside it - so that a selected row and a hovered
+    /// row cannot be confused for each other.
+    pub row_selected: Color32,
     /// Every other row, over whatever the list sits on.
     pub zebra: Color32,
     /// The wash behind a banner, one per tone.
@@ -134,6 +143,8 @@ impl Palette {
         btn_hover: hex(0x333333),
         scrim: hexa(0x000000, 189),
         menu_shadow: hexa(0x000000, 179),
+        panel_shadow: hexa(0x000000, 128),
+        row_selected: hexa(0xff5a1f, 23),
         zebra: hexa(0xffffff, 13),
         ok_bg: hexa(0xf2f2f2, 15),
         warn_bg: hexa(0xff5a1f, 26),
@@ -179,6 +190,8 @@ impl Palette {
         btn_hover: hex(0xd8d8d8),
         scrim: hexa(0xffffff, 168),
         menu_shadow: hexa(0x000000, 46),
+        panel_shadow: hexa(0x000000, 33),
+        row_selected: hexa(0xe8500f, 23),
         zebra: hexa(0x000000, 11),
         ok_bg: hexa(0x171717, 13),
         warn_bg: hexa(0xe8500f, 26),
@@ -310,11 +323,74 @@ pub mod metric {
     /// A catalog row carries a description under the name, so it is taller than
     /// a registered one.
     pub const CATALOG_ROW: f32 = 48.0;
+    /// The inspector, over the right of the list. Everything under here is its
+    /// own, read off `Inspector.dc.html` and off the shell probed with the
+    /// panel open.
+    pub const INSPECTOR: f32 = 272.0;
+    /// Its header, which names what the panel is about and closes it.
+    pub const INSPECTOR_HEADER: f32 = 40.0;
+    /// From the edge of the panel's body to its fields. Wider down than across,
+    /// which is the design's own pair and not a symmetric margin.
+    pub const INSPECTOR_PAD_Y: f32 = 13.0;
+    /// Between two groups of fields.
+    pub const BETWEEN_GROUPS: f32 = 14.0;
+    /// Between a field's label and the field, which is looser than the same gap
+    /// in the block of facts below: a field is a thing to fill in and the facts
+    /// are a thing to read.
+    pub const UNDER_A_FIELD_LABEL: f32 = 5.0;
+    pub const UNDER_A_FACT: f32 = 3.0;
+    /// Between two facts.
+    pub const BETWEEN_FACTS: f32 = 7.0;
+    /// A field holding one line.
+    pub const FIELD: f32 = 27.0;
+    pub const FIELD_PAD: f32 = 8.0;
+    /// Corner of a field, which the design rounds by four where it rounds a
+    /// control by three.
+    pub const FIELD_RADIUS: u8 = 4;
+    /// A field holding a sentence, at its shortest: it grows with what is
+    /// written in it.
+    pub const PARAGRAPH: f32 = 44.0;
+    pub const PARAGRAPH_PAD_Y: f32 = 6.0;
+    /// The box the search keywords sit in, and the chips inside it. The box's
+    /// height is the design's own `min-height`, which is on the content: a
+    /// single row of chips is shorter than that and the box does not shrink
+    /// to it.
+    pub const KEYWORDS: f32 = 27.0;
+    pub const KEYWORDS_PAD_X: f32 = 6.0;
+    pub const KEYWORDS_PAD_Y: f32 = 5.0;
+    pub const KEYWORD: f32 = 18.0;
+    pub const KEYWORD_PAD_X: f32 = 6.0;
+    pub const BETWEEN_KEYWORDS: f32 = 4.0;
+    /// Inside a chip, from its icon to its word.
+    pub const ALONG_A_CHIP: f32 = 4.0;
+    /// The chip stating where a document actually is. One pixel taller than a
+    /// keyword, because the design pads it by one and a half rather than by
+    /// two, around a sixteen-pixel icon rather than around text.
+    pub const PLACEMENT: f32 = 19.0;
+    pub const PLACEMENT_PAD_X: f32 = 6.0;
+    /// One line of the inspector's action list. Taller than its text for the
+    /// same reason a menu item is: the sixteen-pixel icon beside it.
+    pub const PANEL_ACTION: f32 = 26.0;
+    pub const PANEL_ACTION_PAD_X: f32 = 7.0;
+    pub const BETWEEN_PANEL_ACTIONS: f32 = 4.0;
+    /// From a panel action's icon to its label.
+    pub const ALONG_A_PANEL_ACTION: f32 = 7.0;
+    /// The inspector's shadow, `-18px 0 40px` in the design: cast to the left,
+    /// because the panel is over the list rather than beside it.
+    pub const PANEL_SHADOW_REACH: i8 = -18;
+    pub const PANEL_SHADOW_BLUR: u8 = 40;
+
     /// The mark beside a banner's headline.
     pub const DOT: f32 = 6.0;
     /// The search field, measured across the whole box - the glyph, the gap and
-    /// the text - because that is what the bundle's is measured across.
+    /// the text - because that is what the bundle's is measured across. The
+    /// design writes these as a `max-width` and a `min-width` on the text area
+    /// inside, at 200 and 64, plus eight of padding on each side.
     pub const SEARCH_FIELD: f32 = 216.0;
+    pub const SEARCH_FLOOR: f32 = 80.0;
+    /// A kind chip's padding, which the design tightens beside the inspector.
+    pub const CHIP_PAD: f32 = 9.0;
+    pub const NARROW_CHIP_PAD: f32 = 7.0;
 }
 
 /// Where a piece of text sits in the hierarchy.
@@ -341,8 +417,15 @@ pub mod font {
     pub const CONTROL: f32 = 11.5;
     /// A chip, a badge, a status, a section heading.
     pub const CHIP: f32 = 11.0;
+    /// What is written in a field. The same size as [`ACTION`], which is why
+    /// the two track alike, and a different job: one is pressed and the other
+    /// is read.
+    pub const FIELD_VALUE: f32 = 12.0;
     /// A reason, a note, anything explaining the line above it.
     pub const NOTE: f32 = 10.5;
+    /// The smallest run the design writes: the sentence under a field saying
+    /// what Bitwig does with it, and the word inside a placement chip.
+    pub const FOOTNOTE: f32 = 10.0;
     /// A path, an identity, a version: anything a user might copy.
     pub const MONO: f32 = 10.5;
     /// A count or a build revision, which sit beside text rather than in it.
@@ -632,6 +715,17 @@ fn apply_to(style: &mut egui::Style, palette: Palette) {
         state.expansion = 0.0;
         state.bg_stroke = Stroke::NONE;
     }
+
+    // **Labels here are not selectable text, and that is what makes a row
+    // clickable.** egui's default adds `Sense::click_and_drag()` to every
+    // label so it can be dragged over and copied, which puts a click target on
+    // top of whatever the label was drawn inside. A row senses its own click
+    // and the name on it is a label, so a press on the one thing in a row
+    // anybody aims at landed on the label and went nowhere - while a press on
+    // the empty half of the same row opened the inspector. Nothing in this
+    // window is selectable text: what can be copied says so and copies on a
+    // click, which is a smaller promise kept properly.
+    style.interaction.selectable_labels = false;
 
     let spacing = &mut style.spacing;
     spacing.item_spacing = egui::vec2(metric::TIGHT, metric::TIGHT);

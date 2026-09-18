@@ -659,6 +659,81 @@ fn the_overflow_menu() {
     look(&mut harness, "menu");
 }
 
+/// The inspector, open on a registered entry.
+///
+/// `VOLSHAPER` and not the first row, because it is the one entry in the sample
+/// that came from the catalog: the source line and its version are drawn, and
+/// the placement is read off the disk rather than assumed.
+#[test]
+fn the_inspector() {
+    let root = fixture("inspector");
+    let session = found(&root, Helper::Present, GuardState::Disarmed);
+    let mut session = Some(session);
+    let mut harness = Harness::builder().with_size(SIZE).build_eframe(move |cc| {
+        let mut app = App::with(&cc.egui_ctx, session.take().expect("built once"));
+        app.set_inspecting(VOLSHAPER.parse().expect("a sample identity"));
+        app
+    });
+    look(&mut harness, "inspector");
+}
+
+/// The catalog entry in [`entries`], by identity.
+const VOLSHAPER: &str = "8b330d22-73fa-4ba5-a42f-2f2300cbd8bf";
+
+/// A row opens the inspector, and the inspector's own control closes it again.
+///
+/// The class of fault a picture structurally cannot catch, and one this
+/// application has already had: the overflow menu was drawn correctly and no
+/// press opened it, because the call it ended in wanted a secondary click. A
+/// panel that only `set_inspecting` could reach would be the same thing with a
+/// snapshot to vouch for it.
+///
+/// The narrowing is asserted through the identity column rather than through a
+/// rectangle: the narrow grid has no room for one, so an identity on screen is
+/// an identity the list found room for.
+#[test]
+fn a_row_opens_the_inspector_and_the_panel_closes_itself() {
+    let root = fixture("opening");
+    let session = found(&root, Helper::Present, GuardState::Disarmed);
+    let mut session = Some(session);
+    let mut harness = Harness::builder().with_size(SIZE).build_eframe(move |cc| {
+        App::with(&cc.egui_ctx, session.take().expect("built once"))
+    });
+    harness.run();
+
+    let shortened = "8b330d22";
+    assert!(harness.query_by_label(shortened).is_some(), "the list is not showing identities");
+
+    // On the name, which is what anybody aims at, and which is a label: egui
+    // makes labels selectable text by default and a selectable label senses
+    // clicks, so this press used to land on the label and stop there while the
+    // empty half of the same row opened the panel.
+    harness.get_by_label("VOLSHAPER").click();
+    harness.run();
+    assert!(
+        harness.query_by_label(crate::widget::icon::DISMISS).is_some(),
+        "clicking a row did not open the inspector"
+    );
+    assert!(
+        harness.query_by_label(shortened).is_none(),
+        "the inspector is open and the list still has an identity column"
+    );
+    // The panel is taller than the window gives it, in the bundle as well as
+    // here, so its last group is below the fold and no picture of it exists.
+    // Asserted rather than left to the snapshot for exactly that reason.
+    assert!(
+        harness.query_by_label_contains("Reveal file").is_some(),
+        "the panel's action list was not laid out"
+    );
+
+    harness.get_by_label(crate::widget::icon::DISMISS).click();
+    harness.run();
+    assert!(
+        harness.query_by_label(shortened).is_some(),
+        "the inspector's own control did not close it"
+    );
+}
+
 /// An index that did not verify. Nothing is listed, and the reason is shown.
 #[test]
 fn a_catalog_that_does_not_verify() {

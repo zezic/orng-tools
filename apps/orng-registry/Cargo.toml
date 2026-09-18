@@ -28,6 +28,14 @@ ureq = { version = "3", default-features = false, features = ["rustls"] }
 rfd = { version = "0.17", default-features = false, features = ["xdg-portal"] }
 egui-phosphor = { version = "0.14", default-features = false, features = ["light"] }
 
+# Showing a document where it lives. The `reveal` feature is the whole reason
+# this is here: the crate's own default is "open this file with whatever opens
+# it", and opening a .bwdevice would launch Bitwig Studio - which is the one
+# thing this application spends its time asking people to close. On Linux it
+# reveals over D-Bus, which is the same choice `rfd` is configured for above:
+# a call to whatever the desktop already runs, and no toolkit linked.
+opener = { version = "0.8", features = ["reveal"] }
+
 # Colour management is AppKit's, and neither eframe nor winit exposes it. A
 # window that does not declare its colour space is handed to the panel
 # untouched, which on a wide-gamut display stretches every sRGB colour the

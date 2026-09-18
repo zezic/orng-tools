@@ -34,6 +34,16 @@ pub enum Error {
     Manifest { path: String, source: toml::de::Error },
     #[error("{path}: {source}")]
     Document { path: String, source: bitwig_document::Error },
+    /// The catalog carries what people make, and an encrypted document is not
+    /// that: the `0004` serialization is what Bitwig writes for its own factory
+    /// content. Accepting one would be redistributing Bitwig's assets through
+    /// this repository, which the project does not do - so this is refused as a
+    /// rule rather than worked around with a key.
+    #[error(
+        "{path} is Bitwig factory content, which the catalog does not carry. \
+         Publish a device, modulator or Grid module you made yourself."
+    )]
+    FactoryContent { path: String },
     #[error("malformed index: {0}")]
     Index(#[from] serde_json::Error),
     #[error("{0} is not a usable {1}: expected lowercase letters, digits and dashes")]

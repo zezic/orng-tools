@@ -300,3 +300,38 @@ fn a_first_run_has_no_history_to_break() {
     let empty = Index { schema: orng_catalog::index::SCHEMA, revision: None, items: Vec::new() };
     assert!(validate::check_against(&fixture.items(), &empty).is_mergeable());
 }
+
+/// Bitwig's own content is refused, by name, and needs no key to refuse.
+///
+/// The `0004` serialization is what Bitwig writes for factory content, so a
+/// pull request carrying one is a pull request redistributing Bitwig's assets
+/// through this repository. The refusal is a rule rather than a missing
+/// capability: reading it would need the installation's section key, and a
+/// validator that held Bitwig's key in order to accept Bitwig's content would
+/// have the policy exactly backwards.
+///
+/// Built from a header alone, which is all the refusal looks at, so the test
+/// needs no encrypted document and redistributes nothing.
+#[test]
+fn bitwig_factory_content_is_refused_without_a_key() {
+    let fixture = Fixture::new("factory-content");
+    let dir = fixture.root.join(CONTENT_DIR).join("someone").join("borrowed");
+    std::fs::create_dir_all(&dir).expect("item dir");
+
+    // `BtWg`, then the four hex fields: version, serialization 0004, a class
+    // id, and the object offset.
+    let header = format!("BtWg{:04}{:04}{:04}{:08x}{:018}", 3, 4, 0xcf, 0x100, 0);
+    let mut document = header.into_bytes();
+    document.extend(std::iter::repeat_n(0u8, 0x200));
+    std::fs::write(dir.join("BORROWED.bwdevice"), &document).expect("write document");
+    fixture.write_manifest(&dir, "someone", "1.0.0");
+
+    let (items, failures) = scan(&fixture.root);
+    assert!(items.is_empty(), "factory content must not become an item");
+    assert_eq!(failures.len(), 1, "one refusal, naming the one file");
+    let reported = failures[0].to_string();
+    assert!(
+        reported.contains("factory content") && reported.contains("made yourself"),
+        "the refusal must say what the rule is, not that a parse failed: {reported}"
+    );
+}

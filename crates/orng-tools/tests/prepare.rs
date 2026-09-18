@@ -473,7 +473,12 @@ fn a_real_device() -> Document {
     // a file somebody can go and open.
     found.sort();
     let path = found.first().expect("the installation ships no devices");
-    Document::read(path).unwrap_or_else(|e| panic!("{}: {e}", path.display()))
+    // Factory documents are encrypted, and the key belongs to the installation
+    // rather than to this repository, so it is read back out of the same build
+    // this document came from.
+    let key = bitwig_registry::section_key(&install.jar(), path)
+        .expect("the section key could not be read out of this build");
+    Document::read_with_key(path, &key).unwrap_or_else(|e| panic!("{}: {e}", path.display()))
 }
 
 /// Where `prepare` stages a replacement archive. Named here rather than exposed,

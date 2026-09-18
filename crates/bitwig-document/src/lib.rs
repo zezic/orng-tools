@@ -22,6 +22,7 @@ use std::path::Path;
 
 use uuid::Uuid;
 
+pub use cipher::{KeyError, SectionKey};
 pub use kind::{Kind, descriptions_key};
 pub use version::BitwigVersion;
 use ramona::{FieldKey, Fields as BinaryFields, Scanner, Value};
@@ -51,6 +52,11 @@ pub enum Error {
     MissingField(&'static str),
     #[error("replacement is {got} bytes, must be {expected}")]
     LengthChanged { expected: usize, got: usize },
+    #[error(
+        "this document is encrypted, which is Bitwig's own factory content; \
+         reading it needs the section key from an installation"
+    )]
+    Encrypted,
 }
 
 pub type Result<T> = std::result::Result<T, Error>;
@@ -106,6 +112,9 @@ pub struct Document {
     /// Original bytes, kept so a rewrite can splice and re-encrypt in place.
     raw: Vec<u8>,
     layout: Layout,
+    /// Held so a rewrite can re-encrypt under the same key it was read with.
+    /// `None` for everything that is not factory content.
+    key: Option<SectionKey>,
 }
 
 #[derive(Debug, Clone)]
@@ -123,15 +132,39 @@ enum Layout {
 }
 
 impl Document {
+    /// Read a document that is not encrypted.
+    ///
+    /// Custom content - everything a user makes and everything the catalog
+    /// carries - is text or plain binary. Factory content is encrypted and
+    /// needs [`Document::read_with_key`].
     pub fn read(path: &Path) -> Result<Self> {
+        Self::read_inner(path, None)
+    }
+
+    /// The same, for factory content, under the installation's own key.
+    pub fn read_with_key(path: &Path, key: &SectionKey) -> Result<Self> {
+        Self::read_inner(path, Some(key))
+    }
+
+    fn read_inner(path: &Path, key: Option<&SectionKey>) -> Result<Self> {
         let kind = Kind::from_path(path)
             .ok_or_else(|| Error::UnknownKind(path.display().to_string()))?;
         let raw = std::fs::read(path)
             .map_err(|source| Error::Io { path: path.display().to_string(), source })?;
-        Self::parse(kind, raw)
+        Self::parse_inner(kind, raw, key)
     }
 
+    /// Parse a document that is not encrypted.
     pub fn parse(kind: Kind, raw: Vec<u8>) -> Result<Self> {
+        Self::parse_inner(kind, raw, None)
+    }
+
+    /// The same, for factory content, under the installation's own key.
+    pub fn parse_with_key(kind: Kind, raw: Vec<u8>, key: &SectionKey) -> Result<Self> {
+        Self::parse_inner(kind, raw, Some(key))
+    }
+
+    fn parse_inner(kind: Kind, raw: Vec<u8>, key: Option<&SectionKey>) -> Result<Self> {
         let header = Header::parse(&raw)?;
         let serialization = Serialization::from_header(header.serialization_format)?;
 
@@ -149,14 +182,20 @@ impl Document {
             }
             _ => {
                 let encrypted = serialization == Serialization::EncryptedBinary;
+                // Fails closed. Without the key the sections decrypt to noise
+                // that the scanner would report as a malformed document, which
+                // says nothing about what is actually wrong.
+                if encrypted && key.is_none() {
+                    return Err(Error::Encrypted);
+                }
                 let meta_end = header
                     .object_offset
                     .checked_sub(BINARY_PADDING)
                     .ok_or(Error::Truncated { at: HEADER_LEN })?;
                 let meta = SectionSpan::of(&raw, HEADER_LEN, meta_end, encrypted)?;
                 let body = SectionSpan::of(&raw, header.object_offset, raw.len(), encrypted)?;
-                let meta_fields = Scanner::new(&meta.plaintext(&raw)).scan_object()?;
-                let body_fields = Scanner::new(&body.plaintext(&raw)).scan_object()?;
+                let meta_fields = Scanner::new(&meta.plaintext(&raw, key)).scan_object()?;
+                let body_fields = Scanner::new(&body.plaintext(&raw, key)).scan_object()?;
                 (
                     Identity::from_binary(&meta_fields)?,
                     Layout::Binary { meta, body, meta_fields, body_fields },
@@ -164,7 +203,7 @@ impl Document {
             }
         };
 
-        Ok(Document { kind, serialization, identity, raw, layout })
+        Ok(Document { kind, serialization, identity, raw, layout, key: key.cloned() })
     }
 
     pub fn kind(&self) -> Kind {
@@ -205,18 +244,19 @@ impl Document {
                 }
             }
             Layout::Binary { meta, body, meta_fields, body_fields } => {
-                let mut plain = meta.plaintext(&raw);
+                let section_key = self.key.as_ref();
+                let mut plain = meta.plaintext(&raw, section_key);
                 splice_uuid(&mut plain, meta_fields, &FieldKey::Name(F_UUID.into()), new)?;
                 splice_uuid_in_text(&mut plain, meta_fields, &FieldKey::Name(F_ID.into()), old, new)?;
-                meta.write_back(&mut raw, &plain);
+                meta.write_back(&mut raw, &plain, section_key);
 
-                let mut plain = body.plaintext(&raw);
+                let mut plain = body.plaintext(&raw, section_key);
                 splice_uuid(&mut plain, body_fields, &FieldKey::Id(BODY_UUID), new)?;
-                body.write_back(&mut raw, &plain);
+                body.write_back(&mut raw, &plain, section_key);
             }
         }
 
-        Document::parse(self.kind, raw)
+        Document::parse_inner(self.kind, raw, self.key.as_ref())
     }
 }
 
@@ -340,18 +380,21 @@ impl SectionSpan {
         Ok(SectionSpan { payload: (start + prefix, end), nonce: Some(nonce) })
     }
 
-    fn plaintext(&self, raw: &[u8]) -> Vec<u8> {
+    fn plaintext(&self, raw: &[u8], key: Option<&SectionKey>) -> Vec<u8> {
         let bytes = &raw[self.payload.0..self.payload.1];
-        match &self.nonce {
-            Some(nonce) => cipher::transform(nonce, bytes),
-            None => bytes.to_vec(),
+        match (&self.nonce, key) {
+            (Some(nonce), Some(key)) => cipher::transform(key, nonce, bytes),
+            // A span carries a nonce only where `of` was told the section is
+            // encrypted, and parsing refuses that without a key, so the
+            // remaining case is a plain section.
+            _ => bytes.to_vec(),
         }
     }
 
-    fn write_back(&self, raw: &mut [u8], plain: &[u8]) {
-        let encoded = match &self.nonce {
-            Some(nonce) => cipher::transform(nonce, plain),
-            None => plain.to_vec(),
+    fn write_back(&self, raw: &mut [u8], plain: &[u8], key: Option<&SectionKey>) {
+        let encoded = match (&self.nonce, key) {
+            (Some(nonce), Some(key)) => cipher::transform(key, nonce, plain),
+            _ => plain.to_vec(),
         };
         raw[self.payload.0..self.payload.1].copy_from_slice(&encoded);
     }
@@ -430,6 +473,27 @@ mod tests {
             .collect()
     }
 
+    /// The key the factory samples are encrypted under, for the tests that
+    /// read them.
+    ///
+    /// This crate cannot go and get it: it needs no installation, which is what
+    /// keeps it free of every layer above. `bitwig_registry::section_key` reads
+    /// it out of one, and that is where the extraction is tested. Here it
+    /// arrives by hand, in the environment, and the factory samples are dropped
+    /// when it does not.
+    fn section_key() -> Option<SectionKey> {
+        let hex = std::env::var("ORNG_SECTION_KEY").ok()?;
+        Some(SectionKey::from_hex(&hex).expect("ORNG_SECTION_KEY is not a section key"))
+    }
+
+    /// Open a sample whether or not it turns out to be encrypted.
+    fn open(path: &Path, key: Option<&SectionKey>) -> Result<Document> {
+        match key {
+            Some(key) => Document::read_with_key(path, key),
+            None => Document::read(path),
+        }
+    }
+
     /// Returning from a test that found nothing to test is how a suite reports
     /// seventy-nine passes while exercising none of them. Only a runner, which
     /// has no Bitwig and no samples, has any business asking for that.
@@ -444,14 +508,17 @@ mod tests {
 
     #[test]
     fn reads_every_serialization_in_the_wild() {
-        let all: Vec<_> = custom_samples().into_iter().chain(factory_samples(12)).collect();
+        let key = section_key();
+        let factory = if key.is_some() { factory_samples(12) } else { Vec::new() };
+        let all: Vec<_> = custom_samples().into_iter().chain(factory).collect();
         if all.is_empty() {
             skip_or_fail();
             return;
         }
         let mut seen = std::collections::BTreeSet::new();
         for path in &all {
-            let doc = Document::read(path).unwrap_or_else(|e| panic!("{}: {e}", path.display()));
+            let doc = open(path, key.as_ref())
+                .unwrap_or_else(|e| panic!("{}: {e}", path.display()));
             assert!(!doc.identity().name.is_empty(), "{} has no name", path.display());
             assert_ne!(doc.identity().uuid, Uuid::nil());
             assert_eq!(doc.kind(), Kind::from_path(path).unwrap());
@@ -464,13 +531,15 @@ mod tests {
 
     #[test]
     fn rewriting_the_uuid_is_reversible_and_length_preserving() {
-        let all: Vec<_> = custom_samples().into_iter().chain(factory_samples(4)).collect();
+        let key = section_key();
+        let factory = if key.is_some() { factory_samples(4) } else { Vec::new() };
+        let all: Vec<_> = custom_samples().into_iter().chain(factory).collect();
         if all.is_empty() {
             skip_or_fail();
             return;
         }
         for path in &all {
-            let doc = Document::read(path).unwrap();
+            let doc = open(path, key.as_ref()).unwrap();
             let new = Uuid::new_v4();
             let rewritten = doc.with_uuid(new).unwrap();
 

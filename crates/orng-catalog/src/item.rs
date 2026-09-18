@@ -104,8 +104,15 @@ impl Item {
         let document_file = find_document(&dir)?;
         let bytes = crate::read(&document_file)?;
         let kind = Kind::from_path(&document_file).expect("find_document only yields known kinds");
-        let parsed = Document::parse(kind, bytes.clone())
-            .map_err(|source| Error::Document { path: document_file.display().to_string(), source })?;
+        // No key is offered, and none is needed: everything the catalog carries
+        // is text or plain binary. An encrypted document is Bitwig's own, and
+        // is refused by name rather than by the parse failure it would become.
+        let parsed = Document::parse(kind, bytes.clone()).map_err(|source| match source {
+            bitwig_document::Error::Encrypted => {
+                Error::FactoryContent { path: document_file.display().to_string() }
+            }
+            source => Error::Document { path: document_file.display().to_string(), source },
+        })?;
 
         let name = document_file.file_name().unwrap_or_default().to_string_lossy();
         Ok(Item {

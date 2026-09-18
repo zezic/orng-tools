@@ -8,7 +8,7 @@
 //! when no Bitwig is installed.
 
 use bitwig_classfile::Jar;
-use bitwig_document::Kind;
+use bitwig_document::{Document, Kind, Serialization};
 use bitwig_install::Installation;
 use bitwig_registry::{Binding, GuardState, guard, read_entries};
 
@@ -163,4 +163,58 @@ fn widening_the_register_method_leaves_a_loadable_class() {
     // The registry must still read back whole.
     let entries = read_entries(&widened, &binding.registry).expect("reading entries failed");
     assert_eq!(entries.len(), read_entries(&original, &binding.registry).unwrap().len());
+}
+
+/// The section key comes out of the installation, and reads its own content.
+///
+/// The one test that matters for the key: not that some 128 bytes were found,
+/// but that what was found decrypts a document Bitwig itself wrote and that the
+/// result parses into an identity. A wrong key yields high-entropy noise, which
+/// the scanner rejects, so this cannot pass on the wrong answer.
+///
+/// Nothing here prints the key. What is asserted is what it *does*.
+#[test]
+fn the_section_key_comes_out_of_the_installation_and_opens_its_documents() {
+    let install = match Installation::discover() {
+        Ok(install) => install,
+        Err(_) if std::env::var_os(SKIP).is_some() => {
+            eprintln!("no Bitwig Studio installed, skipping");
+            return;
+        }
+        Err(e) => panic!("no Bitwig Studio installed ({e}); set {SKIP}=1 to skip these tests"),
+    };
+
+    let devices = install.library_dir().join("devices");
+    let mut factory: Vec<_> = std::fs::read_dir(&devices)
+        .unwrap_or_else(|e| panic!("{}: {e}", devices.display()))
+        .filter_map(|entry| entry.ok().map(|e| e.path()))
+        .filter(|path| Kind::from_path(path).is_some())
+        .collect();
+    factory.sort();
+    assert!(!factory.is_empty(), "{} holds no factory documents", devices.display());
+
+    let key = bitwig_registry::section_key(&install.jar(), &factory[0])
+        .expect("the section key could not be read out of this build");
+
+    // Every one of them, not just the one the search was verified against: a
+    // key that opened a single document and nothing else would be a fluke.
+    for path in factory.iter().take(40) {
+        let document = Document::read_with_key(path, &key)
+            .unwrap_or_else(|e| panic!("{}: {e}", path.display()));
+        assert!(!document.identity().name.is_empty(), "{} has no name", path.display());
+        assert_eq!(
+            document.serialization(),
+            Serialization::EncryptedBinary,
+            "{} is not the encrypted form, so it proves nothing here",
+            path.display()
+        );
+    }
+
+    // And the refusal without it, which is what every layer above relies on.
+    let raw = std::fs::read(&factory[0]).expect("read back");
+    let kind = Kind::from_path(&factory[0]).expect("a document");
+    assert!(
+        matches!(Document::parse(kind, raw), Err(bitwig_document::Error::Encrypted)),
+        "an encrypted document must refuse to open without a key"
+    );
 }

@@ -156,11 +156,31 @@ writes three serializations and all three occur in the wild:
 | --- | --- |
 | Text | Relaxed JSON. Development builds and some authoring tools. |
 | Plain binary | Ramona binary, unencrypted. |
-| Encrypted binary | Ramona binary behind a stream cipher. Factory content. |
+| Encrypted binary | Ramona binary behind a stream cipher. Factory content. Needs the installation's section key - see below. |
 
 All three are read. A new UUID is applied by splicing, not re-serializing: the identity is
 fixed width in every encoding, so the surrounding bytes are untouched and the operation is
 exactly reversible.
+
+**The section key is read out of the installation, never carried here.** The encrypted
+form is Bitwig's own material, and so is the key that opens it, so a copy of it in this
+source tree would be a copy of Bitwig's material in this source tree. `bitwig-registry`
+reads it from the jar of the installation in front of it, every time.
+
+It is not stored there as a run of bytes. The key is a `byte[]` literal built by bytecode -
+`newarray byte`, then one `bastore` per element - so its bytes sit one every four,
+interleaved with opcodes, and searching a jar for the key as a contiguous string finds
+nothing in any encoding. Resolution follows the same rule as every other anchor: the class
+holding it is obfuscated and moves between releases, so what is named is the unobfuscated
+package, and what settles the answer is neither a name nor a length but a decryption - a
+candidate is accepted only once it has opened a real document and the result has parsed.
+It fails closed, and no error it raises carries the material.
+
+`bitwig-document` needs no installation, which is why it takes the key as an argument and
+refuses the encrypted form without one. The catalog never supplies one: everything it
+carries is text or plain binary, and an encrypted document in a pull request is Bitwig's
+factory content being redistributed, which it refuses by name. Tests that need the real key
+take it from `ORNG_SECTION_KEY`.
 
 Custom content is commonly identified by a **name-derived (v5) UUID**, while Bitwig's own
 content uses random (v4). Name-derived means two authors who pick the same device name get

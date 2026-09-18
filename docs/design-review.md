@@ -186,3 +186,40 @@ Listed because each was a genuine risk.
 - **Search covering author in the Catalog and UUID in Local**, with the reasoning stated.
   The two questions really are different.
 - **No UUID in a catalog row.** Right: it identifies a thing you already have.
+
+---
+
+## Round 3: found while building the window against revision 7
+
+These came out of holding every rendered screen against the rendered mockup and
+comparing the numbers, not from reading the bundle. Two are for the designer; the
+rest are recorded because the next person to measure will find them too and should
+know they were looked at.
+
+### 1. The install bar is 42 tall, except on `noinstall`, where it is 50
+
+`InstallBar.dc.html` is `padding:9px 12px` around a 24-tall row, which is the 42 the
+whole app is drawn to. The shell does not import it for the "no installation" state:
+it inlines a near-copy at `padding:13px 12px`, which comes out 50, so the one screen
+a first-run user is most likely to see has a bar eight pixels taller than every other
+screen. Nothing else about it differs. It reads as a copy that drifted rather than a
+decision, and this draws 42 everywhere until told otherwise.
+
+### 2. The `·` separator is the design's, and the app now draws it
+
+The bundle uses a middle dot between the parts of one line - `Update entries ·
+Bitwig may stay open`, the three extensions, `Step 3 of 5 · Verify`. This wrote a
+full stop for a while, because the house rule keeps wide characters out of the
+source. The codepoint is in both faces, so it is drawn as the design has it and
+escaped in the source rather than typed. No question outstanding; noted because the
+next reader will see `\u{b7}` and wonder.
+
+### 3. What the bundle draws and this deliberately does not
+
+- **Cancel, in the progress dialog.** Nothing can cancel a preparation yet. The
+  dialog is drawn without the control rather than with a dead one - which is the
+  shape the bundle itself draws from the Activate step onwards.
+- **The row actions and a catalog row's status and `Install`.** The columns are
+  reserved at the design's widths and left empty, because the design reserves them
+  too: it hides those controls off hover rather than removing them.
+

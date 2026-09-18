@@ -647,6 +647,17 @@ A row is a grid, so identities and statuses line up down the list. The icons are
 design's own set, Phosphor, in the Light weight it names. Every empty state is the
 designer's copy verbatim rather than something invented beside it.
 
+A condition that stands in the way of the press is a banner directly above the action bar,
+where the design puts it: the tone as a dot, the reason under the headline, and the one
+thing that can be done about it at the right end. A preparation in flight is the design's
+dialog over the window, holding it still - the scrim takes the pointer as well as the
+light - and what a press came to is a banner in the same place afterwards, dismissible,
+carrying `Copy details` when it failed.
+
+Every measurement above was read out of the bundle rather than judged by eye, and the two
+row grids are checked against its numbers in a test. `docs/interface-notes.md` has the
+method, including how to make the bundle report its own geometry.
+
 Every state renders headlessly into `apps/orng-registry/tests/snapshots`, and the fixture
 paths are relative so that the pictures are a function of the code rather than of the
 machine that drew them.
@@ -657,8 +668,15 @@ Not built yet:
   the index carries, and registering it. The catalog view has no toolbar of its own yet,
   so its search, kind filters and `All / Installed / Updatable` switch are missing.
 - Row actions: `Reveal file`, `Remove`, `Assign new UUID`, and the choice of whether a
-  removed entry's document goes with it. The design reserves a column for them; this draws
-  no column rather than an empty one.
+  removed entry's document goes with it. The column they sit in is reserved, because the
+  design reserves it - it hides those controls off hover rather than removing them, so the
+  four columns before it do not move when the pointer arrives - but nothing is drawn in it
+  yet. The same is true of a catalog row's status and its `Install` control, which wait on
+  installing from the catalog.
+- Cancelling a preparation. The design offers it up to the Activate step, on the grounds
+  that nothing has changed until then, and nothing here can honour it: the dialog is drawn
+  without the control rather than with a dead one, which is a shape the design itself draws
+  from Activate onwards.
 - The `Show factory entries` toggle. Reading Bitwig's own 428 entries means parsing a class
   out of the archive, which takes about a second, so it needs a worker of its own; a toggle
   that did nothing would be worse than no toggle.

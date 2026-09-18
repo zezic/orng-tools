@@ -1020,14 +1020,18 @@ impl App {
         let palette = self.palette;
         let found = match &self.session {
             Session::Found(found) => found,
+            // Preparing, and not applying, in both of these. Nothing is
+            // registered on an installation that cannot be read or has not been
+            // found, so preparation is what the press would be for once the
+            // state is resolved - which is what the bundle labels them.
             Session::Unreadable { .. } => {
                 let why = "This installation could not be read";
-                widget::primary_button(ui, palette, "Apply changes", icon::APPLY, false, why);
+                widget::primary_button(ui, palette, PREPARE, icon::PREPARE, false, why);
                 return;
             }
             Session::NoInstallation { .. } => {
                 let why = "No installation selected";
-                widget::primary_button(ui, palette, "Apply changes", icon::APPLY, false, why);
+                widget::primary_button(ui, palette, PREPARE, icon::PREPARE, false, why);
                 return;
             }
         };
@@ -1039,7 +1043,7 @@ impl App {
 
         let pending = self.pending(found);
         let label = match pending {
-            Some(Work::PrepareThenEntries) => "Prepare installation".to_owned(),
+            Some(Work::PrepareThenEntries) => PREPARE.to_owned(),
             Some(Work::Entries) => match self.ready().count() {
                 1 => "Apply 1 change".to_owned(),
                 many => format!("Apply {many} changes"),
@@ -1149,6 +1153,10 @@ fn badge(ui: &mut egui::Ui, palette: Palette, label: &str) {
             .color(widget::badge_colour(palette, label)),
     );
 }
+
+/// The one press that modifies Bitwig Studio itself, named the same wherever it
+/// is offered and wherever it is refused.
+const PREPARE: &str = "Prepare installation";
 
 /// Roughly how wide a character of the badge is, for leaving room before it has
 /// been laid out. An estimate, and only ever used to decide how much of the

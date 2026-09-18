@@ -37,8 +37,41 @@ fills the viewport and measures nothing useful.
 | `EmptyState` | 820 x 420 |
 
 `ORNG Registry.dc.html` renders the whole shell, but only its default screen: the
-others are picked by clicking, which headless Chrome will not do. The app window is
-at roughly `(682, 732)-(2318, 1780)` in a 2x shot of it.
+others are picked by clicking, which headless Chrome will not do.
+
+## 1a. Take the screen out of the page, and ask the page for its numbers
+
+Both problems - only one screen, and the shell's chrome around it - are fixed by one
+copy of the shell with three edits. Write it beside the original so its relative
+imports still resolve, and delete it afterwards; it is a tool, not a document.
+
+1. **Make the screen an argument.** The component's `state = { theme: "dark", screen:
+   "main", ...}` becomes `screen: new URLSearchParams(location.search).get("screen") ||
+   "main"`, and the same for `theme`. Every key of `SCREENS` is then a URL.
+2. **Hide everything but the window.** Append to the `<style>` in `<helmet>`:
+   `#ordoc{padding:0!important}` plus `display:none` for the title block, the chip
+   panel and the caption - they are `#ordoc > div > div:nth-child(1)`, `(2)` and
+   `(3) > div:nth-child(2)`. At `--window-size=820,560` the mockup then *is* the
+   viewport, and a pixel in it is a pixel in ours.
+3. **Have it report its own geometry.** Append a script that waits for the render,
+   walks `#dc-root` calling `getBoundingClientRect` on every element, and writes tag,
+   left, top, width, height and text into a `<pre id="rects">`. Then:
+
+```bash
+"/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" --headless=new \
+  --disable-gpu --window-size=820,560 --virtual-time-budget=4000 --dump-dom \
+  --allow-file-access-from-files "file://$PWD/Probe.dc.html?screen=catalog"
+```
+
+**This is the measurement that ends arguments.** It is the design's own numbers rather
+than an inference from pixels: `DIV 0 140 820 36` is a row, and the four cells inside
+it are the grid. It found the missing 84px actions column in `EntryRow`, which no
+screenshot shows because the column is empty - the bundle hides those controls off
+hover and keeps their space.
+
+Read the `.dc.html` of a component beside it. The rects say where things are; the
+component's `rowStyle`, `chip()` and `tab()` say *why*, and carry the numbers for
+states the shell does not happen to render.
 
 **Caveat.** Chrome resolves Inter from Google Fonts and has no network in this
 sandbox, so it falls back. Letterforms and text widths in a rendered mockup are not
@@ -49,6 +82,17 @@ trustworthy; geometry, colour and control boxes are. Measure boxes, not glyphs.
 `metric::WINDOW` is 820 x 560, the size the design is drawn at, and both the window
 and the render fixtures use it. Take a 2x shot by adding
 `.with_pixels_per_point(2.0)` to the harness builder.
+
+**The bundle's window is 30 pixels taller than ours in every shot**, because it draws
+a mock title bar that a real window does not have: its content starts at y=30 and runs
+to 560, ours starts at 0. Heights and widths compare directly; absolute y does not.
+
+Regenerate ours at 2x without disturbing the committed pictures: copy `render.rs`
+aside, add `.with_pixels_per_point(2.0)`, run `UPDATE_SNAPSHOTS=1 cargo test -p
+orng-registry --release render::`, copy the pictures out, then put `render.rs` back and
+`git checkout -- apps/orng-registry/tests/snapshots`. **Restore by copy and not by
+`git checkout` on the source**, or an edit made to `render.rs` during the same session
+is thrown away with it.
 
 ## 3. Measure, do not look
 
@@ -65,7 +109,15 @@ Compare the runs: start, end and width of every control. What this has caught th
 eyes did not - a field 22px too wide, gaps 6px too large, a row pitch of 42 against
 36, an 8px margin around the entire window.
 
-Scanning *through* the text finds glyph fragments and is useless. Scan above it.
+Scanning *through* the text finds glyph fragments and is useless. Scan above it, or
+scan through it and merge runs less than about eight pixels apart: the merged runs are
+the columns, and comparing those against the rects from section 1a is how a column
+that starts 96 pixels late is caught in one line of output.
+
+The same down a column gives the bands: the bars, the section headings, the rows and
+their pitch. The dominant colour of each scanline, collapsed into runs, reads as the
+window's vertical structure - 42, 42, 26, 36, 36, 36, 26, ..., 52 - and that list
+against the bundle's is the whole layout in one comparison.
 
 ---
 

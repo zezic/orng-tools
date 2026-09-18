@@ -296,6 +296,11 @@ pub mod metric {
     /// removing them: a column that appears on hover would move every other
     /// column under the pointer.
     pub const ACTIONS_COLUMN: f32 = 84.0;
+    /// The same two columns beside the inspector, where the identity has gone
+    /// and the row has 272 fewer pixels to spend. The design shortens these
+    /// rather than letting the name take the whole difference.
+    pub const NARROW_STATUS_COLUMN: f32 = 116.0;
+    pub const NARROW_ACTIONS_COLUMN: f32 = 76.0;
     /// The author and the version of a catalog item, which take the place of
     /// the identity and the status a registered row carries.
     pub const AUTHOR_COLUMN: f32 = 116.0;

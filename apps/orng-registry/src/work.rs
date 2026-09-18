@@ -46,6 +46,20 @@ pub enum Work {
     PrepareThenEntries,
 }
 
+/// Why a run is happening, which is what decides how its ending is told.
+///
+/// Not a property of the work - both write the entry list the same way - but of
+/// the occasion. A press is something the user did and asked to be told the
+/// result of. An edit in the inspector is something the panel is already
+/// showing, so a banner for every description would be the window talking over
+/// itself; only a failure is worth saying, and a failure is worth saying in
+/// either case.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Errand {
+    Press,
+    Edit,
+}
+
 /// What the worker says as it goes.
 enum Progress {
     /// Which steps this plan will actually run. Sent once, before the first of
@@ -92,6 +106,8 @@ pub struct Applying {
     /// and there is nothing to watch.
     pub steps: Option<[(Step, State); 5]>,
     pub stage: Stage,
+    /// What this run was for. Read once it has ended, to decide what is said.
+    pub errand: Errand,
     /// `None` while it is still going, and then the entry list that was written.
     pub outcome: Option<Result<Manifest, String>>,
 }
@@ -100,6 +116,7 @@ impl Applying {
     /// Start it. Returns immediately.
     pub fn start(
         work: Work,
+        errand: Errand,
         to: Destination,
         update: Update,
         ctx: egui::Context,
@@ -127,6 +144,7 @@ impl Applying {
                 Work::PrepareThenEntries => Stage::Preparing,
                 Work::Entries => Stage::Registering,
             },
+            errand,
             outcome: None,
         }
     }
@@ -230,7 +248,7 @@ impl Applying {
         // died, which `poll` correctly turns into a failure - so a held-still
         // run would draw itself as one the moment it was polled.
         std::mem::forget(tx);
-        Applying { updates, steps, stage, outcome }
+        Applying { updates, steps, stage, errand: Errand::Press, outcome }
     }
 }
 
@@ -265,6 +283,7 @@ mod tests {
             updates,
             steps: Some(Step::ALL.map(|s| (s, State::Waiting))),
             stage: Stage::Preparing,
+            errand: Errand::Press,
             outcome: None,
         }
     }
@@ -342,6 +361,7 @@ mod tests {
             updates,
             steps: Some(Step::ALL.map(|s| (s, State::Waiting))),
             stage: Stage::Preparing,
+            errand: Errand::Press,
             outcome: None,
         };
         tx.send(Progress::Began(Step::Backup)).unwrap();
@@ -359,7 +379,13 @@ mod tests {
     fn an_entries_only_apply_has_no_step_list_to_draw() {
         let (tx, updates) = channel();
         let mut p =
-            Applying { updates, steps: None, stage: Stage::Registering, outcome: None };
+            Applying {
+                updates,
+                steps: None,
+                stage: Stage::Registering,
+                errand: Errand::Press,
+                outcome: None,
+            };
         tx.send(Progress::Finished(Ok(Manifest::default()))).unwrap();
 
         assert!(p.poll());

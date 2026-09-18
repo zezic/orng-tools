@@ -968,6 +968,33 @@ pub fn panel_shadow(ui: &Ui, palette: Palette, panel: Rect) {
         .add(shadow.as_shape(panel, CornerRadius::ZERO));
 }
 
+/// What the inspector's two editable fields hold while the panel is open.
+///
+/// Beside the entry rather than inside it. A field is edited one character at a
+/// time and an entry is written a whole one at a time, and what closes the gap
+/// is leaving the field - so the buffer is what is being typed and the entry is
+/// what has been said.
+#[derive(Debug, Default)]
+pub struct Words {
+    /// What Bitwig's browser shows under the device.
+    pub description: String,
+    /// The words that find it when typed into that browser.
+    pub keywords: Vec<String>,
+    /// The keyword being typed, which is not one until it is committed.
+    pub adding: String,
+}
+
+impl Words {
+    /// The words as an entry currently states them.
+    pub fn of(description: &str, keywords: &[String]) -> Words {
+        Words {
+            description: description.to_owned(),
+            keywords: keywords.to_vec(),
+            adding: String::new(),
+        }
+    }
+}
+
 /// One entry, as the inspector has to say it.
 ///
 /// Everything here is read off the entry and the machine by the caller. The
@@ -976,10 +1003,6 @@ pub fn panel_shadow(ui: &Ui, palette: Palette, panel: Rect) {
 pub struct Inspected<'a> {
     pub kind: Kind,
     pub name: &'a str,
-    /// What Bitwig's browser shows under the device.
-    pub description: &'a str,
-    /// The words that find it when typed into that browser.
-    pub keywords: &'a [String],
     pub uuid: &'a str,
     /// Where the registry says the document is, relative to the library.
     pub path: &'a str,
@@ -998,6 +1021,9 @@ pub enum Inspecting {
     Closed,
     CopiedUuid,
     Reveal,
+    /// A field was finished with: it lost focus, or a keyword was added or
+    /// taken away. Whatever is in [`Words`] is what the entry should now say.
+    Edited,
 }
 
 /// The inspector: everything one entry is, and what can be done about it.
@@ -1006,7 +1032,12 @@ pub enum Inspecting {
 /// taken out of the window, so the list beside it has already been laid out
 /// narrower. The design draws them as siblings for the same reason: the panel
 /// is not an overlay with the list still live underneath.
-pub fn inspector(ui: &mut Ui, palette: Palette, item: &Inspected<'_>) -> Inspecting {
+pub fn inspector(
+    ui: &mut Ui,
+    palette: Palette,
+    item: &Inspected<'_>,
+    words: &mut Words,
+) -> Inspecting {
     let mut pressed = Inspecting::Nothing;
     // Before the header, not after it. egui puts `item_spacing` between every
     // allocated widget, and the header and the body below it are two of them:
@@ -1030,13 +1061,17 @@ pub fn inspector(ui: &mut Ui, palette: Palette, item: &Inspected<'_>) -> Inspect
 
                 ui.add_space(metric::BETWEEN_GROUPS);
                 label_above(ui, palette, "Description", metric::UNDER_A_FIELD_LABEL);
-                paragraph_field(ui, palette, item.description);
+                if paragraph_field(ui, palette, &mut words.description) {
+                    pressed = Inspecting::Edited;
+                }
                 ui.add_space(metric::UNDER_A_FIELD_LABEL);
                 footnote(ui, palette, "Shown under the device in Bitwig's browser.");
 
                 ui.add_space(metric::BETWEEN_GROUPS);
                 label_above(ui, palette, "Search keywords", metric::UNDER_A_FIELD_LABEL);
-                keyword_field(ui, palette, item.keywords);
+                if keyword_field(ui, palette, words) {
+                    pressed = Inspecting::Edited;
+                }
                 ui.add_space(metric::UNDER_A_FIELD_LABEL);
                 footnote(ui, palette, "Proposed from the name.");
 
@@ -1123,7 +1158,10 @@ fn one_line_field(ui: &mut Ui, palette: Palette, text: &str) {
 
 /// A field holding a sentence, which grows with the sentence and never shrinks
 /// below the height the design draws it empty at.
-fn paragraph_field(ui: &mut Ui, palette: Palette, text: &str) {
+///
+/// Answers whether it was finished with, which is when it lost focus: what is
+/// typed into a description is a description only once the user has stopped.
+fn paragraph_field(ui: &mut Ui, palette: Palette, text: &mut String) -> bool {
     field_frame(
         palette,
         Margin::symmetric(metric::FIELD_PAD as i8, metric::PARAGRAPH_PAD_Y as i8),
@@ -1131,12 +1169,26 @@ fn paragraph_field(ui: &mut Ui, palette: Palette, text: &str) {
     .show(ui, |ui| {
         ui.set_width(ui.available_width());
         ui.set_min_height(metric::PARAGRAPH - 2.0 * metric::PARAGRAPH_PAD_Y);
-        ui.label(font::run(text, font::plain(font::CONTROL)).color(palette.ink));
-    });
+        ui.add(
+            egui::TextEdit::multiline(text)
+                .desired_width(f32::INFINITY)
+                .desired_rows(1)
+                .font(font::plain(font::CONTROL))
+                .text_color(palette.ink)
+                // The box is the frame above, and its padding is that frame's.
+                .frame(Frame::NONE)
+                .margin(Margin::ZERO),
+        )
+        .lost_focus()
+    })
+    .inner
 }
 
-/// The box the search keywords sit in.
-fn keyword_field(ui: &mut Ui, palette: Palette, keywords: &[String]) {
+/// The box the search keywords sit in, and the one being typed.
+///
+/// Answers whether the list changed.
+fn keyword_field(ui: &mut Ui, palette: Palette, words: &mut Words) -> bool {
+    let mut changed = false;
     field_frame(
         palette,
         Margin::symmetric(metric::KEYWORDS_PAD_X as i8, metric::KEYWORDS_PAD_Y as i8),
@@ -1148,27 +1200,101 @@ fn keyword_field(ui: &mut Ui, palette: Palette, keywords: &[String]) {
         ui.set_min_height(metric::KEYWORDS);
         ui.spacing_mut().item_spacing = vec2(metric::BETWEEN_KEYWORDS, metric::BETWEEN_KEYWORDS);
         ui.horizontal_wrapped(|ui| {
-            for word in keywords {
-                keyword(ui, palette, word);
+            let mut drop = None;
+            for (at, word) in words.keywords.iter().enumerate() {
+                if keyword(ui, palette, word) {
+                    drop = Some(at);
+                }
+            }
+            if let Some(at) = drop {
+                words.keywords.remove(at);
+                changed = true;
+            }
+
+            // What is left of the row the chips ended on, and never less than
+            // the words in it: `available_width` is the whole row in a wrapped
+            // layout rather than the rest of it, so asking for that put the
+            // field on a line of its own and made a one-keyword box two rows
+            // tall. The floor is what wraps it when there is genuinely no room.
+            const ADD: &str = "add...";
+            let rest = ui.available_size_before_wrap().x;
+            let least = text_width(ui, ADD, font::plain(font::NOTE));
+            let typing = ui.add(
+                egui::TextEdit::singleline(&mut words.adding)
+                    // Named, because egui would otherwise derive its id from
+                    // where it sits in the layout - and it sits after the
+                    // chips, so committing a word moves it, gives it a new id
+                    // and drops the focus that had just been handed back.
+                    .id_salt("add-keyword")
+                    .hint_text(font::run(ADD, font::plain(font::NOTE)).color(palette.ink_3))
+                    .desired_width(rest.max(least))
+                    .font(font::plain(font::NOTE))
+                    .text_color(palette.ink)
+                    .frame(Frame::NONE)
+                    .margin(Margin::ZERO),
+            );
+            // Enter and clicking away are the same statement, and a singleline
+            // field gives up focus on Enter - so both arrive here. Whitespace
+            // separates keywords in the bundle Bitwig reads, so it separates
+            // them here: whatever was typed splits into words.
+            if typing.lost_focus() && !words.adding.trim().is_empty() {
+                for word in words.adding.split_whitespace() {
+                    if !words.keywords.iter().any(|had| had == word) {
+                        words.keywords.push(word.to_owned());
+                        changed = true;
+                    }
+                }
+                words.adding.clear();
+                // Enter means "and another", so the field is handed its focus
+                // back rather than dropping the user out of a list they are
+                // half way through.
+                if ui.input(|input| input.key_pressed(egui::Key::Enter)) {
+                    typing.request_focus();
+                }
             }
         });
     });
+    changed
 }
 
 /// One keyword: a word on the accent, which is how the design says these are
-/// the entry's own rather than something read off it.
-fn keyword(ui: &mut Ui, palette: Palette, word: &str) {
+/// the entry's own rather than something read off it, and the control that
+/// takes it away.
+///
+/// Answers whether that control was pressed.
+fn keyword(ui: &mut Ui, palette: Palette, word: &str) -> bool {
+    let mut removed = false;
     Frame::new()
         .fill(palette.accent)
         .corner_radius(CornerRadius::same(metric::RADIUS))
         .inner_margin(Margin::symmetric(metric::KEYWORD_PAD_X as i8, 0))
         .show(ui, |ui| {
             ui.set_height(metric::KEYWORD);
+            ui.spacing_mut().item_spacing.x = metric::ALONG_A_CHIP;
             ui.horizontal_centered(|ui| {
                 ui.label(font::run(word, font::plain(font::NOTE)).color(palette.accent_ink));
+                removed = ui
+                    .add(
+                        egui::Label::new(
+                            font::run(REMOVE_KEYWORD, font::plain(font::CHIP))
+                                // The design draws this at three quarters, so
+                                // it reads as the word's own control rather
+                                // than as a second word beside it.
+                                .color(palette.accent_ink.gamma_multiply(0.75)),
+                        )
+                        .sense(Sense::click()),
+                    )
+                    .on_hover_cursor(egui::CursorIcon::PointingHand)
+                    .clicked();
             });
         });
+    removed
 }
+
+/// The mark that takes a keyword away, which the design draws as a multiplication
+/// sign rather than as an icon. Escaped rather than typed, as `SEPARATOR` is,
+/// and both faces were checked for the glyph.
+const REMOVE_KEYWORD: &str = "\u{d7}";
 
 /// The surface a field is written on.
 fn field_frame(palette: Palette, margin: Margin) -> Frame {

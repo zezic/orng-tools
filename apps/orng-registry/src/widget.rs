@@ -591,6 +591,19 @@ pub mod icon {
     pub const LINKED: &str = light::LINK;
     pub const COPIED: &str = light::COPY_SIMPLE;
     pub const UNRESOLVED: &str = light::LINK_BREAK;
+    /// Who wrote a published item, which is the trust signal in the catalog.
+    pub const AUTHOR: &str = light::USER;
+    /// What it is licensed under.
+    pub const LICENCE: &str = light::SCALES;
+    /// The change that published it, which is where the review of it is.
+    pub const PROVENANCE: &str = light::GIT_PULL_REQUEST;
+    pub const HOMEPAGE: &str = light::LINK_SIMPLE;
+    /// Whether this installation can load it.
+    pub const COMPATIBLE: &str = light::CHECK_CIRCLE;
+    pub const INCOMPATIBLE: &str = light::WARNING_CIRCLE;
+    /// The item that takes a superseded one's place. The same glyph as
+    /// `PREPARE` and a different idea, so it is named again.
+    pub const REPLACEMENT: &str = light::ARROW_RIGHT;
 }
 
 /// One line of the overflow menu.
@@ -785,26 +798,51 @@ impl Columns {
 pub struct CatalogColumns {
     pub kind: Rect,
     pub name: Rect,
-    pub author: Rect,
-    pub version: Rect,
+    /// Both go beside the detail panel, for the reason the identity does: the
+    /// panel is already naming the author and the version in full.
+    pub author: Option<Rect>,
+    pub version: Option<Rect>,
     pub status: Rect,
     pub actions: Rect,
 }
 
 impl CatalogColumns {
-    fn across(row: Rect) -> CatalogColumns {
-        let [kind, name, author, version, status, actions] = grid(
-            row,
-            [
-                Column::Fixed(metric::KIND_COLUMN),
-                Column::Rest,
-                Column::Fixed(metric::AUTHOR_COLUMN),
-                Column::Fixed(metric::VERSION_COLUMN),
-                Column::Fixed(metric::CATALOG_STATUS_COLUMN),
-                Column::Fixed(metric::CATALOG_ACTIONS_COLUMN),
-            ],
-        );
-        CatalogColumns { kind, name, author, version, status, actions }
+    fn across(row: Rect, width: Width) -> CatalogColumns {
+        match width {
+            Width::Full => {
+                let [kind, name, author, version, status, actions] = grid(
+                    row,
+                    [
+                        Column::Fixed(metric::KIND_COLUMN),
+                        Column::Rest,
+                        Column::Fixed(metric::AUTHOR_COLUMN),
+                        Column::Fixed(metric::VERSION_COLUMN),
+                        Column::Fixed(metric::CATALOG_STATUS_COLUMN),
+                        Column::Fixed(metric::CATALOG_ACTIONS_COLUMN),
+                    ],
+                );
+                CatalogColumns {
+                    kind,
+                    name,
+                    author: Some(author),
+                    version: Some(version),
+                    status,
+                    actions,
+                }
+            }
+            Width::Narrow => {
+                let [kind, name, status, actions] = grid(
+                    row,
+                    [
+                        Column::Fixed(metric::KIND_COLUMN),
+                        Column::Rest,
+                        Column::Fixed(metric::NARROW_CATALOG_STATUS_COLUMN),
+                        Column::Fixed(metric::NARROW_CATALOG_ACTIONS_COLUMN),
+                    ],
+                );
+                CatalogColumns { kind, name, author: None, version: None, status, actions }
+            }
+        }
     }
 }
 
@@ -832,13 +870,15 @@ pub fn row(
 pub fn catalog_row(
     ui: &mut Ui,
     palette: Palette,
+    width: Width,
+    selected: bool,
     contents: impl FnOnce(&mut Ui, &CatalogColumns),
 ) -> Response {
-    let (rect, response) = row_frame(ui, palette, metric::CATALOG_ROW, false);
-    let columns = CatalogColumns::across(rect);
+    let (rect, response) = row_frame(ui, palette, metric::CATALOG_ROW, selected);
+    let columns = CatalogColumns::across(rect, width);
     let mut content = ui.new_child(egui::UiBuilder::new().max_rect(rect));
     contents(&mut content, &columns);
-    response
+    response.on_hover_cursor(egui::CursorIcon::PointingHand)
 }
 
 /// The part both rows share: the space, and the fill behind it.
@@ -1189,20 +1229,13 @@ fn paragraph_field(ui: &mut Ui, palette: Palette, text: &mut String) -> bool {
 /// Answers whether the list changed.
 fn keyword_field(ui: &mut Ui, palette: Palette, words: &mut Words) -> bool {
     let mut changed = false;
-    field_frame(
-        palette,
-        Margin::symmetric(metric::KEYWORDS_PAD_X as i8, metric::KEYWORDS_PAD_Y as i8),
-    )
-    .show(ui, |ui| {
-        ui.set_width(ui.available_width());
-        // The design's `min-height` is on the content and not on the box, so an
-        // empty keyword field is 27 inside its padding rather than 27 overall.
-        ui.set_min_height(metric::KEYWORDS);
-        ui.spacing_mut().item_spacing = vec2(metric::BETWEEN_KEYWORDS, metric::BETWEEN_KEYWORDS);
-        ui.horizontal_wrapped(|ui| {
+    // The design's `min-height` is on the content and not on the box, so an
+    // empty keyword field is 27 inside its padding rather than 27 overall.
+    keyword_box(ui, palette, metric::KEYWORDS, |ui| {
+        {
             let mut drop = None;
             for (at, word) in words.keywords.iter().enumerate() {
-                if keyword(ui, palette, word) {
+                if keyword(ui, palette, word, true) {
                     drop = Some(at);
                 }
             }
@@ -1252,9 +1285,32 @@ fn keyword_field(ui: &mut Ui, palette: Palette, words: &mut Words) -> bool {
                     typing.request_focus();
                 }
             }
-        });
+        }
     });
     changed
+}
+
+/// The box a row of keyword chips sits in, in either panel.
+///
+/// **`interact_size.y` is pinned to the chip's own height.** A wrapped
+/// horizontal layout starts its row at that size, and the theme sets it to a
+/// bar control's 26 - which made a box holding one 18-tall chip four pixels
+/// taller than the design draws one, with all four of them above the chip.
+///
+/// `least` is what the box is never shorter than, which the design states for
+/// the field that can be typed into and not for the one that cannot.
+fn keyword_box(ui: &mut Ui, palette: Palette, least: f32, contents: impl FnOnce(&mut Ui)) {
+    field_frame(
+        palette,
+        Margin::symmetric(metric::KEYWORDS_PAD_X as i8, metric::KEYWORDS_PAD_Y as i8),
+    )
+    .show(ui, |ui| {
+        ui.set_width(ui.available_width());
+        ui.set_min_height(least);
+        ui.spacing_mut().item_spacing = vec2(metric::BETWEEN_KEYWORDS, metric::BETWEEN_KEYWORDS);
+        ui.spacing_mut().interact_size.y = metric::KEYWORD;
+        ui.horizontal_wrapped(contents);
+    });
 }
 
 /// One keyword: a word on the accent, which is how the design says these are
@@ -1262,7 +1318,7 @@ fn keyword_field(ui: &mut Ui, palette: Palette, words: &mut Words) -> bool {
 /// takes it away.
 ///
 /// Answers whether that control was pressed.
-fn keyword(ui: &mut Ui, palette: Palette, word: &str) -> bool {
+fn keyword(ui: &mut Ui, palette: Palette, word: &str, removable: bool) -> bool {
     let mut removed = false;
     Frame::new()
         .fill(palette.accent)
@@ -1273,6 +1329,9 @@ fn keyword(ui: &mut Ui, palette: Palette, word: &str) -> bool {
             ui.spacing_mut().item_spacing.x = metric::ALONG_A_CHIP;
             ui.horizontal_centered(|ui| {
                 ui.label(font::run(word, font::plain(font::NOTE)).color(palette.accent_ink));
+                if !removable {
+                    return;
+                }
                 removed = ui
                     .add(
                         egui::Label::new(
@@ -1435,6 +1494,282 @@ fn panel_action(ui: &mut Ui, palette: Palette, glyph: &str, label: &str, ink: Co
     );
     line.label(text);
     response.on_hover_cursor(egui::CursorIcon::PointingHand)
+}
+
+/// One published item, as the catalog's detail panel has to say it.
+///
+/// The inspector's opposite number, and it answers a different question: not
+/// "what is this thing I have" but "should I install this". So it leads with
+/// who wrote it, what it is for, whether this Bitwig can load it and what it is
+/// licensed under, and the identity is the last line rather than the first
+/// field.
+pub struct Detailed<'a> {
+    pub kind: Kind,
+    pub name: &'a str,
+    pub author: &'a str,
+    pub version: &'a str,
+    pub description: &'a str,
+    /// The oldest Bitwig that loads it, and whether this one is old enough.
+    pub requires: &'a str,
+    pub compatible: bool,
+    pub licence: &'a str,
+    pub keywords: &'a [String],
+    pub uuid: &'a str,
+    /// The change that published it, as a label and the link behind it. Absent
+    /// in an index generated inside a pull request, which cannot name the
+    /// commit that has not merged yet.
+    pub provenance: Option<(&'a str, &'a str)>,
+    pub homepage: Option<&'a str>,
+    /// The item that takes this one's place, if one does.
+    pub replaced_by: Option<&'a str>,
+}
+
+/// What was pressed in the detail panel, if anything was.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Detailing {
+    Nothing,
+    Closed,
+    /// The change that published the item, which is where the review of it is.
+    Provenance,
+    Homepage,
+    /// The item that replaces this one.
+    Replacement,
+}
+
+/// The catalog's detail panel.
+pub fn detail(ui: &mut Ui, palette: Palette, item: &Detailed<'_>) -> Detailing {
+    let mut pressed = Detailing::Nothing;
+    // For the reason written on the inspector's: the header and the body under
+    // it are two allocated widgets, and egui would put six pixels between them.
+    ui.spacing_mut().item_spacing.y = 0.0;
+    if detail_header(ui, palette, item).clicked() {
+        pressed = Detailing::Closed;
+    }
+
+    egui::ScrollArea::vertical().auto_shrink([false, false]).show(ui, |ui| {
+        Frame::new()
+            .inner_margin(Margin::symmetric(metric::PAD as i8, metric::INSPECTOR_PAD_Y as i8))
+            .show(ui, |ui| {
+                ui.set_width(ui.available_width());
+                ui.spacing_mut().item_spacing.y = 0.0;
+
+                if let Some(replacement) = item.replaced_by {
+                    if superseded(ui, palette, replacement) {
+                        pressed = Detailing::Replacement;
+                    }
+                    ui.add_space(metric::BETWEEN_DETAIL_GROUPS);
+                }
+
+                // Who wrote it and which publication this is, on one line: the
+                // author is the trust signal and the version is what an update
+                // is measured against.
+                ui.horizontal(|ui| {
+                    ui.spacing_mut().item_spacing.x = 0.0;
+                    let text = labelled_icon(
+                        ui,
+                        icon::AUTHOR,
+                        item.author,
+                        font::CONTROL,
+                        palette.ink,
+                        palette.ink_3,
+                        metric::ALONG_A_DETAIL_LINE,
+                    );
+                    ui.label(text);
+                    ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                        ui.label(
+                            font::run(item.version, font::mono(font::MONO))
+                                .color(palette.ink_3),
+                        );
+                    });
+                });
+
+                ui.add_space(metric::BETWEEN_DETAIL_GROUPS);
+                ui.label(font::run(item.description, font::plain(font::CONTROL)).color(palette.ink_2));
+
+                ui.add_space(metric::BETWEEN_DETAIL_GROUPS);
+                // Whether this installation can load it at all, which is the
+                // one thing here that is about the machine rather than about
+                // the item, and the one the design colours.
+                let (glyph, ink) = if item.compatible {
+                    (icon::COMPATIBLE, palette.ink_2)
+                } else {
+                    (icon::INCOMPATIBLE, palette.err_text)
+                };
+                let requires = format!("Requires Bitwig {} or newer", item.requires);
+                detail_line(ui, palette, glyph, &requires, ink);
+                ui.add_space(metric::BETWEEN_FACTS);
+                detail_line(ui, palette, icon::LICENCE, item.licence, palette.ink_2);
+
+                ui.add_space(metric::BETWEEN_DETAIL_GROUPS);
+                label_above(ui, palette, "Search keywords", metric::UNDER_A_FIELD_LABEL);
+                // No minimum on this one, unlike the inspector's: a published
+                // item's keywords are the author's and there is nothing to
+                // type into, so the box is as tall as what is in it.
+                keyword_box(ui, palette, metric::KEYWORD, |ui| {
+                    for word in item.keywords {
+                        keyword(ui, palette, word, false);
+                    }
+                });
+                ui.add_space(metric::UNDER_A_FIELD_LABEL);
+                footnote(ui, palette, "Editable in Local once installed.");
+
+                rule(ui, palette);
+
+                if let Some((label, _)) = item.provenance {
+                    let reviewed = format!("Reviewed in {label}");
+                    if detail_line(ui, palette, icon::PROVENANCE, &reviewed, palette.accent_text) {
+                        pressed = Detailing::Provenance;
+                    }
+                    ui.add_space(metric::BETWEEN_FACTS);
+                }
+                if let Some(homepage) = item.homepage {
+                    if detail_line(ui, palette, icon::HOMEPAGE, homepage, palette.accent_text) {
+                        pressed = Detailing::Homepage;
+                    }
+                    ui.add_space(metric::BETWEEN_FACTS);
+                }
+                label_above(ui, palette, "UUID", metric::UNDER_A_FACT);
+                ui.label(font::run(item.uuid, font::mono(font::MONO)).color(palette.ink_3));
+            });
+    });
+    pressed
+}
+
+/// The detail panel's header. The kind is set in the monospaced face here and
+/// lowercased, which is the design's way of making it a tag rather than a word.
+fn detail_header(ui: &mut Ui, palette: Palette, item: &Detailed<'_>) -> Response {
+    let (rect, _) = ui.allocate_exact_size(
+        vec2(ui.available_width(), metric::INSPECTOR_HEADER),
+        Sense::hover(),
+    );
+    ui.painter().rect_filled(rect, CornerRadius::ZERO, palette.panel);
+
+    let mut line = ui.new_child(
+        egui::UiBuilder::new()
+            .max_rect(rect.shrink2(vec2(metric::PAD, 0.0)))
+            .layout(Layout::left_to_right(Align::Center)),
+    );
+    line.spacing_mut().item_spacing.x = 0.0;
+    let tag = match item.kind {
+        Kind::Device => "device",
+        Kind::Modulator => "modulator",
+        Kind::Module => "module",
+    };
+    line.label(font::run(tag, font::mono(font::MONO_TIGHT)).color(palette.ink_3));
+    line.add_space(metric::TOOL_GAP);
+    line.with_layout(Layout::right_to_left(Align::Center), |ui| {
+        let closed = dismiss(ui, palette);
+        ui.add_space(metric::TOOL_GAP);
+        ui.with_layout(Layout::left_to_right(Align::Center), |ui| {
+            ui.add(
+                egui::Label::new(
+                    font::run(item.name, font::emphasis(ui.ctx(), font::ROW_NAME))
+                        .color(palette.ink),
+                )
+                .truncate(),
+            );
+        });
+        closed
+    })
+    .inner
+}
+
+/// One line of the detail panel: an icon, and what it is about.
+///
+/// Answers whether it was clicked, which only the two that lead somewhere are
+/// drawn in a colour that invites.
+fn detail_line(ui: &mut Ui, palette: Palette, glyph: &str, text: &str, ink: Color32) -> bool {
+    let leads_somewhere = ink == palette.accent_text;
+    let run = labelled_icon(
+        ui,
+        glyph,
+        text,
+        font::CHIP,
+        ink,
+        if leads_somewhere { palette.ink_3 } else { ink },
+        metric::ALONG_A_DETAIL_LINE,
+    );
+    let label = egui::Label::new(run).truncate();
+    if !leads_somewhere {
+        ui.add(label);
+        return false;
+    }
+    ui.add(label.sense(Sense::click()))
+        .on_hover_cursor(egui::CursorIcon::PointingHand)
+        .clicked()
+}
+
+/// The notice that a newer device has taken this one's place.
+///
+/// A wash and a control rather than a status word, because the thing to say is
+/// not "this is old" but "there is another one, and installing it will not
+/// disturb the projects you already have" - which is what a new identity buys
+/// and the only reason the catalog publishes both.
+///
+/// Answers whether the control was pressed.
+fn superseded(ui: &mut Ui, palette: Palette, replacement: &str) -> bool {
+    let mut go = false;
+    Frame::new()
+        .fill(palette.accent_soft)
+        .corner_radius(CornerRadius::same(metric::FIELD_RADIUS))
+        .inner_margin(Margin::symmetric(metric::NOTICE_PAD_X as i8, metric::NOTICE_PAD_Y as i8))
+        .show(ui, |ui| {
+            ui.set_width(ui.available_width());
+            ui.spacing_mut().item_spacing.y = 0.0;
+            ui.label(
+                font::run(
+                    "A newer version exists as a separate device",
+                    font::emphasis(ui.ctx(), font::CONTROL),
+                )
+                .color(palette.ink),
+            );
+            ui.add_space(metric::IN_A_NOTICE);
+            ui.label(
+                font::run(
+                    format!(
+                        "{replacement} replaces this one. It has its own identity, so \
+                         installing it leaves your projects alone and both can be installed \
+                         at once."
+                    ),
+                    font::plain(font::NOTE),
+                )
+                .color(palette.ink_2_warm),
+            );
+            ui.add_space(metric::IN_A_NOTICE);
+            ui.horizontal(|ui| {
+                // The words first and the arrow after them, as the design has
+                // it and as the primary action has it: the words say where this
+                // goes and the arrow says only that it goes somewhere.
+                let mut text = egui::text::LayoutJob::default();
+                text.append(
+                    &format!("See {replacement}"),
+                    0.0,
+                    egui::TextFormat {
+                        color: palette.ink,
+                        valign: Align::Center,
+                        ..font::format(font::plain(font::CHIP))
+                    },
+                );
+                text.append(
+                    icon::REPLACEMENT,
+                    metric::TIGHT,
+                    egui::TextFormat {
+                        color: palette.ink,
+                        valign: Align::Center,
+                        ..font::format(font::icon(ui.ctx(), font::ICON))
+                    },
+                );
+                let button = egui::Button::new(text)
+                    .stroke(Stroke::NONE)
+                    .corner_radius(CornerRadius::same(metric::RADIUS))
+                    .min_size(vec2(0.0, metric::NOTICE_CONTROL));
+                ui.spacing_mut().button_padding = vec2(metric::NOTICE_CONTROL_PAD, 0.0);
+                go = filled_button(ui, palette.btn, palette.btn_hover, button)
+                    .on_hover_cursor(egui::CursorIcon::PointingHand)
+                    .clicked();
+            });
+        });
+    go
 }
 
 /// Text that has to carry a tone as well as a word.
@@ -2253,13 +2588,30 @@ mod tests {
     /// The same, for `CatalogRow`: `66px minmax(0,1fr) 116px 56px 142px 92px`.
     #[test]
     fn a_catalog_row_is_divided_as_the_bundle_divides_it() {
-        let columns = CatalogColumns::across(a_row(metric::CATALOG_ROW));
+        let columns = CatalogColumns::across(a_row(metric::CATALOG_ROW), Width::Full);
         assert_eq!(edges(columns.kind), (12.0, 78.0));
         assert_eq!(edges(columns.name), (90.0, 354.0));
-        assert_eq!(edges(columns.author), (366.0, 482.0));
-        assert_eq!(edges(columns.version), (494.0, 550.0));
+        assert_eq!(edges(columns.author.expect("the full grid names the author")), (366.0, 482.0));
+        assert_eq!(edges(columns.version.expect("and the version")), (494.0, 550.0));
         assert_eq!(edges(columns.status), (562.0, 704.0));
         assert_eq!(edges(columns.actions), (716.0, 808.0));
+    }
+
+    /// And beside the detail panel: `66px minmax(0,1fr) 108px 122px`, at the
+    /// 533 the shell's list measures once its scrollbar has taken fifteen -
+    /// the same width the entry list's narrow grid is measured at, and for the
+    /// same reason.
+    #[test]
+    fn the_narrow_catalog_row_is_divided_as_the_bundle_divides_it() {
+        const BESIDE_THE_DETAIL: f32 = 533.0;
+        let columns =
+            CatalogColumns::across(a_row_of(BESIDE_THE_DETAIL, metric::CATALOG_ROW), Width::Narrow);
+        assert_eq!(edges(columns.kind), (12.0, 78.0));
+        assert_eq!(edges(columns.name), (90.0, 267.0));
+        assert_eq!(columns.author, None, "the narrow grid has no room for an author");
+        assert_eq!(columns.version, None);
+        assert_eq!(edges(columns.status), (279.0, 387.0));
+        assert_eq!(edges(columns.actions), (399.0, 521.0));
     }
 
     /// The empty state's pair, against the bundle's `EmptyState` rendered at

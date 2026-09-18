@@ -636,6 +636,142 @@ fn the_catalog_view() {
     shot_catalog("catalog", Fetching::frozen(Ok(index)));
 }
 
+/// The catalog's detail panel, on the one item the catalog publishes today.
+///
+/// From the real index, like the browse view it opens out of: what is drawn is
+/// a shape the catalog actually produces, down to the licence still reading
+/// `TBA` and the commit the item was reviewed in.
+#[test]
+fn a_catalog_item_in_detail() {
+    let index = orng_catalog::Index::parse(include_str!("../tests/published-index.json"))
+        .expect("the sample index does not parse");
+    shot_detail("catalog-detail", index, VOLSHAPER);
+}
+
+/// An item another one has replaced, on an installation too old to load it.
+///
+/// Synthetic, and it has to be: the published catalog contains neither state,
+/// and both are things the design writes copy for. The notice is the design's
+/// own words - a new identity is what lets both be installed at once, which is
+/// the whole reason the catalog publishes the old one at all.
+#[test]
+fn a_catalog_item_that_was_superseded() {
+    let index = orng_catalog::Index::parse(SUPERSEDED).expect("the sample index does not parse");
+    shot_detail("catalog-detail-superseded", index, "c0ffee00-1111-4222-8333-444455556666");
+}
+
+/// Two items, the second replacing the first, and the first needing a Bitwig
+/// newer than the fixture's 6.1.
+const SUPERSEDED: &str = r#"{
+  "schema": 2,
+  "revision": "bd1f83732b8b093154e7956baa724e9855ba8995",
+  "items": [
+    {
+      "uuid": "c0ffee00-1111-4222-8333-444455556666",
+      "kind": "modulator",
+      "name": "BREATH FOLLOWER",
+      "author": "mono-lab",
+      "slug": "breath-follower",
+      "version": "1.2.0",
+      "min_bitwig": "6.4",
+      "license": "MIT",
+      "description": "Envelope follower with a breath curve, for ducking a pad under a vocal.",
+      "keywords": ["breath", "follower", "duck", "envelope"],
+      "path": "content/mono-lab/breath-follower/BREATH FOLLOWER.bwmodulator",
+      "digest": "bfdab5de7d0cf6981d6e7252afb8c925071161174788e03916040eb785f3b29a",
+      "size": 18320,
+      "homepage": "mono-lab.dev/breath",
+      "merged_in": "8c41d0b9a3e5f7126d4b80ca35fe91d7b2064e83"
+    },
+    {
+      "uuid": "d0d0caf0-2222-4333-8444-555566667777",
+      "kind": "modulator",
+      "name": "BREATH FOLLOWER II",
+      "author": "mono-lab",
+      "slug": "breath-follower-ii",
+      "version": "2.0.0",
+      "min_bitwig": "6.0",
+      "license": "MIT",
+      "description": "The breath follower again, with a parameter set that could not be added in place.",
+      "keywords": ["breath", "follower", "duck"],
+      "path": "content/mono-lab/breath-follower-ii/BREATH FOLLOWER II.bwmodulator",
+      "digest": "bfdab5de7d0cf6981d6e7252afb8c925071161174788e03916040eb785f3b29a",
+      "size": 19004,
+      "supersedes": ["c0ffee00-1111-4222-8333-444455556666"],
+      "merged_in": "3f9a1c2e8b4d7a61c05f2d93ab7e14c8f6021b5d"
+    }
+  ]
+}"#;
+
+/// A catalog row opens the detail, the notice walks to the replacement, and the
+/// panel's own control closes it.
+///
+/// Three presses a picture cannot check, and the third is the one worth having:
+/// `See BREATH FOLLOWER II` is the only control in the window that moves a
+/// panel from one thing to another, so a snapshot of it says nothing about
+/// whether it arrives.
+///
+/// The narrowing is asserted through the version column, which the narrow
+/// catalog grid has no room for: `2.0.0` belongs to the second row, so it is on
+/// screen while the list is wide, gone while the panel is open on the first
+/// item, and back again in the panel once the notice has been followed.
+#[test]
+fn a_catalog_row_opens_the_detail_and_the_notice_walks_to_the_replacement() {
+    let root = fixture("detail-opening");
+    let session = found(&root, Helper::Present, GuardState::Disarmed);
+    let mut session = Some(session);
+    let mut harness = Harness::builder().with_size(SIZE).build_eframe(move |cc| {
+        let mut app = App::with(&cc.egui_ctx, session.take().expect("built once"));
+        let index = orng_catalog::Index::parse(SUPERSEDED).expect("the sample index parses");
+        app.set_catalog(Fetching::frozen(Ok(index)));
+        app.show_view(View::Catalog);
+        app
+    });
+    harness.run();
+    assert!(harness.query_by_label("2.0.0").is_some(), "the list is not showing versions");
+
+    harness.get_by_label("BREATH FOLLOWER").click();
+    harness.run();
+    assert!(
+        harness.query_by_label(crate::widget::icon::DISMISS).is_some(),
+        "clicking a catalog row did not open the detail"
+    );
+    assert!(
+        harness.query_by_label("2.0.0").is_none(),
+        "the detail is open and the list still has a version column"
+    );
+
+    harness.get_by_label_contains("See BREATH FOLLOWER II").click();
+    harness.run();
+    assert!(
+        harness.query_by_label("2.0.0").is_some(),
+        "the notice did not move the panel to the item that replaces this one"
+    );
+
+    harness.get_by_label(crate::widget::icon::DISMISS).click();
+    harness.run();
+    assert!(
+        harness.query_by_label("1.2.0").is_some(),
+        "the panel's own control did not close it"
+    );
+}
+
+fn shot_detail(name: &str, index: orng_catalog::Index, open: &str) {
+    let root = fixture(name);
+    let session = found(&root, Helper::Present, GuardState::Disarmed);
+    let mut session = Some(session);
+    let mut index = Some(index);
+    let open = open.parse().expect("a sample identity");
+    let mut harness = Harness::builder().with_size(SIZE).build_eframe(move |cc| {
+        let mut app = App::with(&cc.egui_ctx, session.take().expect("built once"));
+        app.set_catalog(Fetching::frozen(Ok(index.take().expect("built once"))));
+        app.show_view(View::Catalog);
+        app.set_detailing(open);
+        app
+    });
+    look(&mut harness, name);
+}
+
 /// The overflow menu, open.
 ///
 /// The only state here that has to be *reached* rather than assembled, and the

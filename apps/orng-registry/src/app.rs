@@ -106,6 +106,12 @@ pub struct App {
     /// mean the list on screen disagreed with the list on disk, and re-reading
     /// would throw away what was being written.
     editing: Option<Editing>,
+    /// The catalog item the detail panel is open on. The inspector's opposite
+    /// number, and held apart from it: they are one region of the window and
+    /// one view at a time, but the answer to "which row did I open" belongs to
+    /// the list it was opened in, and switching views and back should not have
+    /// forgotten it.
+    detailing: Option<Uuid>,
     /// The published catalog, once somebody has asked for it. Not fetched on
     /// opening: this application is useful with no network at all, and a window
     /// that reaches for one before being asked is a window that hangs on a
@@ -138,6 +144,7 @@ impl App {
             outcome: None,
             inspecting: None,
             editing: None,
+            detailing: None,
             catalog: None,
         }
     }
@@ -174,6 +181,12 @@ impl App {
     #[cfg(test)]
     pub fn set_inspecting(&mut self, uuid: Uuid) {
         self.inspecting = Some(uuid);
+    }
+
+    /// The same for the catalog's detail panel. Tests only.
+    #[cfg(test)]
+    pub fn set_detailing(&mut self, uuid: Uuid) {
+        self.detailing = Some(uuid);
     }
 
     /// Switch palettes. The toolbar and the render tests share this, so neither
@@ -217,7 +230,7 @@ impl App {
         // it leaves. The design draws the inspector as the list's sibling and
         // not as an overlay, which is the same statement: the toolbar beside it
         // is 548 wide, and so is every row under it.
-        let inspector = self.inspect(ui);
+        let inspector = self.aside(ui);
 
         if self.shows_a_list() {
             egui::Panel::top("toolbar")
@@ -314,6 +327,97 @@ impl App {
             widget::Inspecting::CopiedUuid => ui.ctx().copy_text(uuid.to_string()),
             widget::Inspecting::Reveal => reveal(placement.path()),
             widget::Inspecting::Nothing => {}
+        }
+        Some(panel)
+    }
+
+    /// The catalog's detail panel, if a row has been opened.
+    ///
+    /// Two of the things it says are not in the index row at all and are worked
+    /// out here: whether this installation is new enough to load the item, and
+    /// whether some other published item has taken its place. The second is a
+    /// fact about the whole index rather than about the row.
+    fn detail(&mut self, ui: &mut egui::Ui) -> Option<egui::Rect> {
+        let palette = self.palette;
+        let uuid = self.detailing?;
+        let Session::Found(found) = &self.session else { return None };
+        let Some(Ok(index)) = self.catalog.as_ref().map(|c| &c.outcome).and_then(Option::as_ref)
+        else {
+            return None;
+        };
+        let Some(entry) = index.items.iter().find(|item| item.uuid == uuid) else {
+            // The index was fetched again and this item is not in it. Nothing
+            // left to detail, so the panel closes rather than standing empty.
+            self.detailing = None;
+            return None;
+        };
+
+        // A build that does not state its version is not evidence that the item
+        // will not load, and a warning drawn from a guess is worse than none.
+        let compatible = match &found.condition.build {
+            Some(build) => build.version >= entry.min_bitwig,
+            None => true,
+        };
+        // The item that lists this one under `supersedes`. A revision that
+        // changes the parameter set takes a new identity rather than reusing
+        // the old one, so both stay published and the old one points here.
+        let replacement = index
+            .items
+            .iter()
+            .find(|other| other.supersedes.contains(&uuid))
+            .map(|other| (other.name.as_str(), other.uuid));
+        let provenance = entry.merged_in.as_ref().map(|revision| {
+            (format!("orng-catalog@{}", revision.short()), crate::catalog::commit(revision))
+        });
+
+        let version = entry.version.to_string();
+        let requires = entry.min_bitwig.to_string();
+        let author = entry.author.to_string();
+        let item = widget::Detailed {
+            kind: entry.kind.into(),
+            name: &entry.name,
+            author: &author,
+            version: &version,
+            description: &entry.description,
+            requires: &requires,
+            compatible,
+            licence: &entry.license,
+            keywords: &entry.keywords,
+            uuid: &entry.uuid.to_string(),
+            provenance: provenance.as_ref().map(|(at, url)| (at.as_str(), url.as_str())),
+            homepage: entry.homepage.as_deref(),
+            replaced_by: replacement.map(|(name, _)| name),
+        };
+
+        let mut pressed = widget::Detailing::Nothing;
+        let panel = egui::Panel::right("detail")
+            .exact_size(metric::INSPECTOR)
+            .resizable(false)
+            .show_separator_line(false)
+            .frame(widget::panel(palette))
+            .show(ui, |ui| pressed = widget::detail(ui, palette, &item))
+            .response
+            .rect;
+
+        match pressed {
+            widget::Detailing::Closed => self.detailing = None,
+            // Both of these leave the application, which is the point: the
+            // review of an item is in the catalog's pull request and what it
+            // does is on its author's own page.
+            widget::Detailing::Provenance => {
+                if let Some((_, url)) = &provenance {
+                    browse(url);
+                }
+            }
+            widget::Detailing::Homepage => {
+                if let Some(homepage) = entry.homepage.as_deref() {
+                    browse(homepage);
+                }
+            }
+            widget::Detailing::Replacement => {
+                self.detailing = replacement.map(|(_, uuid)| uuid);
+            }
+            widget::Detailing::Nothing => {}
         }
         Some(panel)
     }
@@ -979,10 +1083,26 @@ impl App {
         }
     }
 
-    /// How much of the window the list has, which is the one thing the
-    /// inspector changes about everything beside it.
+    /// How much of the window the list has, which is the one thing a panel
+    /// beside it changes about everything else.
     fn width(&self) -> widget::Width {
-        if self.inspecting.is_some() { widget::Width::Narrow } else { widget::Width::Full }
+        let open = match self.view {
+            View::Local => self.inspecting.is_some(),
+            View::Catalog => self.detailing.is_some(),
+        };
+        if open { widget::Width::Narrow } else { widget::Width::Full }
+    }
+
+    /// The panel beside the list, whichever view is showing.
+    ///
+    /// One at a time, because they are one region of the window: the inspector
+    /// in Local and the catalog's detail in Catalog, both 272 wide and both
+    /// claimed before the page so that the list is laid out in what is left.
+    fn aside(&mut self, ui: &mut egui::Ui) -> Option<egui::Rect> {
+        match self.view {
+            View::Local => self.inspect(ui),
+            View::Catalog => self.detail(ui),
+        }
     }
 
     /// Region two: whatever the current view has to show.
@@ -1043,9 +1163,17 @@ impl App {
             }
             Session::Found(_) if self.view == View::Catalog => {
                 let palette = self.palette;
+                let width = self.width();
+                let open = self.detailing;
                 let catalog =
                     self.catalog.get_or_insert_with(|| Fetching::start(ui.ctx().clone()));
-                published(ui, palette, catalog);
+                // Taken after the list has been drawn, for the reason the
+                // Local list takes its own: opening the panel changes how wide
+                // every row is, and changing that half way down a list draws
+                // the rest of it to a different grid.
+                if let Some(opened) = published(ui, palette, catalog, width, open) {
+                    self.detailing = opened;
+                }
             }
             Session::Found(_) => self.local(ui),
         }
@@ -1543,6 +1671,18 @@ fn reveal(path: &std::path::Path) {
     }
 }
 
+/// Follow a link out of the application, in whatever browses the web here.
+///
+/// Not reported for the same reason a failed reveal is not: there is nothing
+/// the user could do about a desktop with no browser, and a banner about
+/// somebody else's software over the panel that offered the link would be the
+/// window blaming itself.
+fn browse(url: &str) {
+    if let Err(why) = opener::open_browser(url) {
+        eprintln!("could not open {url}: {why}");
+    }
+}
+
 /// The first segment of an identity, which is what a row has room for.
 fn short_uuid(registration: &Registration) -> String {
     registration.uuid.to_string().split('-').next().unwrap_or_default().to_owned()
@@ -1670,7 +1810,16 @@ const BESIDE_THE_NAME: f32 = 9.0;
 const UNDER_THE_NAME: f32 = 2.0;
 
 /// The Catalog view: what ORNG Catalog publishes, once it has been proved.
-fn published(ui: &mut egui::Ui, palette: Palette, catalog: &Fetching) {
+///
+/// Answers which row was opened, if one was - `Some(None)` closes the panel,
+/// which is what clicking the open row again means.
+fn published(
+    ui: &mut egui::Ui,
+    palette: Palette,
+    catalog: &Fetching,
+    width: widget::Width,
+    open: Option<Uuid>,
+) -> Option<Option<Uuid>> {
     match catalog.outcome.as_ref() {
         None => {
             let empty = widget::Empty {
@@ -1726,11 +1875,18 @@ fn published(ui: &mut egui::Ui, palette: Palette, catalog: &Fetching) {
         // view divides into pending, registered and factory, and the catalog is
         // one list of one kind of thing.
         Some(Ok(index)) => {
+            let mut opened = None;
             widget::list(ui, |ui| {
                 for entry in &index.items {
-                    widget::catalog_row(ui, palette, |ui, columns| {
+                    let selected = open == Some(entry.uuid);
+                    // The design warms a selected row's supporting text, so it
+                    // reads as one thing rather than as an ordinary row with a
+                    // colour behind it.
+                    let secondary =
+                        if selected { palette.ink_3_warm } else { palette.ink_3 };
+                    let row = widget::catalog_row(ui, palette, width, selected, |ui, columns| {
                         widget::cell(ui, columns.kind, Align::Min, |ui| {
-                            widget::kind_label(ui, palette.ink_3, entry.kind.into());
+                            widget::kind_label(ui, secondary, entry.kind.into());
                         });
                         // The name over the description, not beside it. A
                         // catalog row leads with what the item is; the
@@ -1746,7 +1902,7 @@ fn published(ui: &mut egui::Ui, palette: Palette, catalog: &Fetching) {
                             ui.add(
                                 egui::Label::new(
                                     font::run(&entry.description, font::plain(font::NOTE))
-                                        .color(palette.ink_3),
+                                        .color(secondary),
                                 )
                                 .truncate(),
                             );
@@ -1754,26 +1910,37 @@ fn published(ui: &mut egui::Ui, palette: Palette, catalog: &Fetching) {
                         // The author is the trust signal, because an item is
                         // DSP that Bitwig will run, so it gets a column of its
                         // own rather than a place at the end of the line.
-                        widget::cell(ui, columns.author, Align::Min, |ui| {
-                            ui.add(
-                                egui::Label::new(
-                                    font::run(entry.author.to_string(), font::plain(font::CHIP))
-                                        .color(palette.ink_2),
-                                )
-                                .truncate(),
-                            );
-                        });
-                        widget::cell(ui, columns.version, Align::Min, |ui| {
-                            ui.label(
-                                font::run(entry.version.to_string(), font::mono(font::MONO))
-                                    .color(palette.ink_3),
-                            );
-                        });
+                        if let Some(at) = columns.author {
+                            widget::cell(ui, at, Align::Min, |ui| {
+                                ui.add(
+                                    egui::Label::new(
+                                        font::run(entry.author.to_string(), font::plain(font::CHIP))
+                                            .color(palette.ink_2),
+                                    )
+                                    .truncate(),
+                                );
+                            });
+                        }
+                        if let Some(at) = columns.version {
+                            widget::cell(ui, at, Align::Min, |ui| {
+                                ui.label(
+                                    font::run(entry.version.to_string(), font::mono(font::MONO))
+                                        .color(secondary),
+                                );
+                            });
+                        }
                     });
+                    if row.clicked() {
+                        // The same row again closes it, which is what makes the
+                        // panel answerable from the list it is about.
+                        opened = Some(if selected { None } else { Some(entry.uuid) });
+                    }
                 }
             });
+            return opened;
         }
     }
+    None
 }
 
 #[cfg(test)]

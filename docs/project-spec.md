@@ -684,9 +684,24 @@ dialog over the window, holding it still - the scrim takes the pointer as well a
 light - and what a press came to is a banner in the same place afterwards, dismissible,
 carrying `Copy details` when it failed.
 
-Every measurement above was read out of the bundle rather than judged by eye, and the two
-row grids are checked against its numbers in a test. `docs/interface-notes.md` has the
-method, including how to make the bundle report its own geometry.
+The inspector, which a row opens and which slides over the right of the list: what the
+entry is called, what Bitwig's browser says under it, the words that find it, its
+identity, where the registry points, where the document came from and whether it is
+actually there. The description and the search keywords are editable, and that is what
+the panel is for - they are what makes a registered device feel native in the browser
+(4.4), and until this existed the only way to change either was to edit the entry list
+by hand. An edit is written when a field is finished with, through the same worker a
+press of the primary action uses, because it is the same operation: the three bundles
+rewritten from the whole list, then the list. Nothing is said when one lands and a
+failure is said either way. The panel takes 272 of the window's 820, so the list beside
+it draws to a grid of its own and the toolbar beside it drops its labels and shrinks its
+field - all three as the design has them.
+
+Every measurement above was read out of the bundle rather than judged by eye, and the
+row grids, the toolbar's flexible field and the inspector's own chain of gaps are checked
+against its numbers in a test. `docs/interface-notes.md` has the method, including how to
+make the bundle report its own geometry - and section 4 there, which is the other half:
+the claims a picture structurally cannot hold, and what to ask instead.
 
 Every state renders headlessly into `apps/orng-registry/tests/snapshots`, and the fixture
 paths are relative so that the pictures are a function of the code rather than of the
@@ -697,12 +712,14 @@ Not built yet:
 - Installing from the catalog: fetching a document by path, checking it against the digest
   the index carries, and registering it. The catalog view has no toolbar of its own yet,
   so its search, kind filters and `All / Installed / Updatable` switch are missing.
-- Row actions: `Reveal file`, `Remove`, `Assign new UUID`, and the choice of whether a
+- Row actions: `Remove`, `Assign new UUID`, `Locate file`, and the choice of whether a
   removed entry's document goes with it. The column they sit in is reserved, because the
   design reserves it - it hides those controls off hover rather than removing them, so the
   four columns before it do not move when the pointer arrives - but nothing is drawn in it
   yet. The same is true of a catalog row's status and its `Install` control, which wait on
-  installing from the catalog.
+  installing from the catalog. `Reveal file` is built, and is in the inspector's action
+  list; the rest of that list waits on removal, which is the machinery the row's own
+  controls need as well.
 - Cancelling a preparation. The design offers it up to the Activate step, on the grounds
   that nothing has changed until then, and nothing here can honour it: the dialog is drawn
   without the control rather than with a dead one, which is a shape the design itself draws
@@ -711,7 +728,7 @@ Not built yet:
   out of the archive, which takes about a second, so it needs a worker of its own; a toggle
   that did nothing would be worse than no toggle.
 - The plan confirmation the Prepare install mode is supposed to show before it runs.
-- Everything else the design draws: Settings, About, Restore, the inspector, the update
+- Everything else the design draws: Settings, About, Restore, `CatalogDetail`, the update
   modal. The overflow control lists them; none of them opens anything yet. Two things live
   in Settings in the bundle and are therefore unreachable until it exists: the tamper guard
   and the backup date, under Diagnostics, and the appearance switch - so light and dark are

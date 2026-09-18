@@ -35,6 +35,7 @@ fills the viewport and measures nothing useful.
 | `ActionBar` | 820 x 52 |
 | `EntryRow` | 796 x 36 |
 | `EmptyState` | 820 x 420 |
+| `Inspector` | 272 x 520 |
 
 `ORNG Registry.dc.html` renders the whole shell, but only its default screen: the
 others are picked by clicking, which headless Chrome will not do.
@@ -48,24 +49,28 @@ imports still resolve, and delete it afterwards; it is a tool, not a document.
 1. **Make the screen an argument.** The component's `state = { theme: "dark", screen:
    "main", ...}` becomes `screen: new URLSearchParams(location.search).get("screen") ||
    "main"`, and the same for `theme`. Every key of `SCREENS` is then a URL.
-2. **Hide everything but the window.** Append to the `<style>` in `<helmet>`:
-   `#ordoc{padding:0!important}` plus `display:none` for the title block, the chip
-   panel and the caption - they are `#ordoc > div > div:nth-child(1)`, `(2)` and
-   `(3) > div:nth-child(2)`. At `--window-size=820,560` the mockup then *is* the
-   viewport, and a pixel in it is a pixel in ours.
-3. **Have it report its own geometry.** Append a script that waits for the render,
-   walks `#dc-root` calling `getBoundingClientRect` on every element, and writes tag,
-   left, top, width, height and text into a `<pre id="rects">`. Then:
+2. **Have it report its own geometry.** Append a script that waits for the render,
+   walks the document calling `getBoundingClientRect` on every element, and writes
+   depth, tag, left, top, width, height and text into a `<pre id="rects">`.
+3. **Find the window in the dump rather than trying to hide what is around it.**
+   The mockup's own box is the only `820 x 560` in the list; take its origin off
+   every rect below it and stop at the next element of the same depth. Trying to
+   `display:none` the title block and the chip panel above it does not work - the
+   `<helmet>` styles are rewritten and the selectors do not survive - and it is not
+   needed, because subtracting an origin is exact where a hidden element is a hope.
+   Render tall enough that nothing is clipped: `--window-size=820,1400`.
 
 ```bash
 "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" --headless=new \
-  --disable-gpu --window-size=820,560 --virtual-time-budget=4000 --dump-dom \
-  --allow-file-access-from-files "file://$PWD/Probe.dc.html?screen=catalog"
+  --disable-gpu --window-size=820,1400 --virtual-time-budget=4000 --dump-dom \
+  --allow-file-access-from-files "file://$PWD/Probe.dc.html?screen=inspector"
 ```
 
 **This is the measurement that ends arguments.** It is the design's own numbers rather
 than an inference from pixels: `DIV 0 140 820 36` is a row, and the four cells inside
-it are the grid. It found the missing 84px actions column in `EntryRow`, which no
+it are the grid. It gave the inspector its whole layout - the 272 panel beside a 548
+list, the 40 header, and the chain of gaps down the fields - and it found the missing
+84px actions column in `EntryRow`, which no
 screenshot shows because the column is empty - the bundle hides those controls off
 hover and keeps their space.
 
@@ -119,9 +124,81 @@ their pitch. The dominant colour of each scanline, collapsed into runs, reads as
 window's vertical structure - 42, 42, 26, 36, 36, 36, 26, ..., 52 - and that list
 against the bundle's is the whole layout in one comparison.
 
+## 4. Some claims a picture cannot hold
+
+A snapshot records what was drawn. It has no opinion about where the middle is,
+whether a control can be pressed, or how wide a run of text ought to be - so a
+fault of that kind is not merely missed, it is *frozen* by the picture that was
+recorded beside it. Four have now been found that way, all of them with a
+committed snapshot vouching for them:
+
+- a menu no press could open (`Response::context_menu` opens on a *secondary*
+  click) - there was no picture of it at all;
+- a button pair 35px off-centre;
+- every monospaced run 9% too wide;
+- a row whose name could not be clicked, while the empty half of the same row
+  could.
+
+**Assert against something other than the image whenever the claim is
+"centred", "aligned", "this wide", or "this can be pressed".** The three things
+that answer those:
+
+| Claim | Ask |
+| --- | --- |
+| geometry | the accessibility tree: `harness.get_by_role_and_label(..).rect()` |
+| text width | the laid-out galley: `fonts.layout_job(job).rect.width()` |
+| reachable | reach it the way a user would: `get_by_label(..).click()` |
+
+Reach it by the *label a user aims at*, not by whatever is convenient. The row
+click worked from every point in the row except the entry's name, which is the
+one place anybody clicks; a test that pressed the row's empty half would have
+passed and proved nothing.
+
+Two measurement traps, found the hard way:
+
+- **Read a control's box at its mid-height, not near its edge.** A 3px corner
+  radius makes an 8px gap read as 10.
+- **A control inside a centring layout leaves two nodes in the accessibility
+  tree** - egui lays the block out once to size it and once to place it. They
+  share `x` and width and differ in `y`. Take extremes across all matches rather
+  than the first.
+
+And where a component states a grid, assert it against the bundle's own numbers
+in `widget.rs` rather than against a screenshot: `Columns`, `CatalogColumns`,
+the overflow menu and the inspector each have a test that is a list of the
+design's measurements.
+
 ---
 
 ## The traps, all of them found the hard way
+
+**`selectable_labels` is on by default, and a selectable label senses clicks.**
+egui adds `Sense::click_and_drag()` to every label so text can be dragged over
+and copied, which puts a click target on top of whatever the label was drawn
+inside. A list row senses its own click and the entry's name on it is a label,
+so pressing the name did nothing while pressing the empty half of the same row
+opened the inspector. `theme::apply_to` turns it off: nothing here is selectable
+text, and what can be copied says so and copies on a click.
+
+**A side panel's shadow is painted under the page it falls on.** A panel is
+claimed before the region it leaves and painted before it too, so a shadow set
+on the panel's own `Frame` reaches into the page's rectangle and the page's fill
+goes straight over it. Paint it after the page instead, clipped to the side it
+falls on - a `Shadow` is a filled rectangle with a blur, and in a frame the fill
+is what covers its middle.
+
+**`item_spacing` goes between a header and the body under it, too.** Zero it
+*before* the first thing a panel allocates, not inside the body: six pixels went
+in between, and every field in the inspector drew six low.
+
+**`available_width` in a wrapped layout is the whole row, not the rest of it.**
+A field that asked for it landed on a line of its own and made a one-keyword box
+two rows tall. `available_size_before_wrap().x` is the remainder.
+
+**A widget's auto-generated id comes from where it sits in the layout.** The
+keyword field sits after the chips, so committing a word moved it, gave it a new
+id, and dropped the focus that had just been handed back to it. Anything that
+holds focus or state across a layout that grows needs `id_salt`.
 
 **`item_spacing` is added between every allocated widget.** The theme sets six
 pixels, which is right between a label and the thing it labels and wrong anywhere

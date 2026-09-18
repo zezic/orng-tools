@@ -910,7 +910,7 @@ fn a_word_typed_into_the_inspector_becomes_a_keyword() {
 
     // The lower of the panel's two fields. The description is above it, and
     // both are inside the panel rather than out on the toolbar.
-    let panel = metric::WINDOW[0] - metric::INSPECTOR;
+    let panel = metric::WINDOW[0] - metric::ASIDE;
     let adding = harness
         .get_all_by_role(Role::TextInput)
         .filter(|node| node.rect().left() > panel)
@@ -928,7 +928,7 @@ fn a_word_typed_into_the_inspector_becomes_a_keyword() {
     );
     // And it is still the field the next one goes into: Enter means "and
     // another", not "and that is the last".
-    let panel = metric::WINDOW[0] - metric::INSPECTOR;
+    let panel = metric::WINDOW[0] - metric::ASIDE;
     let still = harness
         .get_all_by_role(Role::TextInput)
         .filter(|node| node.rect().left() > panel)

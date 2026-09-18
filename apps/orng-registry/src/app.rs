@@ -244,8 +244,8 @@ impl App {
             .show(ui, |ui| self.page(ui));
 
         // After the page it falls on, for the reason written on it.
-        if let Some(panel) = inspector {
-            widget::panel_shadow(ui, self.palette, panel);
+        if let Some(aside) = inspector {
+            aside.shadow(ui, self.palette);
         }
 
         // Last, and over everything: while a preparation runs the window is
@@ -263,11 +263,11 @@ impl App {
     /// could not be drawn from a fixture.
     /// Answers where the panel ended up, so that the shadow it casts on the
     /// list can be painted once the list is there to catch it.
-    fn inspect(&mut self, ui: &mut egui::Ui) -> Option<egui::Rect> {
+    fn inspect(&mut self, ui: &mut egui::Ui) -> Option<widget::Aside> {
         let palette = self.palette;
         let uuid = self.inspecting?;
         let Session::Found(found) = &self.session else { return None };
-        let Some(entry) = found.entries.entries().iter().find(|entry| entry.uuid == uuid) else {
+        let Some(entry) = found.entries.get(uuid) else {
             // Applied, removed, or gone from a list that was read again. There
             // is nothing left to inspect, so the panel closes rather than
             // standing empty.
@@ -302,17 +302,8 @@ impl App {
         }
         let words = &mut self.editing.as_mut().expect("set just above").words;
 
-        let mut pressed = widget::Inspecting::Nothing;
-        let panel = egui::Panel::right("inspector")
-            .exact_size(metric::INSPECTOR)
-            .resizable(false)
-            // The design separates the panel from the list by a shadow rather
-            // than by a line.
-            .show_separator_line(false)
-            .frame(widget::panel(palette))
-            .show(ui, |ui| pressed = widget::inspector(ui, palette, &item, words))
-            .response
-            .rect;
+        let (panel, pressed) =
+            widget::aside(ui, palette, "inspector", |ui| widget::inspector(ui, palette, &item, words));
 
         match pressed {
             // The panel closing is the last chance a field has to be finished
@@ -337,7 +328,7 @@ impl App {
     /// out here: whether this installation is new enough to load the item, and
     /// whether some other published item has taken its place. The second is a
     /// fact about the whole index rather than about the row.
-    fn detail(&mut self, ui: &mut egui::Ui) -> Option<egui::Rect> {
+    fn detail(&mut self, ui: &mut egui::Ui) -> Option<widget::Aside> {
         let palette = self.palette;
         let uuid = self.detailing?;
         let Session::Found(found) = &self.session else { return None };
@@ -389,15 +380,8 @@ impl App {
             replaced_by: replacement.map(|(name, _)| name),
         };
 
-        let mut pressed = widget::Detailing::Nothing;
-        let panel = egui::Panel::right("detail")
-            .exact_size(metric::INSPECTOR)
-            .resizable(false)
-            .show_separator_line(false)
-            .frame(widget::panel(palette))
-            .show(ui, |ui| pressed = widget::detail(ui, palette, &item))
-            .response
-            .rect;
+        let (panel, pressed) =
+            widget::aside(ui, palette, "detail", |ui| widget::detail(ui, palette, &item));
 
         match pressed {
             widget::Detailing::Closed => self.detailing = None,
@@ -443,7 +427,7 @@ impl App {
         }
         let Some(editing) = &self.editing else { return };
         let Session::Found(found) = &self.session else { return };
-        let Some(entry) = found.entries.entries().iter().find(|e| e.uuid == editing.uuid) else {
+        let Some(entry) = found.entries.get(editing.uuid) else {
             return;
         };
         let Some(revised) = revised(entry, &editing.words) else { return };
@@ -1098,7 +1082,7 @@ impl App {
     /// One at a time, because they are one region of the window: the inspector
     /// in Local and the catalog's detail in Catalog, both 272 wide and both
     /// claimed before the page so that the list is laid out in what is left.
-    fn aside(&mut self, ui: &mut egui::Ui) -> Option<egui::Rect> {
+    fn aside(&mut self, ui: &mut egui::Ui) -> Option<widget::Aside> {
         match self.view {
             View::Local => self.inspect(ui),
             View::Catalog => self.detail(ui),

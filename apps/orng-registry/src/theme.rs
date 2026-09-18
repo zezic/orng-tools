@@ -327,15 +327,16 @@ pub mod metric {
     /// A catalog row carries a description under the name, so it is taller than
     /// a registered one.
     pub const CATALOG_ROW: f32 = 48.0;
-    /// The inspector, over the right of the list. Everything under here is its
-    /// own, read off `Inspector.dc.html` and off the shell probed with the
-    /// panel open.
-    pub const INSPECTOR: f32 = 272.0;
+    /// A panel over the right of the list: the inspector in Local, the item's
+    /// detail in Catalog. Everything under here is shared by both, read off
+    /// `Inspector.dc.html` and `CatalogDetail.dc.html` - which agree on all
+    /// three - and off the shell probed with the panel open.
+    pub const ASIDE: f32 = 272.0;
     /// Its header, which names what the panel is about and closes it.
-    pub const INSPECTOR_HEADER: f32 = 40.0;
+    pub const ASIDE_HEADER: f32 = 40.0;
     /// From the edge of the panel's body to its fields. Wider down than across,
     /// which is the design's own pair and not a symmetric margin.
-    pub const INSPECTOR_PAD_Y: f32 = 13.0;
+    pub const ASIDE_PAD_Y: f32 = 13.0;
     /// Between two groups of fields.
     pub const BETWEEN_GROUPS: f32 = 14.0;
     /// Between a field's label and the field, which is looser than the same gap
@@ -376,7 +377,6 @@ pub mod metric {
     /// same reason a menu item is: the sixteen-pixel icon beside it.
     pub const PANEL_ACTION: f32 = 26.0;
     pub const PANEL_ACTION_PAD_X: f32 = 7.0;
-    pub const BETWEEN_PANEL_ACTIONS: f32 = 4.0;
     /// From a panel action's icon to its label.
     pub const ALONG_A_PANEL_ACTION: f32 = 7.0;
     /// The catalog's detail panel, which is the inspector's opposite number and

@@ -428,7 +428,7 @@ pub fn section(ui: &mut Ui, palette: Palette, title: &str, tone: Color32, count:
 
 /// One column of a row's grid.
 #[derive(Debug, Clone, Copy)]
-pub enum Column {
+enum Column {
     /// A width the design states.
     Fixed(f32),
     /// The one column that takes whatever the others leave.

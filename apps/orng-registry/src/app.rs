@@ -174,19 +174,38 @@ impl App {
             .frame(widget::bar(self.palette))
             .show(ui, |ui| self.install_bar(ui));
 
-        if let Some((tone, title, body)) = self.blocking() {
-            // The panel is filled before the banner washes over it. A panel
-            // with no frame of its own shows whatever was behind the window,
-            // and a translucent wash over that is not a colour anybody chose.
-            egui::Panel::top("banner")
-                .frame(egui::Frame::new().fill(self.palette.bg))
-                .show(ui, |ui| widget::banner(ui, self.palette, tone, title, &body));
-        }
-
         egui::Panel::bottom("action")
             .exact_size(metric::ACTION_BAR)
             .frame(widget::bar(self.palette))
             .show(ui, |ui| self.action_bar(ui));
+
+        // Between the list and the action bar, which is where the design puts
+        // it: a banner is about the press that is one control below it, and
+        // above the list it would push the working area down the window every
+        // time a condition appeared.
+        if let Some(blocked) = self.blocking() {
+            // The panel is filled before the banner washes over it. A panel
+            // with no frame of its own shows whatever was behind the window,
+            // and a translucent wash over that is not a colour anybody chose.
+            let mut again = false;
+            egui::Panel::bottom("banner")
+                .frame(egui::Frame::new().fill(self.palette.bg))
+                .show(ui, |ui| {
+                    let banner = widget::Banner {
+                        tone: blocked.tone,
+                        title: blocked.title,
+                        body: &blocked.body,
+                        action: blocked.action,
+                    };
+                    again = widget::banner(ui, self.palette, &banner);
+                });
+            if again {
+                // The condition is about the machine, not about this window, so
+                // the only honest way to answer "has it changed" is to look
+                // again.
+                self.session = Session::read();
+            }
+        }
 
         if self.shows_a_list() {
             egui::Panel::top("toolbar")
@@ -331,7 +350,7 @@ impl App {
     /// Only the preparing mode can be blocked. Registering entries writes no
     /// part of the archive and is never held up by a running Bitwig, which is
     /// the whole of what the cheap mode buys.
-    fn blocking(&self) -> Option<(Tone, &'static str, String)> {
+    fn blocking(&self) -> Option<Blocked> {
         let Session::Found(found) = &self.session else { return None };
         if self.pending(found) != Some(Work::PrepareThenEntries) {
             return None;
@@ -340,24 +359,38 @@ impl App {
             return None;
         }
         match (&found.running, found.condition.guard) {
-            (RunState::Running(processes), _) => Some((
-                Tone::Warn,
-                "Quit Bitwig Studio before preparing the installation.",
-                format!(
+            (RunState::Running(processes), _) => Some(Blocked {
+                tone: Tone::Warn,
+                title: "Quit Bitwig Studio before preparing the installation.",
+                body: format!(
                     "The audio engine holds the files this step has to replace. Running: {}.",
                     processes.join(", ")
                 ),
-            )),
-            (_, orng_tools::GuardState::Unknown) => Some((
-                Tone::Err,
-                "This installation cannot be prepared.",
-                "The tamper guard is not in a shape this build recognises, so preparation \
-                 refuses rather than editing it blind."
+                // Whether Bitwig is still open is a question about the machine,
+                // and the user is the one who will have closed it.
+                action: Some("Check again"),
+            }),
+            (_, orng_tools::GuardState::Unknown) => Some(Blocked {
+                tone: Tone::Err,
+                title: "This installation cannot be prepared.",
+                body: "The tamper guard is not in a shape this build recognises, so preparation \
+                       refuses rather than editing it blind."
                     .to_owned(),
-            )),
+                // Nothing the user can do from here resolves it. An offer that
+                // leads nowhere is worse than none.
+                action: None,
+            }),
             _ => None,
         }
     }
+}
+
+/// A condition the window has to state, and what can be done about it.
+struct Blocked {
+    tone: Tone,
+    title: &'static str,
+    body: String,
+    action: Option<&'static str>,
 }
 
 impl App {
@@ -397,7 +430,9 @@ impl App {
                     let _ =
                         widget::menu_item(ui, palette, widget::icon::ABOUT, "About ORNG Registry");
                 });
-                ui.add_space(metric::TOOL_GAP);
+                // The install bar's own gap, which is the wide one: it is a bar
+                // of separate things rather than a toolbar of related ones.
+                ui.add_space(metric::GAP);
                 if widget::small_button(
                     ui,
                     palette,
@@ -721,18 +756,17 @@ impl App {
         }
         // Accept and reject are stated before the drop, from the name alone,
         // because that is all there is to go on while the file is still the
-        // operating system's.
-        let acceptable = staging::documents_in(&hovered);
-        let names: Vec<String> = acceptable
-            .iter()
-            .map(|path| path.file_name().unwrap_or(path.as_os_str()).to_string_lossy().into_owned())
-            .collect();
-        let heading = match names.len() {
+        // operating system's. Every file is named, refused ones included: a
+        // listing of what will be taken cannot be checked against what the
+        // pointer is carrying.
+        let files: Vec<widget::Hovering> = hovered.iter().map(over).collect();
+        let staging = staging::documents_in(&hovered).len();
+        let heading = match staging {
             0 => "Nothing here can be registered".to_owned(),
             1 => "Drop to stage 1 document".to_owned(),
             many => format!("Drop to stage {many} documents"),
         };
-        widget::drop_target(ui, self.palette, &heading, &names);
+        widget::drop_target(ui, self.palette, &heading, &files);
     }
 
     /// Region three: what one press would do, and the press.
@@ -828,15 +862,19 @@ impl App {
         // What the press costs, which is the difference between the two modes
         // and the thing a user is entitled to know before pressing rather than
         // after.
+        let separator = widget::SEPARATOR;
         let (note, tone) = match self.pending(found) {
-            Some(Work::PrepareThenEntries) => {
-                ("Prepare install . a backup is written first", Tone::Warn)
+            Some(Work::PrepareThenEntries) => (
+                format!("Prepare install {separator} a backup is written first"),
+                Tone::Warn,
+            ),
+            Some(Work::Entries) => {
+                (format!("Update entries {separator} Bitwig may stay open"), Tone::Neutral)
             }
-            Some(Work::Entries) => ("Update entries . Bitwig may stay open", Tone::Neutral),
-            None => ("", Tone::Neutral),
+            None => (String::new(), Tone::Neutral),
         };
         if !parts.is_empty() {
-            return (parts.join(", "), tone, note.to_owned());
+            return (parts.join(", "), tone, note);
         }
         // Nothing is staged. What the press is *for* then depends on the mode:
         // preparing puts the entries already on record back into effect, which
@@ -850,12 +888,12 @@ impl App {
                 "Drop documents onto the window, or use Add files...".to_owned(),
             ),
             (Some(Work::PrepareThenEntries), 1) => {
-                ("1 entry to restore".to_owned(), tone, note.to_owned())
+                ("1 entry to restore".to_owned(), tone, note)
             }
             (Some(Work::PrepareThenEntries), many) => {
-                (format!("{many} entries to restore"), tone, note.to_owned())
+                (format!("{many} entries to restore"), tone, note)
             }
-            _ => ("Nothing pending".to_owned(), Tone::Neutral, note.to_owned()),
+            _ => ("Nothing pending".to_owned(), Tone::Neutral, note),
         }
     }
 
@@ -921,8 +959,8 @@ impl App {
         // guard, and the banner above has already said which. The button states
         // it too, because a disabled control with no reason on it is not a
         // statement.
-        if let Some((_, why, _)) = self.blocking() {
-            widget::primary_button(ui, palette, &label, mark, false, why);
+        if let Some(blocked) = self.blocking() {
+            widget::primary_button(ui, palette, &label, mark, false, blocked.title);
             return;
         }
         if widget::primary_button(ui, palette, &label, mark, true, "").clicked() {
@@ -948,6 +986,31 @@ impl App {
         }
         self.absorbed = false;
         self.applying = Some(Applying::start(work, found.to.clone(), update, ctx.clone()));
+    }
+}
+
+/// One path under the pointer, as the drop overlay states it.
+///
+/// A folder is named as a folder and counted, rather than unfolded into the
+/// documents inside it: what the user is dragging is the folder, and a listing
+/// that says something else cannot be checked against the pointer.
+fn over(path: &PathBuf) -> widget::Hovering {
+    let name = path.file_name().unwrap_or(path.as_os_str()).to_string_lossy().into_owned();
+    if Kind::from_path(path).is_some() {
+        return widget::Hovering { name, note: String::new(), accepted: true };
+    }
+    match staging::documents_in(std::slice::from_ref(path)).len() {
+        0 => widget::Hovering { name, note: "ignored".to_owned(), accepted: false },
+        1 => widget::Hovering {
+            name: format!("{name}/"),
+            note: "1 file".to_owned(),
+            accepted: true,
+        },
+        many => widget::Hovering {
+            name: format!("{name}/"),
+            note: format!("{many} files"),
+            accepted: true,
+        },
     }
 }
 
@@ -1062,7 +1125,7 @@ fn row(ui: &mut egui::Ui, palette: Palette, entry: &Registration) {
         widget::cell(ui, columns.uuid, Align::Min, |ui| {
             identity(ui, palette, entry);
         });
-        widget::cell(ui, columns.status, Align::Max, |ui| {
+        widget::cell(ui, columns.status, Align::Min, |ui| {
             let status = "Registered";
             ui.label(
                 RichText::new(status)
@@ -1114,7 +1177,7 @@ fn staged_row(ui: &mut egui::Ui, palette: Palette, staged: &Staged) {
             // explains, so an explanation is never louder than the word it
             // belongs to.
             if let Some(why) = staged.reason() {
-                ui.add_space(TIGHT_INSIDE_A_ROW);
+                ui.add_space(BESIDE_THE_NAME);
                 ui.add(
                     egui::Label::new(
                         RichText::new(why)
@@ -1131,7 +1194,7 @@ fn staged_row(ui: &mut egui::Ui, palette: Palette, staged: &Staged) {
                 ui.label(RichText::new("-").font(font::mono(font::MONO)).color(palette.ink_3));
             }
         });
-        widget::cell(ui, columns.status, Align::Max, |ui| {
+        widget::cell(ui, columns.status, Align::Min, |ui| {
             ui.label(
                 RichText::new(staged.status())
                     .font(font::plain(font::CHIP))
@@ -1143,7 +1206,10 @@ fn staged_row(ui: &mut egui::Ui, palette: Palette, staged: &Staged) {
 
 /// Between a name and the reason beside it, which is closer than two separate
 /// things but further than one phrase.
-const TIGHT_INSIDE_A_ROW: f32 = 3.0;
+const BESIDE_THE_NAME: f32 = 9.0;
+
+/// Between a catalog item's name and the description under it.
+const UNDER_THE_NAME: f32 = 2.0;
 
 /// The Catalog view: what ORNG Catalog publishes, once it has been proved.
 fn published(ui: &mut egui::Ui, palette: Palette, catalog: &Fetching) {
@@ -1198,24 +1264,28 @@ fn published(ui: &mut egui::Ui, palette: Palette, catalog: &Fetching) {
             };
             widget::empty_state(ui, palette, &empty);
         }
+        // No section heading here, and that is the design's decision: the Local
+        // view divides into pending, registered and factory, and the catalog is
+        // one list of one kind of thing.
         Some(Ok(index)) => {
             widget::list(ui, |ui| {
-                widget::section(ui, palette, "Catalog", palette.ink_2, index.items.len());
                 for entry in &index.items {
-                    widget::row(ui, palette, |ui, columns| {
+                    widget::catalog_row(ui, palette, |ui, columns| {
                         widget::cell(ui, columns.kind, Align::Min, |ui| {
                             widget::kind_label(ui, palette, entry.kind.into());
                         });
-                        widget::cell(ui, columns.name, Align::Min, |ui| {
+                        // The name over the description, not beside it. A
+                        // catalog row leads with what the item is; the
+                        // description is how somebody choosing decides, and it
+                        // needs the width of the column rather than what is
+                        // left of one line.
+                        widget::stacked_cell(ui, columns.name, |ui| {
                             ui.label(
                                 RichText::new(&entry.name)
                                     .font(font::emphasis(ui.ctx(), font::ROW_NAME))
                                     .color(palette.ink),
                             );
-                            ui.add_space(TIGHT_INSIDE_A_ROW);
-                            // A catalog row leads with what the item is and who
-                            // made it: the author is the trust signal, because
-                            // an item is DSP that Bitwig will run.
+                            ui.add_space(UNDER_THE_NAME);
                             ui.add(
                                 egui::Label::new(
                                     RichText::new(&entry.description)
@@ -1225,14 +1295,20 @@ fn published(ui: &mut egui::Ui, palette: Palette, catalog: &Fetching) {
                                 .truncate(),
                             );
                         });
-                        widget::cell(ui, columns.uuid, Align::Min, |ui| {
-                            ui.label(
-                                RichText::new(entry.author.to_string())
-                                    .font(font::plain(font::CHIP))
-                                    .color(palette.ink_2),
+                        // The author is the trust signal, because an item is
+                        // DSP that Bitwig will run, so it gets a column of its
+                        // own rather than a place at the end of the line.
+                        widget::cell(ui, columns.author, Align::Min, |ui| {
+                            ui.add(
+                                egui::Label::new(
+                                    RichText::new(entry.author.to_string())
+                                        .font(font::plain(font::CHIP))
+                                        .color(palette.ink_2),
+                                )
+                                .truncate(),
                             );
                         });
-                        widget::cell(ui, columns.status, Align::Max, |ui| {
+                        widget::cell(ui, columns.version, Align::Min, |ui| {
                             ui.label(
                                 RichText::new(entry.version.to_string())
                                     .font(font::mono(font::MONO))

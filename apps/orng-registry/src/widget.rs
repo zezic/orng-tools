@@ -61,7 +61,7 @@ pub fn view_tab(ui: &mut Ui, palette: Palette, label: &str, current: bool) -> Re
             .fill(if current { palette.btn } else { Color32::TRANSPARENT })
             .stroke(Stroke::NONE)
             .corner_radius(CornerRadius::same(metric::RADIUS))
-            .min_size(vec2(0.0, metric::CONTROL)),
+            .min_size(vec2(0.0, metric::TAB)),
     )
     .on_hover_cursor(egui::CursorIcon::PointingHand)
 }
@@ -327,16 +327,25 @@ pub fn primary_button(
 }
 
 /// The overflow control, and the menu behind it.
+///
+/// The design gives this one both of its measurements, and they are not the
+/// same: 26 by 24. `min_size` alone would not produce them - egui lays a button
+/// out as its content plus `button_padding`, and takes the larger of the two -
+/// so the padding is zeroed here and the size is the whole of what is asked
+/// for.
 pub fn overflow(ui: &mut Ui, palette: Palette, menu: impl FnOnce(&mut Ui)) {
     let button = egui::Button::new(
         RichText::new(icon::OVERFLOW).font(font::icon(ui.ctx(), font::ICON)).color(palette.ink_2),
     )
     .stroke(Stroke::NONE)
     .corner_radius(CornerRadius::same(metric::RADIUS))
-    .min_size(vec2(metric::CONTROL, metric::CONTROL));
-    filled_button(ui, Color32::TRANSPARENT, palette.btn_hover, button)
-        .on_hover_cursor(egui::CursorIcon::PointingHand)
-        .context_menu(menu);
+    .min_size(vec2(metric::OVERFLOW, metric::TAB));
+    ui.scope(|ui| {
+        ui.spacing_mut().button_padding = egui::Vec2::ZERO;
+        filled_button(ui, Color32::TRANSPARENT, palette.btn_hover, button)
+            .on_hover_cursor(egui::CursorIcon::PointingHand)
+            .context_menu(menu);
+    });
 }
 
 /// The icons the design names, by the job each does here rather than by the
@@ -415,54 +424,132 @@ pub fn section(ui: &mut Ui, palette: Palette, title: &str, tone: Color32, count:
     });
 }
 
-/// The columns of an entry row, as the design's grid has them.
+/// One column of a row's grid.
+#[derive(Debug, Clone, Copy)]
+pub enum Column {
+    /// A width the design states.
+    Fixed(f32),
+    /// The one column that takes whatever the others leave.
+    Rest,
+}
+
+/// Divide a row into the design's columns.
 ///
-/// Computed together because they depend on each other: the name column is
-/// whatever the four fixed ones leave, and working that out twice is how two
-/// rows come to disagree about where a column starts.
+/// The design lays a row out as a grid rather than as a flow, so every identity
+/// and every status sits at the same x down the whole list. Written once and
+/// given the whole specification at a time, because the flexible column is
+/// defined by the fixed ones: working that out per row is how two rows come to
+/// disagree about where a column starts.
+fn grid<const N: usize>(row: Rect, columns: [Column; N]) -> [Rect; N] {
+    let inner = row.shrink2(vec2(metric::PAD, 0.0));
+    let fixed: f32 = columns
+        .iter()
+        .map(|column| match column {
+            Column::Fixed(width) => *width,
+            Column::Rest => 0.0,
+        })
+        .sum();
+    let rest = (inner.width() - fixed - (N - 1) as f32 * metric::GAP).max(0.0);
+
+    let mut x = inner.left();
+    columns.map(|column| {
+        let width = match column {
+            Column::Fixed(width) => width,
+            Column::Rest => rest,
+        };
+        let cell = Rect::from_min_size(egui::pos2(x, inner.top()), vec2(width, inner.height()));
+        x += width + metric::GAP;
+        cell
+    })
+}
+
+/// The columns of an entry row, as the design's grid has them.
 pub struct Columns {
     pub kind: Rect,
     pub name: Rect,
     pub uuid: Rect,
     pub status: Rect,
+    /// What the row itself can do. Reserved even while nothing is drawn in it:
+    /// the design hides these controls off hover rather than removing them, so
+    /// the four columns before it do not move when the pointer arrives.
+    pub actions: Rect,
 }
 
 impl Columns {
     fn across(row: Rect) -> Columns {
-        let inner = row.shrink2(vec2(metric::PAD, 0.0));
-        let fixed = metric::KIND_COLUMN + metric::UUID_COLUMN + metric::STATUS_COLUMN;
-        let name = (inner.width() - fixed - 3.0 * metric::GAP).max(0.0);
+        let [kind, name, uuid, status, actions] = grid(
+            row,
+            [
+                Column::Fixed(metric::KIND_COLUMN),
+                Column::Rest,
+                Column::Fixed(metric::UUID_COLUMN),
+                Column::Fixed(metric::STATUS_COLUMN),
+                Column::Fixed(metric::ACTIONS_COLUMN),
+            ],
+        );
+        Columns { kind, name, uuid, status, actions }
+    }
+}
 
-        let mut x = inner.left();
-        let mut take = |width: f32| {
-            let cell = Rect::from_min_size(egui::pos2(x, inner.top()), vec2(width, inner.height()));
-            x += width + metric::GAP;
-            cell
-        };
-        Columns {
-            kind: take(metric::KIND_COLUMN),
-            name: take(name),
-            uuid: take(metric::UUID_COLUMN),
-            status: take(metric::STATUS_COLUMN),
-        }
+/// The columns of a catalog row. A different grid, because a catalog row
+/// answers a different question: not "which of mine is this" but "what is this
+/// and who made it", so the identity gives way to the author and the version.
+pub struct CatalogColumns {
+    pub kind: Rect,
+    pub name: Rect,
+    pub author: Rect,
+    pub version: Rect,
+    pub status: Rect,
+    pub actions: Rect,
+}
+
+impl CatalogColumns {
+    fn across(row: Rect) -> CatalogColumns {
+        let [kind, name, author, version, status, actions] = grid(
+            row,
+            [
+                Column::Fixed(metric::KIND_COLUMN),
+                Column::Rest,
+                Column::Fixed(metric::AUTHOR_COLUMN),
+                Column::Fixed(metric::VERSION_COLUMN),
+                Column::Fixed(metric::CATALOG_STATUS_COLUMN),
+                Column::Fixed(metric::CATALOG_ACTIONS_COLUMN),
+            ],
+        );
+        CatalogColumns { kind, name, author, version, status, actions }
     }
 }
 
 /// One row of the list: a fixed height, a hover highlight, and five columns.
-///
-/// The columns are the point. A row laid out as a flow puts every identity and
-/// every status at a different x, so a list of them cannot be read down; the
-/// design lays a row out as a grid, and so does this.
 pub fn row(ui: &mut Ui, palette: Palette, contents: impl FnOnce(&mut Ui, &Columns)) -> Response {
-    let (rect, response) =
-        ui.allocate_exact_size(vec2(ui.available_width(), metric::ROW), Sense::click());
-    if response.hovered() {
-        ui.painter().rect_filled(rect, CornerRadius::ZERO, palette.row_hover);
-    }
+    let (rect, response) = row_frame(ui, palette, metric::ROW);
     let columns = Columns::across(rect);
     let mut content = ui.new_child(egui::UiBuilder::new().max_rect(rect));
     contents(&mut content, &columns);
     response
+}
+
+/// One row of the catalog, which is taller: the description sits under the name.
+pub fn catalog_row(
+    ui: &mut Ui,
+    palette: Palette,
+    contents: impl FnOnce(&mut Ui, &CatalogColumns),
+) -> Response {
+    let (rect, response) = row_frame(ui, palette, metric::CATALOG_ROW);
+    let columns = CatalogColumns::across(rect);
+    let mut content = ui.new_child(egui::UiBuilder::new().max_rect(rect));
+    contents(&mut content, &columns);
+    response
+}
+
+/// The part both rows share: the space, and the fill that follows the pointer.
+fn row_frame(ui: &mut Ui, palette: Palette, height: f32) -> (Rect, Response) {
+    let (rect, response) =
+        ui.allocate_exact_size(vec2(ui.available_width(), height), Sense::click());
+    if response.hovered() {
+        ui.painter().rect_filled(rect, CornerRadius::ZERO, palette.row_hover);
+    }
+    (rect, response)
 }
 
 /// Put one piece of a row in its column.
@@ -472,6 +559,31 @@ pub fn cell(ui: &mut Ui, at: Rect, align: Align, contents: impl FnOnce(&mut Ui))
         _ => Layout::left_to_right(Align::Center),
     };
     let mut column = ui.new_child(egui::UiBuilder::new().max_rect(at).layout(layout));
+    contents(&mut column);
+}
+
+/// Put a two-line piece of a row in its column, centred as a block.
+///
+/// The same problem [`centred_block`] solves, in a cell: a child `Ui` is placed
+/// before its height is known, so a stack inside a row sits against the top of
+/// it. Measured first, then allocated at the height that was measured.
+pub fn stacked_cell(ui: &mut Ui, at: Rect, contents: impl Fn(&mut Ui)) {
+    let mut probe = Ui::new(
+        ui.ctx().clone(),
+        ui.id().with("stacked-measure"),
+        egui::UiBuilder::new().sizing_pass().invisible().max_rect(at),
+    );
+    probe.spacing_mut().item_spacing.y = 0.0;
+    contents(&mut probe);
+    let height = probe.min_rect().height();
+
+    let top = at.center().y - height / 2.0;
+    let mut column = ui.new_child(
+        egui::UiBuilder::new()
+            .max_rect(Rect::from_min_size(egui::pos2(at.left(), top), vec2(at.width(), height)))
+            .layout(Layout::top_down(Align::Min)),
+    );
+    column.spacing_mut().item_spacing.y = 0.0;
     contents(&mut column);
 }
 
@@ -531,6 +643,17 @@ impl Tone {
         }
     }
 
+    /// The supporting line under a toned headline, which the design tints with
+    /// it rather than leaving grey: a warm grey under the accent, a red-grey
+    /// under an error.
+    fn supporting(self, palette: Palette) -> Color32 {
+        match self {
+            Tone::Neutral => palette.ink_2,
+            Tone::Warn => palette.ink_2_warm,
+            Tone::Err => palette.ink_2_err,
+        }
+    }
+
     fn wash(self, palette: Palette) -> Color32 {
         match self {
             Tone::Neutral => palette.info_bg,
@@ -544,19 +667,77 @@ impl Tone {
 ///
 /// Two lines, because one is never enough for a condition the user has to act
 /// on: what is true, and what it means for the thing they were about to do.
-pub fn banner(ui: &mut Ui, palette: Palette, tone: Tone, title: &str, body: &str) {
-    Frame::new()
-        .fill(tone.wash(palette))
-        .inner_margin(Margin::symmetric(metric::PAD as i8, metric::TIGHT as i8))
-        .show(ui, |ui| {
+/// Where something can be done about it, the one thing sits at the right end.
+pub struct Banner<'a> {
+    pub tone: Tone,
+    pub title: &'a str,
+    pub body: &'a str,
+    pub action: Option<&'a str>,
+}
+
+/// Draw a banner. Answers whether its action was pressed.
+pub fn banner(ui: &mut Ui, palette: Palette, banner: &Banner<'_>) -> bool {
+    let mut pressed = false;
+    Frame::new().fill(banner.tone.wash(palette)).inner_margin(Margin::same(metric::PAD as i8)).show(
+        ui,
+        |ui| {
             ui.set_width(ui.available_width());
-            ui.label(
-                RichText::new(title)
-                    .font(font::emphasis(ui.ctx(), font::CONTROL))
-                    .color(tone.colour(palette)),
-            );
-            ui.label(RichText::new(body).font(font::plain(font::NOTE)).color(palette.ink_3));
-        });
+            ui.horizontal_top(|ui| {
+                ui.spacing_mut().item_spacing.x = 0.0;
+                dot(ui, banner.tone.colour(palette));
+                ui.add_space(metric::GAP);
+                ui.vertical(|ui| {
+                    ui.spacing_mut().item_spacing.y = BETWEEN_THE_LINES;
+                    ui.label(
+                        RichText::new(banner.title)
+                            .font(font::emphasis(ui.ctx(), font::CONTROL))
+                            .color(banner.tone.colour(palette)),
+                    );
+                    ui.label(
+                        RichText::new(banner.body)
+                            .font(font::plain(font::NOTE))
+                            .color(banner.tone.supporting(palette)),
+                    );
+                });
+                if let Some(action) = banner.action {
+                    ui.with_layout(Layout::right_to_left(Align::Min), |ui| {
+                        pressed = outlined_button(ui, banner.tone.colour(palette), action).clicked();
+                    });
+                }
+            });
+        },
+    );
+    pressed
+}
+
+/// A banner's mark: the tone as a shape, so the tone is not carried by colour
+/// alone.
+fn dot(ui: &mut Ui, colour: Color32) {
+    let (rect, _) = ui.allocate_exact_size(vec2(metric::DOT, DOT_BASELINE), Sense::hover());
+    ui.painter().circle_filled(
+        egui::pos2(rect.center().x, rect.bottom() - metric::DOT / 2.0),
+        metric::DOT / 2.0,
+        colour,
+    );
+}
+
+/// How far down the dot sits, which is the middle of the headline beside it
+/// rather than the top of the block.
+const DOT_BASELINE: f32 = 11.0;
+/// Between a banner's headline and the line explaining it.
+const BETWEEN_THE_LINES: f32 = 4.0;
+
+/// A control that carries a tone: an outline and its text in one colour, over
+/// the wash it sits on rather than over a fill of its own.
+fn outlined_button(ui: &mut Ui, colour: Color32, label: &str) -> Response {
+    let button = egui::Button::new(
+        RichText::new(label).font(font::emphasis(ui.ctx(), font::CONTROL)).color(colour),
+    )
+    .fill(Color32::TRANSPARENT)
+    .stroke(Stroke::new(metric::HAIRLINE, colour))
+    .corner_radius(CornerRadius::same(metric::RADIUS))
+    .min_size(vec2(0.0, metric::OUTLINED));
+    ui.add(button).on_hover_cursor(egui::CursorIcon::PointingHand)
 }
 
 /// A screen with nothing on it, as the design writes one.
@@ -597,31 +778,54 @@ pub enum Pressed {
 /// How far the corner marks sit in, and how long their arms are.
 const MARK_INSET: f32 = 16.0;
 const MARK_ARM: f32 = 11.0;
-/// How wide the body is allowed to run before it wraps. Prose set the full
-/// width of a window is prose nobody finishes.
+/// How wide each block of prose is allowed to run before it wraps, narrowing as
+/// it gets quieter. Prose set the full width of a window is prose nobody
+/// finishes, and the design gives each of the three its own measure.
 const BODY_WIDTH: f32 = 430.0;
+const ASIDE_WIDTH: f32 = 410.0;
+const FOOT_WIDTH: f32 = 400.0;
+
+/// The gaps down an empty state, which the design states one at a time rather
+/// than repeating one value. They are not the same: what follows the headline
+/// belongs to it, and what follows the body is a separate thought.
+mod stack {
+    pub const AFTER_ICON: f32 = 16.0;
+    pub const AFTER_TITLE: f32 = 9.0;
+    pub const AFTER_BODY: f32 = 15.0;
+    pub const BEFORE_ASIDE: f32 = 16.0;
+    pub const BEFORE_CONTROLS: f32 = 18.0;
+    pub const BEFORE_FOOT: f32 = 18.0;
+}
 
 pub fn empty_state(ui: &mut Ui, palette: Palette, empty: &Empty<'_>) -> Pressed {
     let region = ui.available_rect_before_wrap();
     if !empty.minor {
         corner_marks(ui, palette, region);
     }
+    // Written to from both passes. The measuring one is a sizing pass, where
+    // nothing is interacted with, so what it writes is always `Nothing`.
+    let pressed = std::cell::Cell::new(Pressed::Nothing);
+    centred_vertically(ui, region, |ui| pressed.set(block(ui, palette, empty)));
+    pressed.get()
+}
 
-    // The design centres the block in its region. Immediate mode cannot know how
-    // tall the block is until it has drawn it, so it is drawn twice: once in a
-    // sizing pass that produces no geometry, to be measured, and then for real
-    // with the leftover halved above it. A fraction of the region guessed
-    // instead - which is what this did - puts the block wherever the region
-    // happens to be tall.
+/// Draw a block in the middle of a region, having measured it first.
+///
+/// The design centres these; immediate mode cannot know how tall one is until
+/// it has drawn it, so it is drawn twice: once in a sizing pass that produces
+/// no geometry, to be measured, and then for real with the leftover halved
+/// above it. A fraction of the region guessed instead - which is what both of
+/// these once did - puts the block wherever the region happens to be tall.
+fn centred_vertically(ui: &mut Ui, region: Rect, contents: impl Fn(&mut Ui)) {
     let mut probe = Ui::new(
         ui.ctx().clone(),
-        ui.id().with("empty-measure"),
+        ui.id().with("centre-measure"),
         egui::UiBuilder::new().sizing_pass().invisible().max_rect(region),
     );
-    block(&mut probe, palette, empty);
+    contents(&mut probe);
     let measured = probe.min_rect().height();
     ui.add_space(((region.height() - measured) / 2.0).max(0.0));
-    block(ui, palette, empty)
+    contents(ui);
 }
 
 fn block(ui: &mut Ui, palette: Palette, empty: &Empty<'_>) -> Pressed {
@@ -631,40 +835,48 @@ fn block(ui: &mut Ui, palette: Palette, empty: &Empty<'_>) -> Pressed {
     let icon_ink = if empty.inviting { palette.accent } else { palette.ink_3 };
 
     ui.vertical_centered(|ui| {
+        // Stated gap by gap below, so egui's own spacing does not land between
+        // the lines on top of the design's.
+        ui.spacing_mut().item_spacing.y = 0.0;
         ui.label(RichText::new(empty.icon).font(font::icon(ui.ctx(), icon_size)).color(icon_ink));
-        ui.add_space(metric::GAP);
+        ui.add_space(stack::AFTER_ICON);
         ui.label(
             RichText::new(empty.title)
                 .font(font::emphasis(ui.ctx(), title_size))
                 .color(palette.ink),
         );
-        ui.add_space(metric::TIGHT);
+        ui.add_space(stack::AFTER_TITLE);
         ui.allocate_ui_with_layout(
             vec2(BODY_WIDTH, 0.0),
             Layout::top_down(Align::Center),
             |ui| {
+                ui.spacing_mut().item_spacing.y = 0.0;
                 ui.label(
                     RichText::new(empty.body).font(font::plain(font::CONTROL)).color(palette.ink_2),
                 );
                 if empty.extensions {
-                    ui.add_space(metric::GAP);
-                    ui.label(
-                        RichText::new(".bwdevice    .bwmodulator    .bwmodule")
-                            .font(font::mono(font::MONO))
-                            .color(palette.ink_3),
-                    );
+                    ui.add_space(stack::AFTER_BODY);
+                    extensions(ui, palette);
                 }
                 if let Some(aside) = empty.aside {
-                    ui.add_space(metric::GAP);
-                    ui.label(
-                        RichText::new(aside).font(font::plain(font::CHIP)).color(palette.ink_3),
+                    ui.add_space(stack::BEFORE_ASIDE);
+                    ui.allocate_ui_with_layout(
+                        vec2(ASIDE_WIDTH, 0.0),
+                        Layout::top_down(Align::Center),
+                        |ui| {
+                            ui.label(
+                                RichText::new(aside)
+                                    .font(font::plain(font::CHIP))
+                                    .color(palette.ink_3),
+                            );
+                        },
                     );
                 }
             },
         );
 
         if empty.action.is_some() || empty.alt.is_some() {
-            ui.add_space(metric::GAP);
+            ui.add_space(stack::BEFORE_CONTROLS);
             ui.horizontal(|ui| {
                 // Centred as a block. A row laid out left to right inside a
                 // centred column still starts at the left edge of it.
@@ -692,12 +904,52 @@ fn block(ui: &mut Ui, palette: Palette, empty: &Empty<'_>) -> Pressed {
             });
         }
         if let Some(foot) = empty.foot {
-            ui.add_space(metric::GAP);
-            ui.label(RichText::new(foot).font(font::plain(font::NOTE)).color(palette.ink_3));
+            ui.add_space(stack::BEFORE_FOOT);
+            ui.allocate_ui_with_layout(
+                vec2(FOOT_WIDTH, 0.0),
+                Layout::top_down(Align::Center),
+                |ui| {
+                    ui.label(
+                        RichText::new(foot).font(font::plain(font::NOTE)).color(palette.ink_3),
+                    );
+                },
+            );
         }
     });
     pressed
 }
+
+/// The extensions a drop accepts, as the design sets them: separated by a mark
+/// rather than by whitespace, so the three read as a list rather than as one
+/// line of three words.
+fn extensions(ui: &mut Ui, palette: Palette) {
+    let mut line = egui::text::LayoutJob::default();
+    let mono = || egui::TextFormat {
+        font_id: font::mono(font::MONO),
+        color: palette.ink_3,
+        ..Default::default()
+    };
+    // The one list, from the module that decides what a drop takes. A second
+    // copy of it here is a second thing to remember when a fourth extension
+    // arrives.
+    for (at, extension) in crate::staging::ACCEPTED.iter().enumerate() {
+        let gap = if at > 0 { EITHER_SIDE_OF_A_SEPARATOR } else { 0.0 };
+        if at > 0 {
+            line.append(SEPARATOR, gap, mono());
+        }
+        line.append(&format!(".{extension}"), gap, mono());
+    }
+    ui.label(line);
+}
+
+const EITHER_SIDE_OF_A_SEPARATOR: f32 = 10.0;
+
+/// The mark the design separates items of one line with.
+///
+/// Escaped rather than typed: the house rule keeps the source ASCII, and both
+/// faces here carry this codepoint - which was checked, because a glyph the
+/// font does not have is drawn as a box in the one place a user is reading.
+pub const SEPARATOR: &str = "\u{b7}";
 
 /// Roughly how wide a character of button text is, for centring a pair of them
 /// before either has been laid out. An estimate, and only ever used to centre:
@@ -708,13 +960,17 @@ const BUTTON_PADDING: f32 = 40.0;
 /// The four corner marks the design puts around a full-region empty state.
 fn corner_marks(ui: &Ui, palette: Palette, region: Rect) {
     let stroke = Stroke::new(metric::HAIRLINE, palette.line);
-    let inner = region.shrink(MARK_INSET);
-    let painter = ui.painter();
+    corner_marks_of(ui.painter(), stroke, region.shrink(MARK_INSET), MARK_ARM);
+}
+
+/// The marks themselves, given where their corners are. Shared with the drop
+/// target, which draws the same figure in the accent and further in.
+fn corner_marks_of(painter: &egui::Painter, stroke: Stroke, inner: Rect, arm: f32) {
     for (x, dx) in [(inner.left(), 1.0), (inner.right(), -1.0)] {
         for (y, dy) in [(inner.top(), 1.0f32), (inner.bottom(), -1.0)] {
             let corner = egui::pos2(x, y);
-            painter.line_segment([corner, egui::pos2(x + dx * MARK_ARM, y)], stroke);
-            painter.line_segment([corner, egui::pos2(x, y + dy * MARK_ARM)], stroke);
+            painter.line_segment([corner, egui::pos2(x + dx * arm, y)], stroke);
+            painter.line_segment([corner, egui::pos2(x, y + dy * arm)], stroke);
         }
     }
 }
@@ -752,14 +1008,44 @@ pub fn failure(ui: &mut Ui, palette: Palette, why: &str) {
 /// How wide the list of files being dropped is. Fixed, because it is what
 /// centres the block; a name longer than this is truncated rather than allowed
 /// to move the whole listing sideways.
-const LISTING_WIDTH: f32 = 340.0;
+const LISTING_WIDTH: f32 = 318.0;
+/// One line of that list, and the space between two of them.
+const LISTING_ROW: f32 = 27.0;
+const BETWEEN_LISTING_ROWS: f32 = 1.0;
+/// From the edge of a listing row to its contents, which is tighter than a
+/// window's own padding.
+const LISTING_PAD: f32 = 10.0;
+/// Between a file's number and its name.
+const BESIDE_A_NUMBER: f32 = 9.0;
+/// Between the three parts of the overlay: the icon, the heading, the listing
+/// and the line naming the extensions.
+const BETWEEN_OVERLAY_PARTS: f32 = 16.0;
+/// How far the drop target's marks sit in from the window's edge, and how long
+/// their arms are. Further in than the border they sit inside.
+const DROP_MARK_INSET: f32 = 20.0;
+const DROP_MARK_ARM: f32 = 12.0;
+/// The dash the design draws the drop border with.
+const DASH: f32 = 5.0;
+
+/// One thing under the pointer, and what a drop would do with it.
+pub struct Hovering {
+    pub name: String,
+    /// What is on the right of the row: how many documents a folder holds, or
+    /// that this one will be passed over. Empty for an ordinary document, which
+    /// needs no comment.
+    pub note: String,
+    /// Stated per file before the drop rather than after it. From the name
+    /// alone, because that is all there is to go on while the file still
+    /// belongs to the operating system.
+    pub accepted: bool,
+}
 
 /// The whole window as a drop target, while something is over it.
 ///
 /// Painted on the foreground layer rather than composed into a panel, because
 /// the design covers everything - both bars included - and a drop is not aimed
 /// at any particular region of the window.
-pub fn drop_target(ui: &mut Ui, palette: Palette, heading: &str, files: &[String]) {
+pub fn drop_target(ui: &mut Ui, palette: Palette, heading: &str, files: &[Hovering]) {
     // The viewport rather than the content area: the whole window is the
     // target, bars included, and the scrim has to reach the edges of what the
     // user is dragging over.
@@ -767,49 +1053,146 @@ pub fn drop_target(ui: &mut Ui, palette: Palette, heading: &str, files: &[String
     let layer = egui::LayerId::new(egui::Order::Foreground, egui::Id::new("drop-target"));
     let painter = ui.ctx().layer_painter(layer);
     painter.rect_filled(window, CornerRadius::ZERO, palette.scrim);
-    painter.rect_filled(window.shrink(metric::GAP), CornerRadius::ZERO, palette.accent_soft);
-    painter.rect_stroke(
-        window.shrink(metric::GAP),
-        CornerRadius::ZERO,
-        Stroke::new(metric::HAIRLINE, palette.accent),
-        egui::StrokeKind::Inside,
-    );
+    let border = window.shrink(metric::GAP);
+    painter.rect_filled(border, CornerRadius::ZERO, palette.accent_soft);
+    let stroke = Stroke::new(metric::HAIRLINE, palette.accent);
+    // Dashed, as the design draws it: a solid outline reads as an edge of the
+    // window, and a target is a place something is about to land.
+    for (from, to) in
+        [(border.left_top(), border.right_top()), (border.left_bottom(), border.right_bottom())]
+    {
+        painter.add(egui::Shape::dashed_line(&[from, to], stroke, DASH, DASH));
+    }
+    for (from, to) in
+        [(border.left_top(), border.left_bottom()), (border.right_top(), border.right_bottom())]
+    {
+        painter.add(egui::Shape::dashed_line(&[from, to], stroke, DASH, DASH));
+    }
+    corner_marks_of(&painter, stroke, window.shrink(DROP_MARK_INSET), DROP_MARK_ARM);
 
     let mut overlay = Ui::new(
         ui.ctx().clone(),
         egui::Id::new("drop-target-contents"),
         egui::UiBuilder::new().layer_id(layer).max_rect(window),
     );
-    overlay.vertical_centered(|ui| {
-        ui.add_space(window.height() * 0.3);
-        ui.label(
-            RichText::new(heading).font(font::emphasis(ui.ctx(), font::HEADING)).color(palette.ink),
-        );
-        ui.add_space(metric::GAP);
-        // What is being dropped, by name. A count alone cannot be checked
-        // against what the pointer is carrying, and a drop is a decision made
-        // before it lands.
-        for (at, file) in files.iter().enumerate() {
-            // A fixed width, so the block is centred as a block and the names
-            // line up under one another. A row laid out left to right would
-            // take the full width and start at the edge instead.
-            ui.allocate_ui_with_layout(
-                vec2(LISTING_WIDTH, metric::CONTROL),
-                Layout::left_to_right(Align::Center),
-                |ui| {
-                    ui.label(
-                        RichText::new(format!("{:>3}", at + 1))
-                            .font(font::mono(font::MONO))
-                            .color(palette.accent_text),
-                    );
-                    ui.add(
-                        egui::Label::new(
-                            RichText::new(file).font(font::mono(font::MONO)).color(palette.ink),
-                        )
-                        .truncate(),
-                    );
-                },
+    // Centred in the window, measured rather than guessed: the block is as tall
+    // as the number of files being dragged makes it.
+    centred_vertically(&mut overlay, window, |ui| {
+        ui.spacing_mut().item_spacing.y = 0.0;
+        ui.vertical_centered(|ui| {
+            ui.spacing_mut().item_spacing.y = 0.0;
+            ui.label(
+                RichText::new(icon::DROP)
+                    .font(font::icon(ui.ctx(), font::ICON_LARGE))
+                    .color(palette.accent),
             );
-        }
+            ui.add_space(BETWEEN_OVERLAY_PARTS);
+            ui.label(
+                RichText::new(heading)
+                    .font(font::emphasis(ui.ctx(), font::HEADING))
+                    .color(palette.ink),
+            );
+            // What is being dropped, by name. A count alone cannot be checked
+            // against what the pointer is carrying, and a drop is a decision
+            // made before it lands.
+            if !files.is_empty() {
+                ui.add_space(BETWEEN_OVERLAY_PARTS);
+                listing(ui, palette, files);
+            }
+            ui.add_space(BETWEEN_OVERLAY_PARTS);
+            extensions(ui, palette);
+        });
     });
+}
+
+/// The files under the pointer, one to a line.
+fn listing(ui: &mut Ui, palette: Palette, files: &[Hovering]) {
+    let mut accepted = 0;
+    for file in files {
+        // A fixed width, so the block is centred as a block and the names line
+        // up under one another. A row laid out left to right would take the
+        // full width and start at the edge instead.
+        let (rect, _) = ui.allocate_exact_size(vec2(LISTING_WIDTH, LISTING_ROW), Sense::hover());
+        if file.accepted {
+            accepted += 1;
+            ui.painter().rect_filled(rect, CornerRadius::ZERO, palette.panel);
+        }
+        let number =
+            if file.accepted { accepted.to_string() } else { REFUSED_NUMBER.to_owned() };
+        let ink = if file.accepted { palette.ink } else { palette.ink_3 };
+
+        let mut line = ui.new_child(
+            egui::UiBuilder::new()
+                .max_rect(rect.shrink2(vec2(LISTING_PAD, 0.0)))
+                .layout(Layout::left_to_right(Align::Center)),
+        );
+        line.spacing_mut().item_spacing.x = 0.0;
+        line.label(
+            RichText::new(number)
+                .font(font::mono(font::MONO_TIGHT))
+                .color(if file.accepted { palette.accent_text } else { palette.ink_3 }),
+        );
+        line.add_space(BESIDE_A_NUMBER);
+        let mut name = RichText::new(&file.name).font(font::mono(font::MONO)).color(ink);
+        if !file.accepted {
+            name = name.strikethrough();
+        }
+        line.with_layout(Layout::right_to_left(Align::Center), |ui| {
+            if !file.note.is_empty() {
+                ui.label(
+                    RichText::new(&file.note).font(font::plain(font::NOTE)).color(palette.ink_3),
+                );
+            }
+            ui.with_layout(Layout::left_to_right(Align::Center), |ui| {
+                ui.add(egui::Label::new(name).truncate());
+            });
+        });
+        ui.add_space(BETWEEN_LISTING_ROWS);
+    }
+}
+
+/// What stands where a number would, against a file a drop will pass over.
+const REFUSED_NUMBER: &str = "--";
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A row the width of the window the design is drawn at.
+    fn a_row(height: f32) -> Rect {
+        Rect::from_min_size(egui::pos2(0.0, 0.0), vec2(metric::WINDOW[0], height))
+    }
+
+    fn edges(cell: Rect) -> (f32, f32) {
+        (cell.left(), cell.right())
+    }
+
+    /// The column boundaries the bundle's own `EntryRow` produces at 820 wide,
+    /// read out of it rather than derived here: `66px minmax(0,1fr) 106px 130px
+    /// 84px`, twelve apart, twelve in from each edge.
+    ///
+    /// Worth a test because this is the fault that survived a whole session of
+    /// looking at the screen. The identity column sat 96 pixels right of the
+    /// design's, and nothing about the picture said so.
+    #[test]
+    fn an_entry_row_is_divided_as_the_bundle_divides_it() {
+        let columns = Columns::across(a_row(metric::ROW));
+        assert_eq!(edges(columns.kind), (12.0, 78.0));
+        assert_eq!(edges(columns.name), (90.0, 452.0));
+        assert_eq!(edges(columns.uuid), (464.0, 570.0));
+        assert_eq!(edges(columns.status), (582.0, 712.0));
+        assert_eq!(edges(columns.actions), (724.0, 808.0));
+    }
+
+    /// The same, for `CatalogRow`: `66px minmax(0,1fr) 116px 56px 142px 92px`.
+    #[test]
+    fn a_catalog_row_is_divided_as_the_bundle_divides_it() {
+        let columns = CatalogColumns::across(a_row(metric::CATALOG_ROW));
+        assert_eq!(edges(columns.kind), (12.0, 78.0));
+        assert_eq!(edges(columns.name), (90.0, 354.0));
+        assert_eq!(edges(columns.author), (366.0, 482.0));
+        assert_eq!(edges(columns.version), (494.0, 550.0));
+        assert_eq!(edges(columns.status), (562.0, 704.0));
+        assert_eq!(edges(columns.actions), (716.0, 808.0));
+    }
 }

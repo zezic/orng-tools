@@ -60,6 +60,13 @@ pub struct Palette {
     pub ink_2: Color32,
     /// Tertiary text: labels, units, anything supporting.
     pub ink_3: Color32,
+    /// Secondary and tertiary text inside something toned. The design warms or
+    /// reddens the supporting text of a banner rather than leaving it grey
+    /// beside a coloured headline.
+    pub ink_2_warm: Color32,
+    pub ink_3_warm: Color32,
+    pub ink_2_err: Color32,
+    pub ink_3_err: Color32,
     pub accent: Color32,
     pub accent_text: Color32,
     /// Text drawn *on* the accent.
@@ -100,6 +107,10 @@ impl Palette {
         ink: hex(0xf2f2f2),
         ink_2: hex(0xbcbcbc),
         ink_3: hex(0x949494),
+        ink_2_warm: hex(0xc6b6aa),
+        ink_3_warm: hex(0x9e9089),
+        ink_2_err: hex(0xc9b4b1),
+        ink_3_err: hex(0x9d8c8a),
         accent: hex(0xff5a1f),
         accent_text: hex(0xff7a45),
         accent_ink: hex(0x0a0a0a),
@@ -124,10 +135,10 @@ impl Palette {
     /// second palette is what proves the first one is not hard-coded anywhere
     /// else, and because leaving it out would invite exactly that.
     pub const LIGHT: Palette = Palette {
-        page: hex(0xffffff),
+        page: hex(0xe6e6e6),
         bg: hex(0xf2f2f2),
-        panel: hex(0xffffff),
-        panel_2: hex(0xe4e4e4),
+        panel: hex(0xfafafa),
+        panel_2: hex(0xffffff),
         row: hex(0xf2f2f2),
         row_alt: hex(0xe4e4e4),
         row_hover: hex(0xdcdcdc),
@@ -136,9 +147,17 @@ impl Palette {
         ink: hex(0x171717),
         ink_2: hex(0x3e3e3e),
         ink_3: hex(0x5e5e5e),
+        ink_2_warm: hex(0x463c34),
+        ink_3_warm: hex(0x665c53),
+        ink_2_err: hex(0x453a38),
+        ink_3_err: hex(0x655a58),
         accent: hex(0xe8500f),
         accent_text: hex(0x9e3809),
-        accent_ink: hex(0xffffff),
+        // Dark ink on the accent in both themes. The accent is the same orange
+        // in either, and it is light enough that white on it does not read -
+        // which is why the design writes the same value twice rather than
+        // flipping this one with the theme.
+        accent_ink: hex(0x0a0a0a),
         accent_soft: hexa(0xe8500f, 26),
         ok: hex(0x171717),
         warn: hex(0xe8500f),
@@ -194,10 +213,19 @@ pub mod metric {
     pub const ROW: f32 = 36.0;
     /// A heading dividing the list into pending, registered and factory.
     pub const SECTION: f32 = 26.0;
-    /// A control inside a bar: a view tab, a kind chip, a search field.
+    /// A control inside a bar: a kind chip, a search field, `Add files...`.
     pub const CONTROL: f32 = 26.0;
+    /// A control in the install bar, which the design draws two pixels shorter
+    /// than the toolbar's: the view tabs and the overflow.
+    pub const TAB: f32 = 24.0;
+    /// The overflow control, which is wider than it is tall and is the one
+    /// control the design gives both measurements for.
+    pub const OVERFLOW: f32 = 26.0;
     /// The primary action, which is taller than anything beside it.
     pub const ACTION: f32 = 32.0;
+    /// A control drawn as an outline rather than as a fill, which the design
+    /// uses for the one thing a banner offers.
+    pub const OUTLINED: f32 = 28.0;
 
     /// Corner of a control. The design rounds by three, not by six: at these
     /// sizes a six-pixel radius reads as a pill rather than as a soft corner.
@@ -212,6 +240,22 @@ pub mod metric {
     pub const KIND_COLUMN: f32 = 66.0;
     pub const UUID_COLUMN: f32 = 106.0;
     pub const STATUS_COLUMN: f32 = 130.0;
+    /// The row's own controls, at its right end. Reserved whether or not the
+    /// pointer is over the row, because the design hides them rather than
+    /// removing them: a column that appears on hover would move every other
+    /// column under the pointer.
+    pub const ACTIONS_COLUMN: f32 = 84.0;
+    /// The author and the version of a catalog item, which take the place of
+    /// the identity and the status a registered row carries.
+    pub const AUTHOR_COLUMN: f32 = 116.0;
+    pub const VERSION_COLUMN: f32 = 56.0;
+    pub const CATALOG_STATUS_COLUMN: f32 = 142.0;
+    pub const CATALOG_ACTIONS_COLUMN: f32 = 92.0;
+    /// A catalog row carries a description under the name, so it is taller than
+    /// a registered one.
+    pub const CATALOG_ROW: f32 = 48.0;
+    /// The mark beside a banner's headline.
+    pub const DOT: f32 = 6.0;
     /// The search field, measured across the whole box - the glyph, the gap and
     /// the text - because that is what the bundle's is measured across.
     pub const SEARCH_FIELD: f32 = 216.0;

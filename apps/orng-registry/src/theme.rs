@@ -234,6 +234,14 @@ pub mod metric {
     pub const OVERFLOW: f32 = 26.0;
     /// The primary action, which is taller than anything beside it.
     pub const ACTION: f32 = 32.0;
+    /// A control in an empty state. The design draws both of the pair at the
+    /// primary's height, so an empty state does not borrow a bar's 26-tall
+    /// button and stand it beside a 32-tall one.
+    pub const EMPTY_CONTROL: f32 = 32.0;
+    /// From an empty-state control's edge to its label. The action is padded
+    /// wider than the alternative beside it, and the design states both.
+    pub const EMPTY_ACTION_PAD: f32 = 14.0;
+    pub const EMPTY_ALT_PAD: f32 = 12.0;
     /// A control drawn as an outline rather than as a fill, which the design
     /// uses for the one thing a banner offers.
     pub const OUTLINED: f32 = 28.0;

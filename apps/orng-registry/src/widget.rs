@@ -183,6 +183,48 @@ pub fn small_button(ui: &mut Ui, palette: Palette, icon: &str, label: &str) -> R
         .on_hover_cursor(egui::CursorIcon::PointingHand)
 }
 
+/// The pair of controls an empty state offers, which are not a bar's.
+///
+/// `small_button` is a bar control: `metric::CONTROL` (26) tall, in
+/// `font::CHIP`, with the label in `ink`. The design draws both empty-state
+/// controls at the primary's height with the label in `ink_2`, so borrowing
+/// the toolbar's button put a 26-tall control beside a 32-tall one - which is
+/// the part of this that was visible without measuring anything.
+///
+/// Measured off the bundle with the empty state rendered at its own preview
+/// size: the action 14 in from each edge in `font::ACTION`, the alternative 12
+/// in `font::CONTROL`, both 32 tall, 8 apart.
+fn empty_button(
+    ui: &mut Ui,
+    palette: Palette,
+    label: &str,
+    size: f32,
+    pad: f32,
+) -> Response {
+    let button = egui::Button::new(RichText::new(label).font(font::plain(size)).color(palette.ink_2))
+        .stroke(Stroke::NONE)
+        .corner_radius(CornerRadius::same(metric::RADIUS))
+        .min_size(vec2(0.0, metric::EMPTY_CONTROL));
+    ui.scope(|ui| {
+        // The design states the padding across the box, so the height comes
+        // from `min_size` alone and the vertical padding must not add to it.
+        ui.spacing_mut().button_padding = vec2(pad, 0.0);
+        filled_button(ui, palette.btn, palette.btn_hover, button)
+            .on_hover_cursor(egui::CursorIcon::PointingHand)
+    })
+    .inner
+}
+
+/// The empty state's action, where it is not the primary one.
+pub fn empty_action(ui: &mut Ui, palette: Palette, label: &str) -> Response {
+    empty_button(ui, palette, label, font::ACTION, metric::EMPTY_ACTION_PAD)
+}
+
+/// The quieter of the pair, beside the action.
+pub fn empty_alt(ui: &mut Ui, palette: Palette, label: &str) -> Response {
+    empty_button(ui, palette, label, font::CONTROL, metric::EMPTY_ALT_PAD)
+}
+
 /// A stack of lines, centred in the bar it sits in.
 ///
 /// egui places a child `Ui` at the top of what is available, because when it is
@@ -1021,18 +1063,22 @@ fn block(ui: &mut Ui, palette: Palette, empty: &Empty<'_>) -> Pressed {
                     .sum::<f32>()
                     + metric::TOOL_GAP;
                 ui.add_space((ui.available_width() - width) / 2.0);
+                // The design's gap, and the one the centring above assumed.
+                // The style's own is `TIGHT`, so the pair drew six apart while
+                // the block was centred as though it were eight.
+                ui.spacing_mut().item_spacing.x = metric::TOOL_GAP;
                 if let Some(action) = empty.action {
                     let hit = if empty.action_is_primary {
                         primary_button(ui, palette, action, "", true, "").clicked()
                     } else {
-                        small_button(ui, palette, "", action).clicked()
+                        empty_action(ui, palette, action).clicked()
                     };
                     if hit {
                         pressed = Pressed::Action;
                     }
                 }
                 if let Some(alt) = empty.alt
-                    && small_button(ui, palette, "", alt).clicked()
+                    && empty_alt(ui, palette, alt).clicked()
                 {
                     pressed = Pressed::Alt;
                 }
@@ -1525,6 +1571,33 @@ mod tests {
         assert_eq!(edges(columns.version), (494.0, 550.0));
         assert_eq!(edges(columns.status), (562.0, 704.0));
         assert_eq!(edges(columns.actions), (716.0, 808.0));
+    }
+
+    /// The empty state's pair, against the bundle's `EmptyState` rendered at
+    /// its own preview size: both controls 32 tall, 8 apart, the action padded
+    /// 14 and the alternative 12.
+    ///
+    /// The heights are asserted as a relationship rather than as a number,
+    /// because the rule the design is expressing is that the pair matches the
+    /// primary beside it - which is what borrowing the toolbar's 26-tall button
+    /// broke, and what a reader of two equal constants would not see.
+    #[test]
+    fn an_empty_state_offers_its_pair_at_one_height() {
+        assert_eq!(
+            metric::EMPTY_CONTROL,
+            metric::ACTION,
+            "both controls stand at the primary's height"
+        );
+        assert_ne!(
+            metric::EMPTY_CONTROL,
+            metric::CONTROL,
+            "and not at a bar control's, which is what they used to borrow"
+        );
+        assert_eq!(metric::EMPTY_ACTION_PAD, 14.0);
+        assert_eq!(metric::EMPTY_ALT_PAD, 12.0);
+        // The gap the design states, which is the toolbar's rather than the
+        // style's default `TIGHT`.
+        assert_eq!(metric::TOOL_GAP, 8.0);
     }
 
     /// The overflow menu, against the bundle with the menu forced open and

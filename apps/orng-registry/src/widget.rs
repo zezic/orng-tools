@@ -967,6 +967,16 @@ pub fn status_colour(palette: Palette, status: &str) -> Color32 {
     }
 }
 
+/// The ink a row's supporting text is set in, which the design warms while a
+/// panel is open on that row - so a selected row reads as one thing rather than
+/// as an ordinary row with a colour behind it.
+///
+/// Here rather than at the two rows that ask, for the reason the module says:
+/// a screen composes these and does not pick a colour of its own.
+pub fn supporting_ink(palette: Palette, selected: bool) -> Color32 {
+    if selected { palette.ink_3_warm } else { palette.ink_3 }
+}
+
 /// What state the installation's registry is in, as the design colours it.
 pub fn badge_colour(palette: Palette, badge: &str) -> Color32 {
     match badge {

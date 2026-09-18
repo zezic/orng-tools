@@ -1684,10 +1684,7 @@ fn row(
     selected: bool,
     entry: &Registration,
 ) -> egui::Response {
-    // The design warms the row's supporting text when the inspector is about
-    // it, so a selected row reads as one thing rather than as an ordinary row
-    // with a coloured background behind it.
-    let secondary = if selected { palette.ink_3_warm } else { palette.ink_3 };
+    let secondary = widget::supporting_ink(palette, selected);
     widget::row(ui, palette, width, selected, |ui, columns| {
         widget::cell(ui, columns.kind, Align::Min, |ui| {
             widget::kind_label(ui, secondary, entry.kind);
@@ -1863,11 +1860,7 @@ fn published(
             widget::list(ui, |ui| {
                 for entry in &index.items {
                     let selected = open == Some(entry.uuid);
-                    // The design warms a selected row's supporting text, so it
-                    // reads as one thing rather than as an ordinary row with a
-                    // colour behind it.
-                    let secondary =
-                        if selected { palette.ink_3_warm } else { palette.ink_3 };
+                    let secondary = widget::supporting_ink(palette, selected);
                     let row = widget::catalog_row(ui, palette, width, selected, |ui, columns| {
                         widget::cell(ui, columns.kind, Align::Min, |ui| {
                             widget::kind_label(ui, secondary, entry.kind.into());

@@ -83,12 +83,12 @@ pub struct App {
     staged: Vec<Staged>,
     /// A drop being read, off the interface thread.
     reading: Option<Reading>,
-    /// Set while work is in flight, and kept afterwards so the result stays on
-    /// screen until the user does something else.
+    /// Set while work is in flight, and only while it is in flight: the moment
+    /// it reports, what it did becomes an [`Outcome`] and the work is over.
     applying: Option<Applying>,
-    /// Whether the result of the last press has been taken into the session.
-    /// Once, not every frame: re-reading the machine costs seconds.
-    absorbed: bool,
+    /// What the last press came to. Stated as a banner until the user puts it
+    /// away, because nothing else will stop being true and take it off screen.
+    outcome: Option<Outcome>,
     /// The published catalog, once somebody has asked for it. Not fetched on
     /// opening: this application is useful with no network at all, and a window
     /// that reaches for one before being asked is a window that hangs on a
@@ -118,7 +118,7 @@ impl App {
             staged: Vec::new(),
             reading: None,
             applying: None,
-            absorbed: false,
+            outcome: None,
             catalog: None,
         }
     }
@@ -183,29 +183,10 @@ impl App {
         // it: a banner is about the press that is one control below it, and
         // above the list it would push the working area down the window every
         // time a condition appeared.
-        if let Some(blocked) = self.blocking() {
-            // The panel is filled before the banner washes over it. A panel
-            // with no frame of its own shows whatever was behind the window,
-            // and a translucent wash over that is not a colour anybody chose.
-            let mut again = false;
-            egui::Panel::bottom("banner")
-                .frame(egui::Frame::new().fill(self.palette.bg))
-                .show(ui, |ui| {
-                    let banner = widget::Banner {
-                        tone: blocked.tone,
-                        title: blocked.title,
-                        body: &blocked.body,
-                        action: blocked.action,
-                    };
-                    again = widget::banner(ui, self.palette, &banner);
-                });
-            if again {
-                // The condition is about the machine, not about this window, so
-                // the only honest way to answer "has it changed" is to look
-                // again.
-                self.session = Session::read();
-            }
-        }
+        //
+        // One at a time, and what just happened wins. A condition that is still
+        // true will still be true after the result has been put away.
+        self.said(ui);
 
         if self.shows_a_list() {
             egui::Panel::top("toolbar")
@@ -217,6 +198,68 @@ impl App {
         egui::CentralPanel::default()
             .frame(widget::page(self.palette))
             .show(ui, |ui| self.page(ui));
+
+        // Last, and over everything: while a preparation runs the window is
+        // held still, and the list behind it is what the work is being done to.
+        if let Some(applying) = self.applying.as_ref().filter(|a| a.steps.is_some()) {
+            progress(ui, self.palette, applying);
+        }
+    }
+
+    /// The one banner the window is carrying, if it is carrying one.
+    ///
+    /// The panel is filled before the banner washes over it. A panel with no
+    /// frame of its own shows whatever was behind the window, and a translucent
+    /// wash over that is not a colour anybody chose.
+    fn said(&mut self, ui: &mut egui::Ui) {
+        /// Which of the two a banner is about, since what answering it means
+        /// depends on that and not on which control was pressed.
+        enum About {
+            /// Something that has happened and will not un-happen.
+            Outcome,
+            /// Something that is true of the machine and may stop being.
+            Condition,
+        }
+
+        let (about, banner) = match (&self.outcome, self.blocking()) {
+            (Some(outcome), _) => {
+                let (tone, title, body, action) = outcome.banner();
+                (About::Outcome, (tone, title, body, action, true))
+            }
+            (None, Some(blocked)) => (
+                About::Condition,
+                (blocked.tone, blocked.title.to_owned(), blocked.body, blocked.action, false),
+            ),
+            (None, None) => return,
+        };
+        let (tone, title, body, action, dismissible) = banner;
+
+        let mut answered = widget::Answered::Nothing;
+        egui::Panel::bottom("banner")
+            .frame(egui::Frame::new().fill(self.palette.bg))
+            .show(ui, |ui| {
+                let banner =
+                    widget::Banner { tone, title: &title, body: &body, action, dismissible };
+                answered = widget::banner(ui, self.palette, &banner);
+            });
+        if answered == widget::Answered::Nothing {
+            return;
+        }
+
+        match about {
+            About::Outcome => match answered {
+                // The worker's own words, for a bug report.
+                widget::Answered::Action => {
+                    if let Some(Outcome::Failed { why, .. }) = &self.outcome {
+                        ui.ctx().copy_text(why.clone());
+                    }
+                }
+                _ => self.outcome = None,
+            },
+            // The condition is about the machine, not about this window, so the
+            // only honest way to answer "has it changed" is to look again.
+            About::Condition => self.session = Session::read(),
+        }
     }
 }
 
@@ -254,28 +297,41 @@ impl App {
         }
         let Some(applying) = &mut self.applying else { return };
         applying.poll();
-        if self.absorbed {
-            return;
-        }
-        let Some(Ok(entries)) = &applying.outcome else { return };
-        let entries = entries.clone();
+        let Some(result) = &applying.outcome else { return };
+        // Taken once, here, and the work is then over: an `Applying` that has
+        // reported is not work in flight, and leaving it in that field is what
+        // made every screen after a press have to ask whether it had finished.
+        let result = result.clone();
         let prepared = applying.prepared();
-        self.absorbed = true;
+        let written = self.ready().count();
+        self.applying = None;
 
-        // What was written is no longer pending. Held until here rather than
-        // cleared when the press started, so that a failure leaves the same
-        // rows to press again instead of asking for the drop back.
-        self.staged.clear();
-        if prepared {
-            // A preparation changes what is true of the installation: the
-            // archive, the guard, the links. Nothing short of reading it again
-            // answers that.
-            self.session = Session::read();
-        } else if let Session::Found(found) = &mut self.session {
-            // An entry update changes one text file, and the worker answered
-            // with what it wrote. Reading the machine again would cost seconds
-            // to arrive at the value already in hand.
-            found.entries = entries;
+        match result {
+            Ok(entries) => {
+                // What was written is no longer pending. Held until here rather
+                // than cleared when the press started, so that a failure leaves
+                // the same rows to press again instead of asking for the drop
+                // back.
+                self.staged.clear();
+                let in_effect = entries.entries().len();
+                if prepared {
+                    // A preparation changes what is true of the installation:
+                    // the archive, the guard, the links. Nothing short of
+                    // reading it again answers that.
+                    self.session = Session::read();
+                    self.outcome = Some(Outcome::Prepared { entries: in_effect });
+                } else {
+                    if let Session::Found(found) = &mut self.session {
+                        // An entry update changes one text file, and the worker
+                        // answered with what it wrote. Reading the machine
+                        // again would cost seconds to arrive at the value
+                        // already in hand.
+                        found.entries = entries;
+                    }
+                    self.outcome = Some(Outcome::Registered { written });
+                }
+            }
+            Err(why) => self.outcome = Some(Outcome::Failed { prepared, why }),
         }
     }
 
@@ -314,14 +370,16 @@ impl App {
 
     /// Whether the middle region is a list, which is what the toolbar belongs to.
     fn shows_a_list(&self) -> bool {
-        let running = self.applying.as_ref().is_some_and(|a| a.steps.is_some());
         let Session::Found(found) = &self.session else { return false };
         // Nothing to filter is nothing to filter with. The design keeps the
         // toolbar when a filter has narrowed the list to nothing, because that
         // is how the filter gets cleared, and drops it on the onboarding
         // screen, where there is no list behind it.
+        //
+        // Work in flight does not take it away either: the design draws the
+        // preparation over the list rather than instead of it.
         let anything = !found.entries.is_empty() || !self.staged.is_empty();
-        self.view == View::Local && !running && anything
+        self.view == View::Local && anything
     }
 
     /// The rows that are ready to be written.
@@ -391,6 +449,82 @@ struct Blocked {
     title: &'static str,
     body: String,
     action: Option<&'static str>,
+}
+
+/// What a press came to, once it is over.
+///
+/// Held apart from the work itself: work in flight is a dialog the window holds
+/// still for, and a result is a banner it carries on around.
+enum Outcome {
+    /// The installation was prepared, so what it now reads is the whole list
+    /// rather than the few rows this press added.
+    Prepared { entries: usize },
+    /// Entries were written into an installation that was already prepared.
+    Registered { written: usize },
+    Failed {
+        /// Whether this press was preparing the installation, which is what
+        /// decides what it can promise about the state left behind.
+        prepared: bool,
+        /// The worker's own words, which go into a bug report rather than onto
+        /// the screen.
+        why: String,
+    },
+}
+
+impl Outcome {
+    /// The two lines it is stated in, and what can be done about it.
+    fn banner(&self) -> (Tone, String, String, Option<&'static str>) {
+        match self {
+            Outcome::Prepared { entries } => (
+                Tone::Ok,
+                "Start Bitwig Studio. Your devices are in the browser.".to_owned(),
+                format!(
+                    "{} in effect. Descriptions and search keywords were written too, so \
+                     typing a name finds the device.",
+                    counted(*entries)
+                ),
+                None,
+            ),
+            Outcome::Registered { written } => (
+                Tone::Ok,
+                "Restart Bitwig Studio to see your changes.".to_owned(),
+                format!(
+                    "{} registered. Bitwig reads the entry list when it launches, so an open \
+                     Bitwig will not show the change yet.",
+                    counted(*written)
+                ),
+                None,
+            ),
+            // What failed is the headline and the promise is the line under it,
+            // which is the design's order. The worker's own words are behind
+            // the control, because they are for a bug report and not for the
+            // person reading this.
+            Outcome::Failed { prepared: true, .. } => (
+                Tone::Err,
+                "The preparation stopped, and your installation was not changed.".to_owned(),
+                "The patched archive is written beside the original and only moved into place \
+                 once it verifies, so nothing reached the installation."
+                    .to_owned(),
+                Some("Copy details"),
+            ),
+            Outcome::Failed { prepared: false, .. } => (
+                Tone::Err,
+                "Nothing was registered.".to_owned(),
+                "The entry list is written last, so it is unchanged. Any document already \
+                 placed is left where it is, and applying again finishes the job."
+                    .to_owned(),
+                Some("Copy details"),
+            ),
+        }
+    }
+}
+
+/// How many entries a press dealt with, in words rather than as a bare number.
+fn counted(registered: usize) -> String {
+    match registered {
+        1 => "1 entry".to_owned(),
+        many => format!("{many} entries"),
+    }
 }
 
 impl App {
@@ -655,10 +789,6 @@ impl App {
 
     /// The Local view: what is pending, then what is registered.
     fn local(&mut self, ui: &mut egui::Ui) {
-        if let Some(applying) = self.applying.as_ref().filter(|a| a.steps.is_some()) {
-            progress(ui, self.palette, applying);
-            return;
-        }
         let Session::Found(found) = &self.session else { return };
 
         // A dropped document that is already registered updates that entry
@@ -827,26 +957,14 @@ impl App {
             let count = reading.count;
             return (format!("Reading {count} documents"), Tone::Neutral, String::new());
         }
+        // Only while it is in flight. What a press came to is a banner, and the
+        // bar goes back to saying what the next press would do.
         if let Some(applying) = &self.applying {
-            return match (applying.is_running(), applying.stage, &applying.outcome) {
-                (true, Stage::Preparing, _) => {
+            return match applying.stage {
+                Stage::Preparing => {
                     ("Preparing the installation".to_owned(), Tone::Warn, String::new())
                 }
-                (true, Stage::Registering, _) => {
-                    ("Registering".to_owned(), Tone::Warn, String::new())
-                }
-                (false, _, Some(Ok(_))) => (
-                    "Done.".to_owned(),
-                    Tone::Neutral,
-                    "Restart Bitwig Studio to see your changes.".to_owned(),
-                ),
-                // The failure itself is drawn where there is room for it. Here
-                // it only has to stop reading as success.
-                (false, _, _) => (
-                    "Nothing was applied.".to_owned(),
-                    Tone::Err,
-                    "Your installation was not changed.".to_owned(),
-                ),
+                Stage::Registering => ("Registering".to_owned(), Tone::Warn, String::new()),
             };
         }
 
@@ -914,14 +1032,8 @@ impl App {
             }
         };
 
-        if let Some(applying) = &self.applying {
-            if applying.is_running() {
-                widget::primary_button(ui, palette, "Applying", icon::APPLY, false, "In progress");
-                return;
-            }
-            if widget::small_button(ui, palette, icon::APPLY, "Done").clicked() {
-                self.applying = None;
-            }
+        if self.applying.is_some() {
+            widget::primary_button(ui, palette, "Applying", icon::APPLY, false, "In progress");
             return;
         }
 
@@ -984,7 +1096,8 @@ impl App {
                 update.add(registration.clone(), (**document).clone());
             }
         }
-        self.absorbed = false;
+        // What the last press came to is not what this one will come to.
+        self.outcome = None;
         self.applying = Some(Applying::start(work, found.to.clone(), update, ctx.clone()));
     }
 }
@@ -1052,41 +1165,48 @@ fn plural(kind: Kind) -> &'static str {
     }
 }
 
-/// A preparation, step by step.
+/// A preparation, step by step, over the window it is being done to.
 fn progress(ui: &mut egui::Ui, palette: Palette, applying: &Applying) {
-    ui.add_space(metric::PAD);
-    ui.horizontal(|ui| {
-        ui.add_space(metric::PAD);
-        ui.vertical(|ui| {
-            ui.label(
-                RichText::new("Preparing this installation")
-                    .font(font::emphasis(ui.ctx(), font::HEADING))
-                    .color(palette.ink),
-            );
-            ui.add_space(metric::TIGHT);
-            ui.label(
-                RichText::new(
-                    "Nothing in the installation changes until the patched archive verifies.",
-                )
-                .font(font::plain(font::NOTE))
-                .color(palette.ink_3),
-            );
-            ui.add_space(metric::GAP);
+    use crate::work::State;
+    let steps: Vec<widget::StepLine<'_>> = applying
+        .steps
+        .iter()
+        .flatten()
+        .map(|(step, state)| widget::StepLine { label: step_label(*step), state: *state })
+        .collect();
 
-            for (step, state) in applying.steps.iter().flatten() {
-                widget::step_row(ui, palette, step_label(*step), *state);
-            }
+    // Numbered over the steps this plan runs, because a plan that skips one
+    // must not be five of four.
+    let running = steps.len() - steps.iter().filter(|s| s.state == State::NotRun).count();
+    let done = steps.iter().filter(|s| s.state == State::Done).count();
+    let at = steps.iter().position(|s| s.state == State::Running);
+    let step = match at {
+        Some(at) => format!(
+            "Step {} of {running} {} {}",
+            done + 1,
+            widget::SEPARATOR,
+            steps[at].label
+        ),
+        // Between the last step and the end of the entry write there is no step
+        // to name, and the stage is what is left to say.
+        None => match applying.stage {
+            Stage::Preparing => "Working out what has to be done".to_owned(),
+            Stage::Registering => "Registering the entries".to_owned(),
+        },
+    };
 
-            if let Some(Err(why)) = &applying.outcome {
-                ui.add_space(metric::GAP);
-                // The transaction's promise, said plainly. Nothing was restored,
-                // because nothing was touched.
-                widget::failure(ui, palette, "Your installation was not changed.");
-                ui.add_space(metric::TIGHT);
-                ui.label(RichText::new(why).font(font::mono(font::MONO)).color(palette.ink_3));
-            }
-        });
-    });
+    widget::progress_dialog(
+        ui,
+        palette,
+        &widget::Progress {
+            title: "Preparing the installation",
+            step: &step,
+            steps: &steps,
+            note: "Nothing in the installation changes until the patched archive verifies. It \
+                   is written beside the original, and moved into place by a single rename.",
+            through: done as f32 / running.max(1) as f32,
+        },
+    );
 }
 
 /// The wording of each step is the application's, not the library's.

@@ -362,6 +362,8 @@ pub mod icon {
     pub const RESTORE: &str = light::CLOCK_COUNTER_CLOCKWISE;
     pub const ABOUT: &str = light::INFO;
     pub const COPY: &str = light::COPY;
+    /// Put away something that has already happened.
+    pub const DISMISS: &str = light::X;
     /// On the primary action: an arrow when the press leads somewhere, a tick
     /// when it simply does the thing.
     pub const PREPARE: &str = light::ARROW_RIGHT;
@@ -630,6 +632,10 @@ pub fn badge_colour(palette: Palette, badge: &str) -> Color32 {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Tone {
     Neutral,
+    /// Something went as it should. Louder than neutral and quieter than a
+    /// warning: the design says so in the ink rather than in a colour, because
+    /// nothing here needs attention.
+    Ok,
     Warn,
     Err,
 }
@@ -638,6 +644,7 @@ impl Tone {
     pub fn colour(self, palette: Palette) -> Color32 {
         match self {
             Tone::Neutral => palette.ink_2,
+            Tone::Ok => palette.ok,
             Tone::Warn => palette.accent_text,
             Tone::Err => palette.err_text,
         }
@@ -648,7 +655,7 @@ impl Tone {
     /// under an error.
     fn supporting(self, palette: Palette) -> Color32 {
         match self {
-            Tone::Neutral => palette.ink_2,
+            Tone::Neutral | Tone::Ok => palette.ink_2,
             Tone::Warn => palette.ink_2_warm,
             Tone::Err => palette.ink_2_err,
         }
@@ -657,6 +664,7 @@ impl Tone {
     fn wash(self, palette: Palette) -> Color32 {
         match self {
             Tone::Neutral => palette.info_bg,
+            Tone::Ok => palette.ok_bg,
             Tone::Warn => palette.warn_bg,
             Tone::Err => palette.err_bg,
         }
@@ -673,11 +681,23 @@ pub struct Banner<'a> {
     pub title: &'a str,
     pub body: &'a str,
     pub action: Option<&'a str>,
+    /// Whether it can be put away. A condition cannot: it goes when it stops
+    /// being true. What already happened can, and has to be, because nothing
+    /// else will stop being true to take it off the screen.
+    pub dismissible: bool,
 }
 
-/// Draw a banner. Answers whether its action was pressed.
-pub fn banner(ui: &mut Ui, palette: Palette, banner: &Banner<'_>) -> bool {
-    let mut pressed = false;
+/// What was pressed on a banner, if anything was.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Answered {
+    Nothing,
+    Action,
+    Dismissed,
+}
+
+/// Draw a banner, and answer what was pressed on it.
+pub fn banner(ui: &mut Ui, palette: Palette, banner: &Banner<'_>) -> Answered {
+    let mut pressed = Answered::Nothing;
     Frame::new().fill(banner.tone.wash(palette)).inner_margin(Margin::same(metric::PAD as i8)).show(
         ui,
         |ui| {
@@ -699,9 +719,22 @@ pub fn banner(ui: &mut Ui, palette: Palette, banner: &Banner<'_>) -> bool {
                             .color(banner.tone.supporting(palette)),
                     );
                 });
-                if let Some(action) = banner.action {
+                if banner.action.is_some() || banner.dismissible {
                     ui.with_layout(Layout::right_to_left(Align::Min), |ui| {
-                        pressed = outlined_button(ui, banner.tone.colour(palette), action).clicked();
+                        if banner.dismissible {
+                            if dismiss(ui, palette).clicked() {
+                                pressed = Answered::Dismissed;
+                            }
+                            // Only between the two of them. Laid out from the
+                            // right, a gap with nothing after it is a gap that
+                            // moves whatever is before it off the edge.
+                            ui.add_space(metric::TOOL_GAP);
+                        }
+                        if let Some(action) = banner.action
+                            && outlined_button(ui, banner.tone.colour(palette), action).clicked()
+                        {
+                            pressed = Answered::Action;
+                        }
                     });
                 }
             });
@@ -726,6 +759,22 @@ fn dot(ui: &mut Ui, colour: Color32) {
 const DOT_BASELINE: f32 = 11.0;
 /// Between a banner's headline and the line explaining it.
 const BETWEEN_THE_LINES: f32 = 4.0;
+
+/// Put a banner away. A square control at its right end, as the design has it.
+fn dismiss(ui: &mut Ui, palette: Palette) -> Response {
+    let button = egui::Button::new(
+        RichText::new(icon::DISMISS).font(font::icon(ui.ctx(), font::ICON)).color(palette.ink_3),
+    )
+    .stroke(Stroke::NONE)
+    .corner_radius(CornerRadius::same(metric::RADIUS))
+    .min_size(vec2(metric::TAB, metric::TAB));
+    ui.scope(|ui| {
+        ui.spacing_mut().button_padding = egui::Vec2::ZERO;
+        filled_button(ui, Color32::TRANSPARENT, palette.btn_hover, button)
+            .on_hover_cursor(egui::CursorIcon::PointingHand)
+    })
+    .inner
+}
 
 /// A control that carries a tone: an outline and its text in one colour, over
 /// the wash it sits on rather than over a fill of its own.
@@ -975,34 +1024,230 @@ fn corner_marks_of(painter: &egui::Painter, stroke: Stroke, inner: Rect, arm: f3
     }
 }
 
+/// One step of a preparation, as the dialog lists it.
+pub struct StepLine<'a> {
+    pub label: &'a str,
+    pub state: crate::work::State,
+}
+
+/// What a preparation looks like while it is happening.
+///
+/// The design draws this as a dialog over the window rather than as a screen of
+/// its own: the list is still there, the work is not somewhere else, and what
+/// is happening is on top of it and holds everything else still.
+pub struct Progress<'a> {
+    pub title: &'a str,
+    /// Which step of how many, and its name.
+    pub step: &'a str,
+    pub steps: &'a [StepLine<'a>],
+    /// What the user is entitled to know while it runs.
+    pub note: &'a str,
+    /// How far through, from nothing to one.
+    pub through: f32,
+}
+
+/// How wide the dialog is, and how its corners are cut. The design gives this
+/// one a softer corner than a control: it is a surface, not a button.
+const DIALOG_WIDTH: f32 = 436.0;
+const DIALOG_RADIUS: u8 = 8;
+/// The dialog's own padding, which is not the window's: 14 across, and a little
+/// less under a heading than over it.
+const DIALOG_PAD: f32 = 14.0;
+const UNDER_A_HEADING: f32 = 12.0;
+const ABOVE_A_FOOT: f32 = 11.0;
+/// One step's row, and the gaps along it.
+const STEP_ROW: f32 = 27.0;
+const ALONG_A_STEP: f32 = 10.0;
+const STEP_DOT: f32 = 5.0;
+/// Between the heading of the dialog and the line under it.
+const UNDER_A_TITLE: f32 = 2.0;
+/// The bar across the foot, which is a line rather than a trough.
+const PROGRESS_BAR: f32 = 2.0;
+
+pub fn progress_dialog(ui: &mut Ui, palette: Palette, progress: &Progress<'_>) {
+    // Over everything, bars included: the window is holding still, and a scrim
+    // that stopped at the working area would say that the bars are not.
+    let window = ui.ctx().viewport_rect();
+    let layer = egui::LayerId::new(egui::Order::Foreground, egui::Id::new("progress-dialog"));
+    let painter = ui.ctx().layer_painter(layer);
+    painter.rect_filled(window, CornerRadius::ZERO, palette.scrim);
+
+    // The scrim takes the pointer as well as the light. Everything behind it is
+    // still drawn - the work is being done to that list - but a control under a
+    // scrim that still answered would be a window saying one thing and doing
+    // another. Hit testing goes by layer, so a rect on this one absorbs what
+    // would otherwise reach the bars.
+    let mut sink = Ui::new(
+        ui.ctx().clone(),
+        egui::Id::new("progress-dialog-scrim"),
+        egui::UiBuilder::new().layer_id(layer).max_rect(window),
+    );
+    sink.allocate_rect(window, Sense::click_and_drag());
+
+    let contents = |ui: &mut Ui| {
+        ui.spacing_mut().item_spacing.y = 0.0;
+        let rounded = |top: bool| CornerRadius {
+            nw: if top { DIALOG_RADIUS } else { 0 },
+            ne: if top { DIALOG_RADIUS } else { 0 },
+            sw: if top { 0 } else { DIALOG_RADIUS },
+            se: if top { 0 } else { DIALOG_RADIUS },
+        };
+
+        Frame::new()
+            .fill(palette.bg)
+            .corner_radius(rounded(true))
+            .inner_margin(Margin {
+                left: DIALOG_PAD as i8,
+                right: DIALOG_PAD as i8,
+                top: DIALOG_PAD as i8,
+                bottom: UNDER_A_HEADING as i8,
+            })
+            .show(ui, |ui| {
+                ui.set_width(ui.available_width());
+                ui.label(
+                    RichText::new(progress.title)
+                        .font(font::emphasis(ui.ctx(), font::DIALOG_TITLE))
+                        .color(palette.ink),
+                );
+                ui.add_space(UNDER_A_TITLE);
+                ui.label(
+                    RichText::new(progress.step).font(font::plain(font::NOTE)).color(palette.ink_3),
+                );
+            });
+
+        Frame::new()
+            .inner_margin(Margin {
+                left: DIALOG_PAD as i8,
+                right: DIALOG_PAD as i8,
+                top: UNDER_A_HEADING as i8,
+                bottom: DIALOG_PAD as i8,
+            })
+            .show(ui, |ui| {
+                ui.set_width(ui.available_width());
+                for (at, step) in progress.steps.iter().enumerate() {
+                    step_row(ui, palette, at, step);
+                }
+            });
+
+        Frame::new()
+            .inner_margin(Margin {
+                left: DIALOG_PAD as i8,
+                right: DIALOG_PAD as i8,
+                top: 0,
+                bottom: ABOVE_A_FOOT as i8,
+            })
+            .show(ui, |ui| {
+                ui.set_width(ui.available_width());
+                ui.label(
+                    RichText::new(progress.note).font(font::plain(font::NOTE)).color(palette.ink_3),
+                );
+            });
+
+        Frame::new()
+            .fill(palette.bg)
+            .corner_radius(rounded(false))
+            .inner_margin(Margin::symmetric(DIALOG_PAD as i8, UNDER_A_HEADING as i8))
+            .show(ui, |ui| {
+                ui.set_width(ui.available_width());
+                ui.horizontal(|ui| {
+                    ui.spacing_mut().item_spacing.x = 0.0;
+                    let percent = format!("{}%", (progress.through * 100.0).round());
+                    ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                        ui.label(
+                            RichText::new(percent)
+                                .font(font::mono(font::MONO_TIGHT))
+                                .color(palette.ink_3),
+                        );
+                        ui.add_space(ALONG_A_STEP);
+                        let (bar, _) = ui.allocate_exact_size(
+                            vec2(ui.available_width(), PROGRESS_BAR),
+                            Sense::hover(),
+                        );
+                        ui.painter().rect_filled(bar, CornerRadius::ZERO, palette.line);
+                        let mut through = bar;
+                        through.set_right(bar.left() + bar.width() * progress.through);
+                        ui.painter().rect_filled(through, CornerRadius::ZERO, palette.accent);
+                    });
+                });
+            });
+    };
+
+    // As tall as its contents, and centred in the window as a whole rather than
+    // in the working area: it is about the window, and the bars are behind the
+    // same scrim.
+    let mut probe = Ui::new(
+        ui.ctx().clone(),
+        egui::Id::new("progress-dialog-measure"),
+        egui::UiBuilder::new().sizing_pass().invisible().max_rect(Rect::from_min_size(
+            window.min,
+            vec2(DIALOG_WIDTH, window.height()),
+        )),
+    );
+    contents(&mut probe);
+
+    let rect =
+        Rect::from_center_size(window.center(), vec2(DIALOG_WIDTH, probe.min_rect().height()));
+    painter.rect_filled(rect, CornerRadius::same(DIALOG_RADIUS), palette.panel_2);
+    let mut dialog = Ui::new(
+        ui.ctx().clone(),
+        egui::Id::new("progress-dialog-contents"),
+        egui::UiBuilder::new().layer_id(layer).max_rect(rect),
+    );
+    contents(&mut dialog);
+}
+
 /// One step of a preparation, as a row of the progress list.
 ///
 /// Every step is drawn whether or not this plan runs it. A step that vanished
 /// would change the count under a reader who is watching it move, and "not run"
-/// is a thing they need to be able to see afterwards.
-pub fn step_row(ui: &mut Ui, palette: Palette, label: &str, state: crate::work::State) {
+/// is a thing they need to be able to see afterwards - which is also why a
+/// skipped step keeps its place and loses only its number.
+fn step_row(ui: &mut Ui, palette: Palette, at: usize, step: &StepLine<'_>) {
     use crate::work::State;
-    let (mark, colour) = match state {
-        State::Waiting => ("   ", palette.ink_3),
-        State::NotRun => ("  -", palette.ink_3),
-        State::Running => ("  >", palette.accent_text),
-        State::Done => ("  +", palette.ink_2),
-        State::Failed => ("  x", palette.err_text),
+    // The design says each state four times over - the number, the mark, the
+    // label and the word at the end - so they are decided in one place.
+    let (mark, number_ink, label_ink, meta) = match step.state {
+        State::Waiting => (None, palette.ink_3, palette.ink_3, ""),
+        State::NotRun => (None, palette.ink_3, palette.ink_3, "not run"),
+        State::Running => (Some(palette.accent), palette.accent_text, palette.ink, ""),
+        State::Done => (Some(palette.ink_2), palette.ink_3, palette.ink_2, "done"),
+        State::Failed => (Some(palette.err), palette.err_text, palette.err_text, "failed"),
     };
-    ui.horizontal(|ui| {
-        ui.label(RichText::new(mark).font(font::mono(font::MONO)).color(colour));
-        ui.label(RichText::new(label).font(font::plain(font::CONTROL)).color(colour));
-        if state == State::NotRun {
-            ui.label(RichText::new("not run").font(font::plain(font::NOTE)).color(palette.ink_3));
-        }
-    });
-}
+    let number =
+        if step.state == State::NotRun { "-".to_owned() } else { (at + 1).to_string() };
+    let emphasis = step.state == State::Running;
 
-/// A block of text explaining a failure, in the tone a failure calls for.
-pub fn failure(ui: &mut Ui, palette: Palette, why: &str) {
-    ui.label(
-        RichText::new(why).font(font::emphasis(ui.ctx(), font::CONTROL)).color(palette.err_text),
+    let (rect, _) = ui.allocate_exact_size(vec2(ui.available_width(), STEP_ROW), Sense::hover());
+    let mut line = ui.new_child(
+        egui::UiBuilder::new().max_rect(rect).layout(Layout::left_to_right(Align::Center)),
     );
+    line.spacing_mut().item_spacing.x = 0.0;
+    line.label(RichText::new(number).font(font::mono(font::MONO_TIGHT)).color(number_ink));
+    line.add_space(ALONG_A_STEP);
+
+    // The mark is a shape and not a character, so a step that has not been
+    // reached leaves a hole the same size rather than shifting its label.
+    let (dot, _) = line.allocate_exact_size(vec2(STEP_DOT, STEP_DOT), Sense::hover());
+    if let Some(colour) = mark {
+        line.painter().circle_filled(dot.center(), STEP_DOT / 2.0, colour);
+    }
+    line.add_space(ALONG_A_STEP);
+
+    let label = RichText::new(step.label)
+        .font(if emphasis {
+            font::emphasis(line.ctx(), font::CONTROL)
+        } else {
+            font::plain(font::CONTROL)
+        })
+        .color(label_ink);
+    line.with_layout(Layout::right_to_left(Align::Center), |ui| {
+        if !meta.is_empty() {
+            ui.label(RichText::new(meta).font(font::mono(font::MONO_TIGHT)).color(palette.ink_3));
+        }
+        ui.with_layout(Layout::left_to_right(Align::Center), |ui| {
+            ui.add(egui::Label::new(label).truncate());
+        });
+    });
 }
 
 /// How wide the list of files being dropped is. Fixed, because it is what

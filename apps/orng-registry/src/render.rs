@@ -437,6 +437,32 @@ fn the_filters_match_nothing() {
     look(&mut harness, "no-match");
 }
 
+/// What a press leaves behind. The dialog is gone by then - the work is over -
+/// and what happened is stated above the action bar until it is put away.
+///
+/// The entries-only half of a press, on purpose: a finished *preparation*
+/// re-reads the machine, and a picture of this machine is not one any other
+/// machine can check.
+#[test]
+fn entries_that_were_written() {
+    let root = fixture("registered");
+    let to = destination(&root);
+    let entries = entries();
+    let staged = dropped(&root, &to, &entries);
+    let session = found_with(&root, Helper::Present, GuardState::Disarmed, entries.clone());
+
+    let mut session = Some(session);
+    let mut staged = Some(staged);
+    let mut applying = Some(Applying::frozen(None, Stage::Registering, Some(Ok(entries))));
+    let mut harness = Harness::builder().with_size(SIZE).build_eframe(move |cc| {
+        let mut app = App::with(&cc.egui_ctx, session.take().expect("built once"));
+        app.set_staged(staged.take().expect("built once"));
+        app.set_applying(applying.take().expect("built once"));
+        app
+    });
+    look(&mut harness, "registered");
+}
+
 /// The everyday state: pending work pinned above what is registered, with each
 /// of the three answers a drop can get.
 #[test]

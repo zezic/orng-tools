@@ -24,11 +24,13 @@
 pub mod anchors;
 pub mod entries;
 pub mod guard;
+mod section_key;
 
 pub use anchors::{Binding, BuildId, EntitlementBinding, RegistryBinding};
 pub use bitwig_document::BitwigVersion;
 pub use entries::{Entry, read_entries};
 pub use guard::GuardState;
+pub use section_key::section_key;
 
 /// Something resolution looks for. Naming the failure is the point: a build that
 /// changed shape has to be reported, never guessed at.
@@ -68,6 +70,12 @@ pub enum Error {
     Ambiguous { anchor: Anchor, found: usize },
     #[error(transparent)]
     Classfile(#[from] bitwig_classfile::Error),
+    #[error("io error on {path}: {source}")]
+    Io { path: String, source: std::io::Error },
+    /// Never names a candidate and never carries one. What went wrong is the
+    /// count and the reason; the material is not part of either.
+    #[error("no section key in this build: {why} ({tried} candidate(s) tried)")]
+    NoSectionKey { tried: usize, why: &'static str },
 }
 
 pub type Result<T> = std::result::Result<T, Error>;

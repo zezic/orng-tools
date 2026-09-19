@@ -14,10 +14,14 @@
 //! The two paths are the awkward pair and are here on purpose. An installation
 //! can be moved, replaced by a Bitwig update or thrown away, so a remembered
 //! root is a claim that may have stopped being true - which is why
-//! [`Settings::install`] is checked when it is used rather than when it is read,
-//! and why discovery is what happens when it does not resolve. What is
-//! remembered is that the user said *where to look*, and that outlives any
-//! particular directory being there.
+//! [`Settings::install`] is checked when it is used rather than when it is read.
+//! What is remembered is that the user said *where to look*, and that outlives
+//! any particular directory being there.
+//!
+//! The check is deliberately only that something is still there. Whether what is
+//! there is an installation is [`Session::read`](crate::session::Session::read)'s
+//! question, and it answers a directory that is not one by naming it rather than
+//! by discovering a different one.
 //!
 //! Written only when something changes, which is the only time there is
 //! anything to write.
@@ -128,10 +132,17 @@ impl Settings {
 
     /// The installation to open, given what the user chose and what is there.
     ///
-    /// A remembered root that no longer holds an installation falls back to
-    /// discovery rather than to an error. Bitwig updates in place and people
-    /// move applications, and the honest reading of a stored path that has
-    /// stopped resolving is "look again", not "refuse".
+    /// The filter is whether the directory is still there at all, and nothing
+    /// more. A root the user pointed at and then deleted or unmounted is `None`,
+    /// which is discovery: there is no folder left to describe, so looking again
+    /// is the only answer available.
+    ///
+    /// A directory that *is* there is handed on whether or not it holds an
+    /// installation, because the two answers belong apart. Reading the folder is
+    /// [`Session::read`](crate::session::Session::read)'s job, and when it finds
+    /// nothing it says so against that folder rather than quietly opening
+    /// another one - a window that answered with a different installation than
+    /// the one on record would be describing the wrong machine.
     pub fn installation(&self) -> Option<&Path> {
         self.install.as_deref().filter(|root| root.is_dir())
     }
@@ -253,10 +264,15 @@ mod tests {
         assert!(settings.installation().is_none());
     }
 
-    /// And one that is there is used, rather than discovery running anyway.
+    /// And a directory that is there is handed on even though it holds no
+    /// installation, which is the half the wording used to get wrong. Discovery
+    /// must not run here: the session reads this folder, finds nothing and says
+    /// so against it, and quietly opening some other installation instead would
+    /// describe a machine the user never pointed at.
     #[test]
-    fn a_stored_path_that_is_there_is_what_gets_opened() {
+    fn a_stored_path_that_is_there_is_handed_on_unexamined() {
         let root = std::env::temp_dir();
+        assert!(!root.join("bitwig.jar").exists(), "the temp dir is not an installation");
         let settings = Settings { install: Some(root.clone()), ..Settings::default() };
         assert_eq!(settings.installation(), Some(root.as_path()));
     }

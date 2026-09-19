@@ -223,12 +223,25 @@ next reader will see `\u{b7}` and wonder.
 - **The row actions and a catalog row's status and `Install`.** The columns are
   reserved at the design's widths and left empty, because the design reserves them
   too: it hides those controls off hover rather than removing them.
+- **The catalog detail's footer** - `Remove` and the primary control,
+  `CatalogDetail.dc.html:89-98`. Both are behind `sc-if` in the bundle, so a panel
+  without the bar is a shape it already draws. Installing from the catalog is not
+  built, and removal is not built, so there is nothing to put in either slot.
+- **`Remove entry` in the inspector** - `Inspector.dc.html:116`, the one action in
+  that list the bundle draws unconditionally. It waits on the same removal work as
+  the footer above. The two actions beside it are conditional in the bundle, so the
+  group is drawn without this one rather than with it dead.
 
 ### 4. 13.5px is tracked two ways, and only one of them can be drawn
 
-For the designer. The bundle sets 13.5px/600 at `-0.015em` in `InstallBar.dc.html` and at
-`-0.02em` in all three screen headers - `SettingsScreen`, `RestoreScreen`, `AboutScreen`.
-Nothing else in the bundle uses 13.5.
+For the designer. The bundle sets 13.5px/600 at five places, split two ways. At
+`-0.015em`: `InstallBar.dc.html:29`, the bar's own title, and `ORNG Registry.dc.html:90`,
+the "No installation selected" title the bar draws in its place. At `-0.02em`: all three
+screen headers - `SettingsScreen.dc.html:30`, `RestoreScreen.dc.html:30`,
+`AboutScreen.dc.html:30`. Nothing in the bundle uses 13.5 at any other tracking.
+
+The split is exactly bar against screen, which is what makes it look deliberate rather
+than a slip in one file.
 
 `theme::font::tracking` answers from the face and the size, which is the whole reason no
 call site can lose the tracking, and those are identical in both cases. So the derived

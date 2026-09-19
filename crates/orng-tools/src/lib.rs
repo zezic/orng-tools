@@ -123,17 +123,24 @@ impl Destination {
     /// Read this machine: the installation, the user library and this project's
     /// own directory, all where the platform puts them.
     pub fn discover(placement: Strategy) -> Result<Self> {
-        Self::at(Installation::discover()?, placement)
+        Self::at(Installation::discover()?, UserLibrary::discover()?, placement)
     }
 
-    /// The same, against an installation the user has pointed at.
-    pub fn at(install: Installation, placement: Strategy) -> Result<Self> {
-        Ok(Destination {
-            install,
-            library: UserLibrary::discover()?,
-            home: OrngHome::discover()?,
-            placement,
-        })
+    /// The same, against an installation and a library the caller has already
+    /// resolved.
+    ///
+    /// **Both are taken rather than discovered**, because either can be a
+    /// setting: a user who keeps their content somewhere other than the
+    /// platform's default has said so, and discovery is the answer only where
+    /// they have not. This project's own directory is not taken, and cannot be:
+    /// the class injected into the installation joins `user.home` with a fixed
+    /// name in one line and has no way to be told anything else.
+    pub fn at(
+        install: Installation,
+        library: UserLibrary,
+        placement: Strategy,
+    ) -> Result<Self> {
+        Ok(Destination { install, library, home: OrngHome::discover()?, placement })
     }
 }
 

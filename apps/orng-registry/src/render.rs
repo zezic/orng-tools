@@ -19,6 +19,7 @@ use orng_tools::{
 
 use crate::app::{App, View};
 use crate::session::{Found, Session};
+use crate::settings::{Appearance, Settings};
 use crate::catalog::Fetching;
 use crate::staging::{self, Staged};
 use crate::theme::metric;
@@ -104,7 +105,13 @@ fn destination(fixture: &std::path::Path) -> Destination {
     Destination {
         install: orng_tools::testing::install(&install_root(fixture)),
         library: UserLibrary::at(&fixture.join("Library")),
-        home: OrngHome::at(fixture),
+        // Under the fixture rather than *at* it, and that matters now that a
+        // screen draws these paths: Settings writes a path under the user's home
+        // as `~/...`, so a home that was also the installation's parent would draw
+        // `~/Bitwig Studio.app` and the picture would record a shape no real
+        // machine has. With the home one level in, the entry list and the backups
+        // come out as the design draws them and the installation comes out whole.
+        home: OrngHome::at(&fixture.join("home")),
         placement: Strategy::Link,
     }
 }
@@ -214,6 +221,15 @@ fn look_while_dragging<S>(harness: &mut Harness<'_, S>, name: &str) {
 /// which takes the pass after the one that installed it.
 const SETTLING_PASSES: usize = 3;
 
+/// A palette asked for by name, which is what a fixture wants.
+///
+/// Never [`Appearance::System`]: a picture drawn in whatever the runner's desktop
+/// happens to be set to is a picture two machines disagree about, and the whole
+/// point of these is that they do not.
+fn appearance(dark: bool) -> Appearance {
+    if dark { Appearance::Dark } else { Appearance::Light }
+}
+
 fn compare<S>(harness: &mut Harness<'_, S>, name: &str) {
     let skipping = std::env::var_os("ORNG_SKIP_RENDER_SNAPSHOTS")
         .is_some_and(|value| !value.is_empty());
@@ -301,7 +317,7 @@ fn shot(name: &str, session: Session, view: View, dark: bool) {
     let mut session = Some(session);
     let mut harness = Harness::builder().with_size(SIZE).build_eframe(move |cc| {
         let mut app = App::with(&cc.egui_ctx, session.take().expect("built once"));
-        app.set_theme(dark, &cc.egui_ctx);
+        app.set_appearance(appearance(dark), &cc.egui_ctx);
         app.show_view(view);
         app
     });
@@ -823,7 +839,7 @@ fn shot_inspector(name: &str, dark: bool) {
     let mut session = Some(session);
     let mut harness = Harness::builder().with_size(SIZE).build_eframe(move |cc| {
         let mut app = App::with(&cc.egui_ctx, session.take().expect("built once"));
-        app.set_theme(dark, &cc.egui_ctx);
+        app.set_appearance(appearance(dark), &cc.egui_ctx);
         app.set_inspecting(VOLSHAPER.parse().expect("a sample identity"));
         app
     });
@@ -935,6 +951,149 @@ fn a_word_typed_into_the_inspector_becomes_a_keyword() {
         .max_by(|a, b| a.rect().top().total_cmp(&b.rect().top()))
         .expect("the field went away");
     assert!(still.is_focused(), "Enter dropped the user out of the list they were writing");
+}
+
+/// The Settings screen, on the installation the rest of these are drawn against.
+///
+/// **A full-window surface**, so there is no install bar, no toolbar and no
+/// action bar in this picture - which is the thing to check first, because
+/// drawing it as a panel over the list would look nearly right.
+#[test]
+fn the_settings_screen() {
+    shot_settings("settings", true, Settings::default());
+}
+
+/// The same screen in light.
+///
+/// Worth a second picture here more than anywhere else: this screen is what makes
+/// the light palette reachable at all. Until it existed, light was drawn only by
+/// the render tests, and a palette nobody can select is a palette nobody checks.
+#[test]
+fn the_settings_screen_in_light() {
+    shot_settings("settings-light", false, Settings::default());
+}
+
+/// Every toned control in its other state: the second placement chosen, and the
+/// delete-file default on.
+///
+/// The two above draw the first choice selected and the checkbox clear, so
+/// between them they never show the accent wash on a choice, a filled radio below
+/// an empty one, a checked mark, or either warmed sentence. The design states all
+/// five separately and this is the only picture of them.
+#[test]
+fn the_other_half_of_every_settings_control() {
+    let settings = Settings {
+        placement: Strategy::Copy,
+        delete_file: true,
+        ..Settings::default()
+    };
+    shot_settings("settings-chosen", true, settings);
+}
+
+fn shot_settings(name: &str, dark: bool, settings: Settings) {
+    let root = fixture(name);
+    let session = found(&root, Helper::Present, GuardState::Disarmed);
+    let mut session = Some(session);
+    // The palette goes in with the rest of the preferences rather than through
+    // `set_appearance` beside them - which is what the window actually does, and
+    // what the first attempt at this got wrong: the setter ran first, the
+    // preferences replaced everything it had set, and `settings-light.png` came
+    // out in dark with a passing test beside it.
+    let mut settings = Some(Settings { appearance: appearance(dark), ..settings });
+    let mut harness = Harness::builder().with_size(SIZE).build_eframe(move |cc| {
+        let mut app = App::with(&cc.egui_ctx, session.take().expect("built once"));
+        app.set_settings(settings.take().expect("built once"));
+        app.show_settings();
+        app
+    });
+    look(&mut harness, name);
+}
+
+/// The overflow opens Settings, and Settings goes back.
+///
+/// The class of fault a picture structurally cannot catch, and the one this
+/// application has already had twice: the overflow menu was drawn correctly and
+/// no press opened it, and a row's name could not be clicked while the empty half
+/// of the row could. A screen that only `show_settings` could reach would be the
+/// same thing with three snapshots to vouch for it.
+///
+/// Reached by the label a user aims at, and the swap is asserted through the
+/// install bar rather than through a rectangle: the screen replaces that bar, so
+/// the build revision beside the installation's name is on screen while the list
+/// is and gone while Settings is.
+#[test]
+fn the_overflow_opens_settings_and_settings_goes_back() {
+    let root = fixture("settings-opening");
+    let session = found(&root, Helper::Present, GuardState::Disarmed);
+    let mut session = Some(session);
+    let mut harness = Harness::builder().with_size(SIZE).build_eframe(move |cc| {
+        App::with(&cc.egui_ctx, session.take().expect("built once"))
+    });
+    harness.run();
+
+    let revision = "94a90411";
+    assert!(harness.query_by_label(revision).is_some(), "the install bar is not drawn");
+
+    harness.get_by_label(crate::widget::icon::OVERFLOW).click();
+    harness.run();
+    harness.get_by_label_contains("Settings").click();
+    harness.run();
+
+    assert!(
+        harness.query_by_label_contains("Document placement").is_some(),
+        "the overflow's Settings item did not open the screen"
+    );
+    assert!(
+        harness.query_by_label(revision).is_none(),
+        "Settings is open and the install bar is still drawn - it is a panel, not a screen"
+    );
+    // The column is taller than the window gives it, in the bundle as well as
+    // here, so the last two groups are below the fold and no picture of them
+    // exists. Asserted rather than left to a snapshot for exactly that reason.
+    assert!(
+        harness.query_by_label_contains("Copy report").is_some(),
+        "the diagnostics group was not laid out"
+    );
+    assert!(
+        harness.query_by_label_contains("About ORNG Registry").is_some(),
+        "the row at the foot of the screen was not laid out"
+    );
+
+    // And the way out is labelled with the view it goes back to.
+    harness.get_by_label_contains("Local").click();
+    harness.run();
+    assert!(
+        harness.query_by_label(revision).is_some(),
+        "the screen's own control did not go back to the list"
+    );
+}
+
+/// Choosing a placement in Settings reaches the destination every write is handed.
+///
+/// Not a picture: what this asserts is that a radio button changes where a
+/// document would go, and the only honest place to read that is the `Destination`
+/// the worker is given. A screen whose controls moved nothing would render
+/// identically.
+#[test]
+fn choosing_a_placement_changes_where_a_document_would_go() {
+    let root = fixture("settings-placement");
+    let session = found(&root, Helper::Present, GuardState::Disarmed);
+    let mut session = Some(session);
+    let mut harness = Harness::builder().with_size(SIZE).build_eframe(move |cc| {
+        let mut app = App::with(&cc.egui_ctx, session.take().expect("built once"));
+        app.show_settings();
+        app
+    });
+    harness.run();
+    assert_eq!(harness.state().placement(), Some(Strategy::Link), "not the default placement");
+
+    harness.get_by_label_contains("Copy documents into the installation").click();
+    harness.run();
+    assert_eq!(
+        harness.state().placement(),
+        Some(Strategy::Copy),
+        "the choice was made and the destination still says otherwise"
+    );
 }
 
 /// An index that did not verify. Nothing is listed, and the reason is shown.

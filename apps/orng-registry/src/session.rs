@@ -4,9 +4,17 @@
 //! What the application knows about this machine.
 //!
 //! Read once on opening and again whenever something has been done that could
-//! change it. Nothing here is remembered across runs: an installation can be
+//! change it. **Nothing here is remembered across runs**: an installation can be
 //! replaced by a Bitwig update, prepared by an older build of this app, or moved
-//! entirely, so every answer is taken from disk rather than from a setting.
+//! entirely, so every answer is taken from disk rather than carried over.
+//!
+//! What the user *chose* is the other thing, and it does persist - see
+//! [`Settings`]. The two meet in one place, here, and only in one direction:
+//! the preferences say where to look and which strategy is in force, and
+//! everything that follows is read off the machine. A preference is never
+//! evidence about what is there. A stored installation root that has stopped
+//! resolving falls back to discovery rather than to a stale answer, which is
+//! [`Settings::installation`]'s job and not this module's.
 //!
 //! The shape is deliberate. Everything that only exists when an installation was
 //! found lives inside [`Session::Found`], so no screen can ask for an entry list
@@ -15,15 +23,10 @@
 
 use orng_tools::{
     Condition, Destination, GuardState, Helper, InstallError, Installation, Manifest, RunState,
-    Strategy, prepare, running_state,
+    UserLibrary, prepare, running_state,
 };
 
-/// Where documents go until there is a setting for it.
-///
-/// The design's default, and the one that survives a Bitwig update: documents
-/// stay in the user library and the installation's folders are linked to it, so
-/// an update costs one preparation rather than the documents.
-const PLACEMENT: Strategy = Strategy::Link;
+use crate::settings::Settings;
 
 /// Everything the interface draws from.
 #[derive(Debug)]
@@ -53,17 +56,38 @@ pub struct Found {
 }
 
 impl Session {
-    /// Read the machine.
-    pub fn read() -> Session {
-        let install = match Installation::discover() {
-            Ok(install) => install,
-            Err(e) => return Session::NoInstallation { searched: searched_in(&e) },
+    /// Read the machine, at whichever installation the preferences point to.
+    ///
+    /// The stored root first, when there still is one, and discovery otherwise.
+    /// A root the user chose is not re-derived every launch: they said where to
+    /// look precisely because looking gives the wrong answer on their machine.
+    pub fn read(settings: &Settings) -> Session {
+        let install = match settings.installation() {
+            Some(root) => match Installation::at(root) {
+                Ok(install) => install,
+                // A folder the user insisted on and that no longer holds an
+                // installation. Said against that folder rather than quietly
+                // discovering another one, because a window that answered with
+                // a different installation than the one on record would be
+                // describing the wrong machine. `Reset to auto-detected` in
+                // Settings is the way back.
+                Err(e) => {
+                    return Session::Unreadable {
+                        root: root.display().to_string(),
+                        why: e.to_string(),
+                    };
+                }
+            },
+            None => match Installation::discover() {
+                Ok(install) => install,
+                Err(e) => return Session::NoInstallation { searched: searched_in(&e) },
+            },
         };
-        Session::at(install)
+        Session::at(install, settings)
     }
 
-    /// Read a specific installation, for when the user has pointed at one.
-    pub fn at(install: Installation) -> Session {
+    /// Read a specific installation, for when the user has just pointed at one.
+    pub fn at(install: Installation, settings: &Settings) -> Session {
         let root = install.root().display().to_string();
 
         // The condition is read before anything else is offered, because every
@@ -73,7 +97,17 @@ impl Session {
             Err(e) => return Session::Unreadable { root, why: e.to_string() },
         };
 
-        let to = match Destination::at(install, PLACEMENT) {
+        // The library the user chose, or the platform's own. Resolved here and
+        // handed over rather than discovered further in, so that one answer is
+        // what every write uses.
+        let library = match &settings.library {
+            Some(root) => UserLibrary::at(root),
+            None => match UserLibrary::discover() {
+                Ok(library) => library,
+                Err(e) => return Session::Unreadable { root, why: e.to_string() },
+            },
+        };
+        let to = match Destination::at(install, library, settings.placement) {
             Ok(to) => to,
             Err(e) => return Session::Unreadable { root, why: e.to_string() },
         };
@@ -210,7 +244,7 @@ mod tests {
                 install: orng_tools::testing::install(&temp.join("Bitwig Studio.app")),
                 library: orng_tools::UserLibrary::at(&temp.join("Library")),
                 home: orng_tools::OrngHome::at(temp),
-                placement: PLACEMENT,
+                placement: Settings::default().placement,
             },
             condition: condition(guard, helper),
             running: RunState::Clear,

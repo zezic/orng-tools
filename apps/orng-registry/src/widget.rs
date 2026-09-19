@@ -42,6 +42,17 @@ pub fn page(palette: Palette) -> Frame {
     Frame::new().fill(palette.row).inner_margin(Margin::ZERO)
 }
 
+/// The frame behind a full-window screen.
+///
+/// The background colour rather than the list's row colour, because a screen is
+/// not a list: the design draws Settings, Restore and About on `--bg` and gives
+/// each a header of its own, which is the same statement it makes by separating
+/// the bars from the working area by colour. No margin, because the screen's own
+/// body states the padding the design gives it.
+pub fn screen(palette: Palette) -> Frame {
+    Frame::new().fill(palette.bg).inner_margin(Margin::ZERO)
+}
+
 /// One of the two top-level views.
 ///
 /// Drawn as a chip that fills when it is the current view, which is what the
@@ -604,6 +615,29 @@ pub mod icon {
     /// The item that takes a superseded one's place. The same glyph as
     /// `PREPARE` and a different idea, so it is named again.
     pub const REPLACEMENT: &str = light::ARROW_RIGHT;
+    /// Out of a full-window screen, back to the view it was opened from.
+    pub const BACK: &str = light::ARROW_LEFT;
+    /// On to another one. The mark on a row that leads somewhere, which is not
+    /// the same idea as the arrow on the primary action.
+    pub const ONWARD: &str = light::CARET_RIGHT;
+    /// Choose a directory. The same glyph as `CHANGE_INSTALL` and `REVEAL`, and
+    /// a third idea: this one is a setting rather than a session or a file.
+    pub const BROWSE: &str = light::FOLDER_OPEN;
+    /// Put a setting back to whatever was auto-detected.
+    pub const RESET: &str = light::ARROW_COUNTER_CLOCKWISE;
+    /// One of a set of choices, exactly one of which is in force.
+    pub const CHOSEN: &str = light::RADIO_BUTTON;
+    pub const UNCHOSEN: &str = light::CIRCLE;
+    /// Something that is on or off by itself.
+    pub const CHECKED: &str = light::CHECK_SQUARE;
+    pub const UNCHECKED: &str = light::SQUARE;
+    /// Take the diagnostics report away to put in a bug report. Not `COPY`,
+    /// which copies one value: this one copies a page.
+    pub const COPY_REPORT: &str = light::CLIPBOARD_TEXT;
+    /// The three appearances, in the order the switch draws them.
+    pub const FOLLOW_SYSTEM: &str = light::DESKTOP;
+    pub const LIGHT: &str = light::SUN;
+    pub const DARK: &str = light::MOON;
 }
 
 /// One line of the overflow menu.
@@ -1232,8 +1266,17 @@ fn panel_body(ui: &mut Ui, contents: impl FnOnce(&mut Ui)) {
     });
 }
 
-/// The heading over a field or a fact, with the air the design puts under it.
-fn label_above(ui: &mut Ui, palette: Palette, label: &str, gap: f32) {
+/// The heading over a field, a fact or a group of settings, with the air the
+/// design puts under it.
+///
+/// Public because the Settings screen repeats it five times and is drawn from
+/// `app.rs`, on the other side of this module. The two beside it -
+/// [`one_line_field`] and [`footnote`] - looked like the same case and are not:
+/// Settings' path boxes are monospaced and four pixels shorter, and its
+/// explanatory sentences are 10.5 on the design's own leading where a footnote is
+/// 10 on none. Both were measured rather than assumed, and both got their own
+/// shape: [`path_field`] and [`font::explained`].
+pub fn label_above(ui: &mut Ui, palette: Palette, label: &str, gap: f32) {
     ui.label(font::run(label, font::emphasis(ui.ctx(), font::NOTE)).color(palette.ink_2));
     ui.add_space(gap);
 }
@@ -1417,6 +1460,9 @@ fn keyword(ui: &mut Ui, palette: Palette, word: &str, removable: bool) -> bool {
 const REMOVE_KEYWORD: &str = "\u{d7}";
 
 /// The surface a field is written on.
+///
+/// The margin is the caller's because every field the design draws states its
+/// own, and the fill and the four-pixel corner are what they all share.
 fn field_frame(palette: Palette, margin: Margin) -> Frame {
     Frame::new()
         .fill(palette.field)
@@ -1803,6 +1849,540 @@ fn superseded(ui: &mut Ui, palette: Palette, replacement: &str) -> bool {
             });
         });
     go
+}
+
+/// The header a full-window screen wears: the way back, what this screen is,
+/// and nothing else.
+///
+/// **A screen is not a panel.** The three surfaces behind the overflow are
+/// `width:100%; height:100%` on the page colour with a header of their own, so
+/// this stands in for the install bar rather than sitting under it - which is why
+/// it is two pixels taller than that bar and carries no path, no badge and no
+/// view switch.
+///
+/// `from` is the view the screen was opened out of, and it is on the control
+/// rather than beside it: the design labels the way back with where it goes.
+///
+/// Answers whether that control was pressed.
+pub fn screen_header(
+    ui: &mut Ui,
+    palette: Palette,
+    from: &str,
+    glyph: &str,
+    title: &str,
+) -> Response {
+    let (rect, _) = ui.allocate_exact_size(
+        vec2(ui.available_width(), metric::SCREEN_HEADER),
+        Sense::hover(),
+    );
+    ui.painter().rect_filled(rect, CornerRadius::ZERO, palette.panel);
+
+    let mut line = ui.new_child(
+        egui::UiBuilder::new()
+            .max_rect(rect.shrink2(vec2(metric::PAD, 0.0)))
+            .layout(Layout::left_to_right(Align::Center)),
+    );
+    // The design states every gap along this header, and they are all the same
+    // nine. egui's own six between widgets would be a tenth of a bar's width of
+    // air nobody asked for, spread over four gaps.
+    line.spacing_mut().item_spacing.x = 0.0;
+
+    let back = back_control(&mut line, palette, from);
+    line.add_space(metric::SCREEN_HEADER_GAP);
+    upright_rule(&mut line, palette);
+    line.add_space(metric::SCREEN_HEADER_GAP);
+    line.label(font::run(glyph, font::icon(line.ctx(), font::ICON)).color(palette.ink_2));
+    line.add_space(metric::SCREEN_HEADER_GAP);
+    // The design tracks 13.5px at -0.02em here and at -0.015em in the install
+    // bar, and `font::tracking` answers from the face and the size - which are
+    // the same in both. The derived -0.015 is what this draws: the difference is
+    // 0.0675 of a pixel a character, which is half a pixel across the word
+    // `Settings` and under one across the longest title there is. Raised with the
+    // designer rather than worked around, because keying tracking on the call
+    // site would give every other run in the window a way to lose it.
+    line.label(font::run(title, font::emphasis(line.ctx(), font::INSTALL_TITLE)).color(palette.ink));
+    back
+}
+
+/// The way out of a screen: an arrow, and the name of what it goes back to.
+///
+/// Allocated and painted rather than built as a `Button`, because the design's
+/// padding is not symmetric - six on the left against nine on the right, so that
+/// the arrow lines up with the window's own edge padding instead of sitting nine
+/// in from it - and `button_padding` is one value for both sides.
+fn back_control(ui: &mut Ui, palette: Palette, from: &str) -> Response {
+    let text = labelled_icon(
+        ui,
+        icon::BACK,
+        from,
+        font::CONTROL,
+        palette.ink_2,
+        palette.ink_2,
+        metric::ALONG_A_BACK,
+    );
+    let width = metric::BACK_PAD_LEFT
+        + font::ICON
+        + metric::ALONG_A_BACK
+        + text_width(ui, from, font::plain(font::CONTROL))
+        + metric::BACK_PAD_RIGHT;
+    let (rect, response) =
+        ui.allocate_exact_size(vec2(width, metric::BACK), Sense::click());
+    if response.hovered() {
+        ui.painter().rect_filled(
+            rect,
+            CornerRadius::same(metric::FIELD_RADIUS),
+            palette.btn_hover,
+        );
+    }
+    let mut inside = ui.new_child(
+        egui::UiBuilder::new()
+            .max_rect(rect.shrink2(vec2(metric::BACK_PAD_LEFT, 0.0)))
+            .layout(Layout::left_to_right(Align::Center)),
+    );
+    inside.label(text);
+    response.on_hover_cursor(egui::CursorIcon::PointingHand)
+}
+
+/// A hairline standing up rather than lying down: the one in a screen's header,
+/// between where you came from and where you are.
+fn upright_rule(ui: &mut Ui, palette: Palette) {
+    let (rect, _) =
+        ui.allocate_exact_size(vec2(metric::HAIRLINE, metric::SCREEN_RULE), Sense::hover());
+    ui.painter().rect_filled(rect, CornerRadius::ZERO, palette.line);
+}
+
+/// The scrolling body of a screen, with the padding and the column width the
+/// design gives it.
+///
+/// The column is a `max-width`, so a window wider than the design's leaves the
+/// settings where they are instead of stretching a path field across it. The
+/// gaps inside are stated one at a time by whatever is drawn in here, as they are
+/// in a panel's body and for the same reason.
+///
+/// **`interact_size.y` is zeroed here, and that is load-bearing.** The theme sets
+/// it to a bar control's 26, and a horizontal layout starts its row at that
+/// height - so every row in a screen came out at 26 whatever the design said it
+/// was, which put four pixels into the Paths group, two into Appearance, two into
+/// Diagnostics and ten into the row at the foot, and slid every group below each
+/// of them down the window. The same trap [`keyword_box`] pins its way out of, in
+/// the one place that can answer it for a whole screen: every control down here
+/// states its own height, which is what the design does too.
+pub fn screen_body(ui: &mut Ui, contents: impl FnOnce(&mut Ui)) {
+    egui::ScrollArea::vertical().auto_shrink([false, false]).show(ui, |ui| {
+        Frame::new()
+            .inner_margin(Margin {
+                left: metric::SCREEN_PAD_X as i8,
+                right: metric::SCREEN_PAD_X as i8,
+                top: metric::SCREEN_PAD_TOP as i8,
+                bottom: metric::SCREEN_PAD_BOTTOM as i8,
+            })
+            .show(ui, |ui| {
+                ui.set_width(ui.available_width().min(metric::SCREEN_COLUMN));
+                ui.spacing_mut().item_spacing.y = 0.0;
+                ui.spacing_mut().interact_size.y = 0.0;
+                contents(ui);
+            });
+    });
+}
+
+/// How much air a group of settings puts around what is in it.
+///
+/// Three values because the design states three, and named by what each is for
+/// rather than by its number: the box does not vary, and what varies is whether
+/// it holds rows of controls, one control that carries its own height, or a list
+/// of choices that are each washed and need only a seam of panel showing between
+/// them.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Padding {
+    Rows,
+    Switch,
+    Choices,
+}
+
+impl Padding {
+    fn margin(self) -> Margin {
+        match self {
+            Padding::Rows => {
+                Margin::symmetric(metric::GROUP_PAD_X as i8, metric::GROUP_PAD_Y as i8)
+            }
+            Padding::Switch => {
+                Margin::symmetric(metric::GROUP_PAD_X as i8, metric::SWITCH_PAD_Y as i8)
+            }
+            Padding::Choices => Margin::same(metric::CHOICES_PAD as i8),
+        }
+    }
+}
+
+/// The surface a group of settings is written on.
+///
+/// The panel colour rather than the field colour, and that distinction is the
+/// design's: a field is where something is written and a group is where things
+/// live. Rounded by the field's four rather than a control's three, because it is
+/// a surface and not something to press - except for the two the design does make
+/// pressable, which are pressable by what is drawn in them rather than by being a
+/// different shape.
+pub fn group_frame(palette: Palette, pad: Padding) -> Frame {
+    Frame::new()
+        .fill(palette.panel)
+        .corner_radius(CornerRadius::same(metric::FIELD_RADIUS))
+        .inner_margin(pad.margin())
+}
+
+/// One row of a paths group: what the path is for, where it is, and whatever
+/// controls the row offers.
+///
+/// The label column is fixed at the design's 128, so the three paths in Settings
+/// start at one x down the group instead of each starting after its own word. The
+/// controls are laid out from the right and the path takes what they leave -
+/// exactly the order the install bar puts its own path in, and for the same
+/// reason: a path is the longest thing on the line and the least urgent, so it is
+/// the thing that gives way.
+pub fn path_row(
+    ui: &mut Ui,
+    palette: Palette,
+    label: &str,
+    path: &str,
+    controls: impl FnOnce(&mut Ui),
+) {
+    ui.horizontal(|ui| {
+        ui.spacing_mut().item_spacing.x = metric::ALONG_A_PATH_ROW;
+        ui.allocate_ui_with_layout(
+            vec2(metric::PATH_LABEL_COLUMN, ui.available_height()),
+            Layout::left_to_right(Align::Center),
+            |ui| {
+                // Asked for *and* insisted on. A child `Ui` is allocated at what
+                // it came to rather than at what it was offered, so without this
+                // the column is as wide as the longest word in it - which is a
+                // column that moves when a label is reworded, and the whole point
+                // of a fixed one is that the three paths start at one x.
+                ui.set_min_width(metric::PATH_LABEL_COLUMN);
+                ui.add(
+                    egui::Label::new(
+                        font::run(label, font::plain(font::CONTROL)).color(palette.ink_2),
+                    )
+                    .truncate(),
+                );
+            },
+        );
+        ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+            controls(ui);
+            ui.with_layout(Layout::left_to_right(Align::Center), |ui| {
+                path_field(ui, palette, path);
+            });
+        });
+    });
+}
+
+/// A path, in a box, as a value to read rather than a box to type in.
+///
+/// Not [`one_line_field`]: that one is the inspector's, 27 tall and set in the
+/// proportional face because a display name is words. A path is monospaced and
+/// the design draws its box four pixels shorter.
+pub fn path_field(ui: &mut Ui, palette: Palette, path: &str) {
+    field_frame(palette, Margin::symmetric(metric::PATH_FIELD_PAD_X as i8, 0)).show(ui, |ui| {
+        ui.set_width(ui.available_width());
+        ui.set_height(metric::PATH_FIELD);
+        ui.horizontal_centered(|ui| {
+            ui.add(
+                egui::Label::new(font::run(path, font::mono(font::MONO)).color(palette.ink))
+                    .truncate(),
+            )
+            .on_hover_text(path);
+        });
+    });
+}
+
+/// How loud a control inside a group is.
+///
+/// The design writes two: the quiet one beside a value it acts on, and the one
+/// that is the point of the group it sits in - which it sets in the primary ink
+/// and pads a pixel wider on both sides.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Emphasis {
+    Quiet,
+    Loud,
+}
+
+/// A control inside a group: `Browse`, `Restore...`, `Copy report`.
+///
+/// Not [`small_button`], which is a bar's. The design draws these two pixels
+/// shorter around the same sixteen-pixel icon, rounds them by the field's four
+/// rather than a control's three, pads them by eight where a bar pads by ten, and
+/// sets the gap from icon to label at five where a bar sets six. The same
+/// relationship [`empty_action`] has to `small_button`, and for the same reason:
+/// a screen's controls are the screen's.
+pub fn group_control(
+    ui: &mut Ui,
+    palette: Palette,
+    glyph: &str,
+    label: &str,
+    emphasis: Emphasis,
+) -> Response {
+    let (ink, pad) = match emphasis {
+        Emphasis::Quiet => (palette.ink_2, metric::GROUP_CONTROL_PAD_X),
+        Emphasis::Loud => (palette.ink, metric::WIDE_CONTROL_PAD_X),
+    };
+    let button = egui::Button::new(labelled_icon(
+        ui,
+        glyph,
+        label,
+        font::CHIP,
+        ink,
+        ink,
+        metric::ALONG_A_GROUP_CONTROL,
+    ))
+    .stroke(Stroke::NONE)
+    .corner_radius(CornerRadius::same(metric::FIELD_RADIUS))
+    .min_size(vec2(0.0, metric::GROUP_CONTROL));
+    ui.scope(|ui| {
+        // Across the box, so the height is `min_size` alone and the vertical
+        // padding must not add to it.
+        ui.spacing_mut().button_padding = vec2(pad, 0.0);
+        filled_button(ui, palette.btn, palette.btn_hover, button)
+            .on_hover_cursor(egui::CursorIcon::PointingHand)
+    })
+    .inner
+}
+
+/// Put a path back to whatever was auto-detected: the glyph and nothing else.
+///
+/// The one box in the design that is not square - 26 by 25 - and the one control
+/// that says what it does only on hover, which is the design's own `title`
+/// attribute rather than an invention here.
+pub fn reset_control(ui: &mut Ui, palette: Palette) -> Response {
+    let button = egui::Button::new(
+        font::run(icon::RESET, font::icon(ui.ctx(), font::ICON)).color(palette.ink_3),
+    )
+    .stroke(Stroke::NONE)
+    .corner_radius(CornerRadius::same(metric::FIELD_RADIUS))
+    .min_size(vec2(metric::RESET[0], metric::RESET[1]));
+    ui.scope(|ui| {
+        ui.spacing_mut().button_padding = egui::Vec2::ZERO;
+        filled_button(ui, palette.btn, palette.btn_hover, button)
+            .on_hover_text("Reset to auto-detected")
+            .on_hover_cursor(egui::CursorIcon::PointingHand)
+    })
+    .inner
+}
+
+/// The space a reset control would have taken, where the row has nothing to
+/// reset.
+///
+/// Held rather than dropped, so that the control before it lines up with the
+/// controls on the rows above instead of sliding out to the edge of the group.
+/// The design holds it the same way, with an empty box of the same width.
+pub fn reset_slot(ui: &mut Ui) {
+    ui.add_space(metric::RESET[0]);
+}
+
+/// One of a set of choices, exactly one of which is in force.
+///
+/// A mark, the line naming it, and a sentence saying what choosing it means. The
+/// whole band is the control, because the sentence is what somebody reads before
+/// deciding and the mark is not what they aim at.
+///
+/// Which mark, which ink and which wash are here rather than at the call site,
+/// for the reason this module exists: the design's map from "this is the one in
+/// force" to a filled mark, an accent, a warmed sentence and a wash is one map,
+/// and a second screen picking its own would drift from it.
+pub fn choice(ui: &mut Ui, palette: Palette, chosen: bool, title: &str, note: &str) -> Response {
+    let marked = Marked {
+        glyph: if chosen { icon::CHOSEN } else { icon::UNCHOSEN },
+        mark_ink: if chosen { palette.accent } else { palette.ink_3 },
+        title,
+        note,
+        note_ink: if chosen { palette.ink_3_warm } else { palette.ink_3 },
+        wash: if chosen { palette.accent_soft } else { Color32::TRANSPARENT },
+        pad: Margin::symmetric(metric::CHOICE_PAD_X as i8, metric::CHOICE_PAD_Y as i8),
+        gap: metric::ALONG_A_CHOICE,
+    };
+    marked_row(ui, palette, &marked)
+}
+
+/// Something that is on or off by itself, drawn as a choice without the list
+/// around it.
+///
+/// No wash, because there is nothing for it to be in force *against*, and the
+/// sentence is brought up to the secondary ink rather than warmed: the design
+/// makes this one louder when it is on because what it turns on deletes a file.
+/// The padding is the group's own, since this row *is* the group.
+pub fn switched(ui: &mut Ui, palette: Palette, on: bool, title: &str, note: &str) -> Response {
+    let marked = Marked {
+        glyph: if on { icon::CHECKED } else { icon::UNCHECKED },
+        mark_ink: if on { palette.accent } else { palette.ink_3 },
+        title,
+        note,
+        note_ink: if on { palette.ink_2 } else { palette.ink_3 },
+        wash: Color32::TRANSPARENT,
+        pad: Margin::ZERO,
+        gap: metric::ALONG_A_CHECK,
+    };
+    marked_row(ui, palette, &marked)
+}
+
+/// What [`choice`] and [`switched`] both are, once the map from state to colour
+/// has been applied.
+struct Marked<'a> {
+    glyph: &'a str,
+    mark_ink: Color32,
+    title: &'a str,
+    note: &'a str,
+    note_ink: Color32,
+    wash: Color32,
+    pad: Margin,
+    gap: f32,
+}
+
+/// A mark, a line and a sentence under the line, as one control.
+///
+/// The mark is nudged one pixel down, which is the design's own `margin-top:1px`:
+/// a sixteen-pixel glyph beside an 11.5-pixel line sits above that line
+/// otherwise, and the pair reads as two things rather than one.
+fn marked_row(ui: &mut Ui, palette: Palette, marked: &Marked<'_>) -> Response {
+    let outer = Frame::new()
+        .fill(marked.wash)
+        .corner_radius(CornerRadius::same(metric::FIELD_RADIUS))
+        .inner_margin(marked.pad)
+        .show(ui, |ui| {
+            ui.set_width(ui.available_width());
+            ui.horizontal_top(|ui| {
+                ui.spacing_mut().item_spacing.x = marked.gap;
+                ui.add_space(0.0);
+                ui.vertical(|ui| {
+                    ui.add_space(metric::CHOICE_MARK_DROP);
+                    ui.label(
+                        font::run(marked.glyph, font::icon(ui.ctx(), font::ICON))
+                            .color(marked.mark_ink),
+                    );
+                });
+                ui.vertical(|ui| {
+                    ui.spacing_mut().item_spacing.y = 0.0;
+                    ui.label(
+                        font::run(marked.title, font::plain(font::CONTROL)).color(palette.ink),
+                    );
+                    ui.add_space(metric::UNDER_A_CHOICE);
+                    ui.label(font::explained(marked.note, font::NOTE).color(marked.note_ink));
+                });
+            });
+        })
+        .response;
+    outer.interact(Sense::click()).on_hover_cursor(egui::CursorIcon::PointingHand)
+}
+
+/// A switch between a few states, drawn as one control rather than as a row of
+/// buttons: the well behind the segments is the page colour, and that is what
+/// says they belong together.
+///
+/// Answers which segment was pressed, if one was.
+pub fn segmented<T: Copy + PartialEq>(
+    ui: &mut Ui,
+    palette: Palette,
+    current: T,
+    options: &[(T, &str, &str)],
+) -> Option<T> {
+    let mut pressed = None;
+    Frame::new()
+        .fill(palette.bg)
+        .corner_radius(CornerRadius::same(metric::FIELD_RADIUS))
+        .inner_margin(Margin::same(metric::SEGMENTS_PAD as i8))
+        .show(ui, |ui| {
+            ui.set_height(metric::SEGMENTS - 2.0 * metric::SEGMENTS_PAD);
+            ui.spacing_mut().item_spacing.x = metric::BETWEEN_SEGMENTS;
+            ui.spacing_mut().button_padding = vec2(metric::SEGMENT_PAD_X, 0.0);
+            ui.horizontal_centered(|ui| {
+                for (value, glyph, label) in options {
+                    let on = *value == current;
+                    let ink = if on { palette.ink } else { palette.ink_3 };
+                    let button = egui::Button::new(labelled_icon(
+                        ui,
+                        glyph,
+                        label,
+                        font::CHIP,
+                        ink,
+                        ink,
+                        metric::ALONG_A_SEGMENT,
+                    ))
+                    .stroke(Stroke::NONE)
+                    // The design rounds a segment by three where it rounds the
+                    // well around it by four, so the segment sits inside the
+                    // corner rather than cutting across it.
+                    .corner_radius(CornerRadius::same(metric::RADIUS))
+                    .min_size(vec2(0.0, metric::SEGMENT));
+                    let base = if on { palette.btn } else { Color32::TRANSPARENT };
+                    if filled_button(ui, base, palette.btn_hover, button)
+                        .on_hover_cursor(egui::CursorIcon::PointingHand)
+                        .clicked()
+                    {
+                        pressed = Some(*value);
+                    }
+                }
+            });
+        });
+    pressed
+}
+
+/// The diagnostics block: a column of monospaced lines, meant to be copied
+/// whole.
+///
+/// Not wrapped, which is the design's `white-space:pre`. Every line is a label
+/// and a value with the labels aligned by spaces, so a wrap would put a value
+/// under a label it does not belong to - and the point of this block is that it
+/// can be pasted into a bug report and read by somebody else.
+pub fn report(ui: &mut Ui, palette: Palette, text: &str) {
+    field_frame(palette, Margin::symmetric(metric::REPORT_PAD_X as i8, metric::REPORT_PAD_Y as i8))
+        .show(ui, |ui| {
+            ui.set_width(ui.available_width());
+            ui.add(
+                egui::Label::new(
+                    font::run(text, font::mono(font::MONO_TIGHT))
+                        .color(palette.ink_2)
+                        .line_height(Some(font::MONO_TIGHT * font::REPORT_LEADING)),
+                )
+                .wrap_mode(egui::TextWrapMode::Extend),
+            );
+        });
+}
+
+/// The row at the foot of a screen that leads to another one: an icon, a line, a
+/// value at the right end, and the mark that says there is more.
+///
+/// The whole row is the control, and it has no heading over it - the design draws
+/// it as a group-shaped thing that is not a group, which is what says it is the
+/// last item rather than another setting.
+pub fn screen_link(
+    ui: &mut Ui,
+    palette: Palette,
+    glyph: &str,
+    label: &str,
+    value: &str,
+) -> Response {
+    let row = group_frame(palette, Padding::Switch)
+        .show(ui, |ui| {
+            ui.set_width(ui.available_width());
+            ui.spacing_mut().item_spacing.x = metric::ALONG_A_SCREEN_LINK;
+            ui.horizontal(|ui| {
+                ui.set_height(font::ICON);
+                ui.label(font::run(glyph, font::icon(ui.ctx(), font::ICON)).color(palette.ink_2));
+                // The mark first, from the right, so the line gives way to it.
+                ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                    ui.label(
+                        font::run(icon::ONWARD, font::icon(ui.ctx(), font::ICON))
+                            .color(palette.ink_3),
+                    );
+                    ui.label(font::run(value, font::mono(font::MONO)).color(palette.ink_3));
+                    ui.with_layout(Layout::left_to_right(Align::Center), |ui| {
+                        ui.add(
+                            egui::Label::new(
+                                font::run(label, font::plain(font::CONTROL)).color(palette.ink),
+                            )
+                            .truncate(),
+                        );
+                    });
+                });
+            });
+        })
+        .response;
+    row.interact(Sense::click()).on_hover_cursor(egui::CursorIcon::PointingHand)
 }
 
 /// Text that has to carry a tone as well as a word.
@@ -2794,5 +3374,169 @@ mod tests {
         // the window's right edge by the bar's own padding and the menu by
         // eight, so the menu overhangs the control by the difference.
         assert_eq!(metric::PAD - metric::MENU_OVERHANG, 8.0);
+    }
+
+    /// A screen's header, against `SettingsScreen.dc.html` rendered at its own
+    /// preview size and asked for every box.
+    ///
+    /// The bundle puts the back control at 12 and 66 wide, the rule at 87, the
+    /// gear at 97 and the title at 122 - so the chain is four gaps of nine, and
+    /// what is asserted is the chain rather than the four x positions, because
+    /// the control's width is text and text in a mockup is not comparable.
+    ///
+    /// The header's own height is the one number worth stating twice: it is 44
+    /// where the install bar it replaces is 42, and two screens differing by two
+    /// pixels is exactly the pair a reader rounds to one.
+    #[test]
+    fn a_screens_header_is_measured_as_the_bundle_measures_it() {
+        assert_eq!(metric::SCREEN_HEADER, 44.0);
+        assert_ne!(
+            metric::SCREEN_HEADER,
+            metric::INSTALL_BAR,
+            "a screen's header is not the bar it stands in for"
+        );
+        // The back control holds a sixteen-pixel icon with four above and below,
+        // and is padded asymmetrically so the icon lands where the window's own
+        // edge padding puts everything else: six in from twelve is eighteen,
+        // which is where the bundle draws the arrow.
+        assert_eq!(metric::BACK - font::ICON, 2.0 * 4.0);
+        assert_eq!(metric::PAD + metric::BACK_PAD_LEFT, 18.0);
+        assert_ne!(
+            metric::BACK_PAD_LEFT,
+            metric::BACK_PAD_RIGHT,
+            "the design pulls the left side in, and a symmetric pad loses that"
+        );
+        // From the rule to the gear, and from the gear to the title: the gap is
+        // the header's own nine, wider than a toolbar's eight.
+        assert_eq!(metric::HAIRLINE + metric::SCREEN_HEADER_GAP, 10.0, "87 to 97");
+        assert_eq!(font::ICON + metric::SCREEN_HEADER_GAP, 25.0, "97 to 122");
+        assert_ne!(metric::SCREEN_HEADER_GAP, metric::TOOL_GAP);
+    }
+
+    /// The Settings screen's column and the grid of a path row, against the same
+    /// render.
+    ///
+    /// The bundle puts the column at 12 and 620 wide, the label at 24 in a fixed
+    /// 128, the path field at 160, `Browse` ending at 585 and the reset control
+    /// at 594 by 620. Only the fixed columns and the gaps are asserted: the
+    /// field's width and the control's are functions of text, and the mockup
+    /// resolves Inter from a network it does not have.
+    #[test]
+    fn a_path_row_is_divided_as_the_bundle_divides_it() {
+        assert_eq!(metric::SCREEN_COLUMN, 620.0, "the column the groups are capped at");
+        // A group's own padding puts its first cell at 24, which is the same 24
+        // the window's edge and a row's own padding come to.
+        assert_eq!(metric::SCREEN_PAD_X + metric::GROUP_PAD_X, 24.0);
+        // Then the label column and one gap: the field starts at 160.
+        assert_eq!(
+            metric::SCREEN_PAD_X
+                + metric::GROUP_PAD_X
+                + metric::PATH_LABEL_COLUMN
+                + metric::ALONG_A_PATH_ROW,
+            160.0
+        );
+        // And from the right: the column's content ends at 620, the reset
+        // control is 26 of it, and a gap of eight stands before the control
+        // beside it.
+        assert_eq!(
+            metric::SCREEN_COLUMN + metric::SCREEN_PAD_X - metric::GROUP_PAD_X - metric::RESET[0],
+            594.0,
+            "where the reset control starts"
+        );
+        assert_ne!(metric::RESET[0], metric::RESET[1], "the one control that is not square");
+
+        // A row is as tall as the tallest thing in it, which is that control -
+        // and the path field is shorter than the inspector's, because a value to
+        // read is not a box to type in.
+        assert_eq!(metric::RESET[1], 25.0);
+        assert_eq!(metric::PATH_FIELD, 23.0);
+        const { assert!(metric::PATH_FIELD < metric::FIELD, "shorter than the inspector's") };
+        // Three rows of it, nine apart, inside eleven of padding: 114.
+        assert_eq!(
+            2.0 * metric::GROUP_PAD_Y
+                + 2.0 * metric::RESET[1]
+                + metric::GROUP_CONTROL
+                + 2.0 * metric::BETWEEN_GROUP_ROWS,
+            114.0,
+            "the Paths group's drawn height"
+        );
+    }
+
+    /// The four group boxes down the screen, against where the bundle puts each
+    /// one: 80, 229, 369 and 458.
+    ///
+    /// A chain, because that is what it is: every group is its heading, seven,
+    /// its own height, and fifteen to the next. Asserting the four positions
+    /// separately would pass with the wrong gap and the wrong heading height
+    /// cancelling out, which is how a column comes to be right at the top and
+    /// three pixels out at the bottom.
+    #[test]
+    fn the_settings_groups_are_spaced_as_the_bundle_spaces_them() {
+        assert_eq!(metric::BETWEEN_SETTINGS_GROUPS, 15.0);
+        assert_ne!(
+            metric::BETWEEN_SETTINGS_GROUPS,
+            metric::BETWEEN_GROUPS,
+            "a screen is not a panel, and the two are a pixel apart"
+        );
+        // A heading is 10.5 on a 13-pixel line, and the design puts seven under
+        // it - so a group's box is 20 below where its heading starts.
+        const HEADING: f32 = 13.0;
+        let over_a_group = HEADING + metric::UNDER_A_GROUP_HEADING;
+        assert_eq!(over_a_group, 20.0);
+
+        // The first heading is the header plus the body's top padding, and the
+        // first box is twenty below that.
+        let first = metric::SCREEN_HEADER + metric::SCREEN_PAD_TOP;
+        assert_eq!(first, 60.0, "where the first heading starts");
+        assert_eq!(first + over_a_group, 80.0, "where the Paths box starts");
+
+        // Two choices of 47, one apart, inside five: the placement group is 105,
+        // and it starts fifteen and a heading below where Paths ends.
+        const CHOICE: f32 = 47.0;
+        let placement = 2.0 * metric::CHOICES_PAD + 2.0 * CHOICE + metric::BETWEEN_CHOICES;
+        assert_eq!(placement, 105.0);
+        let after_paths = 80.0 + 114.0 + metric::BETWEEN_SETTINGS_GROUPS + over_a_group;
+        assert_eq!(after_paths, 229.0, "where the placement box starts");
+
+        // The checkbox group is one choice-shaped row in the group's own
+        // padding: two lines and the two above and below them.
+        const TWO_LINES: f32 = 31.0;
+        let removing = 2.0 * metric::GROUP_PAD_Y + TWO_LINES;
+        assert_eq!(removing, 53.0);
+        let after_placement =
+            after_paths + placement + metric::BETWEEN_SETTINGS_GROUPS + over_a_group;
+        assert_eq!(after_placement, 369.0, "where the removing-entries box starts");
+
+        // And the switch, which carries its own height and gets nine either
+        // side rather than eleven.
+        let appearance = 2.0 * metric::SWITCH_PAD_Y + metric::SEGMENTS;
+        assert_eq!(appearance, 46.0);
+        // 458 in the bundle and 457 in the chain, and the pixel is the bundle's.
+        // A 10.5-pixel heading has a fractional line box, and the render rounds
+        // it down at the first three headings and up at the fourth - so the
+        // design's own four numbers are not four steps of one arithmetic. The
+        // chain is held to a pixel here rather than being bent to reproduce a
+        // rounding, which is the standard this is judged by anyway.
+        let fourth = after_placement + removing + metric::BETWEEN_SETTINGS_GROUPS + over_a_group;
+        assert!(
+            (fourth - 458.0f32).abs() <= 1.0,
+            "the appearance box starts at {fourth}, the bundle draws it at 458"
+        );
+    }
+
+    /// The appearance switch, against the bundle's own boxes: a well 220 by 28
+    /// with two of padding, and three segments 24 tall touching two apart.
+    #[test]
+    fn the_appearance_switch_is_measured_as_the_bundle_measures_it() {
+        assert_eq!(metric::SEGMENTS - 2.0 * metric::SEGMENTS_PAD, metric::SEGMENT);
+        // The design rounds the well by the field's four and a segment inside it
+        // by a control's three, so the segment sits inside the corner rather
+        // than cutting across it.
+        const { assert!(metric::RADIUS < metric::FIELD_RADIUS) };
+        // Inside a segment: ten of padding, a sixteen-pixel icon, five, the word.
+        // The bundle puts `System`'s icon 10 in from the segment's left edge.
+        assert_eq!(metric::SEGMENT_PAD_X, 10.0);
+        assert_eq!(metric::ALONG_A_SEGMENT, 5.0);
+        assert_eq!(metric::SEGMENT - font::ICON, 2.0 * 4.0);
     }
 }

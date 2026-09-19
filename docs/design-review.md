@@ -8,7 +8,8 @@ Round 1 is closed: all ten items were addressed, and several were answered bette
 they were asked. Round 2 adds the Catalog view, and raises eight items - three factual,
 one that contradicts a safety property of the transaction, three that depend on data no
 format currently carries, and one that was our bug rather than the design's and is now
-fixed.
+fixed. Round 3 collects what building the window against revision 7 turned up, and its
+last two items are open questions for the designer rather than findings.
 
 ---
 
@@ -222,4 +223,30 @@ next reader will see `\u{b7}` and wonder.
 - **The row actions and a catalog row's status and `Install`.** The columns are
   reserved at the design's widths and left empty, because the design reserves them
   too: it hides those controls off hover rather than removing them.
+
+### 4. 13.5px is tracked two ways, and only one of them can be drawn
+
+For the designer. The bundle sets 13.5px/600 at `-0.015em` in `InstallBar.dc.html` and at
+`-0.02em` in all three screen headers - `SettingsScreen`, `RestoreScreen`, `AboutScreen`.
+Nothing else in the bundle uses 13.5.
+
+`theme::font::tracking` answers from the face and the size, which is the whole reason no
+call site can lose the tracking, and those are identical in both cases. So the derived
+`-0.015em` is what both draw. The difference is 0.0675 of a pixel a character: half a
+pixel across `Settings` and about one across `About ORNG Registry`, which is inside the
+tolerance this is judged by. Raised rather than worked around, because keying tracking on
+the call site would give every other run in the window a way to lose it - and if the two
+are meant to differ, the cleanest fix is for one of them to be a different size.
+
+### 5. Settings has no mockup for a machine with no installation
+
+Also for the designer, and lower priority. The overflow is on the install bar in every
+state, including "no Bitwig Studio found" and "this build could not be read", so Settings
+is reachable from both - and the bundle draws one machine, with every path resolved.
+
+This draws the rows anyway and writes `-` where there is nothing to say, so the group does
+not change height with what went wrong, and the diagnostics report states what there is:
+the root that was refused and why, or the places that were searched. That is a guess at
+what the design would want. It is also the state somebody is most likely to be *in* when
+they open this screen, so it is worth drawing on purpose.
 

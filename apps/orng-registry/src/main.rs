@@ -16,9 +16,11 @@
 
 pub mod app;
 pub mod catalog;
+pub mod diagnostics;
 #[cfg(target_os = "macos")]
 pub mod macos;
 pub mod session;
+pub mod settings;
 pub mod staging;
 pub mod theme;
 pub mod widget;

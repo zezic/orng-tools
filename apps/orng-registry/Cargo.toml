@@ -28,6 +28,22 @@ ureq = { version = "3", default-features = false, features = ["rustls"] }
 rfd = { version = "0.17", default-features = false, features = ["xdg-portal"] }
 egui-phosphor = { version = "0.14", default-features = false, features = ["light"] }
 
+# The preferences file, `~/.orng/settings.toml`. TOML rather than JSON because
+# this one is meant to be readable and editable by hand: it is five choices, and
+# the first thing anybody debugging a placement will do is look at it. The entry
+# list beside it is tab separated for a different reason entirely - the class
+# injected into the installation reads that one, and `split("\t")` needs no
+# parser at all.
+serde = { version = "1", features = ["derive"] }
+toml = "1"
+
+# One date: when the backup of this build was taken. A `SystemTime` says nothing
+# a reader can use, and turning one into a civil date in the reader's own zone is
+# a calendar and a timezone database rather than arithmetic. `jiff` carries both
+# and reads the platform's tzdb rather than assuming UTC, which is the difference
+# between a backup dated correctly and one dated a day out west of Denver.
+jiff = "0.2"
+
 # Showing a document where it lives. The `reveal` feature is the whole reason
 # this is here: the crate's own default is "open this file with whatever opens
 # it", and opening a .bwdevice would launch Bitwig Studio - which is the one

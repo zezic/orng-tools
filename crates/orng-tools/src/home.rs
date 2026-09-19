@@ -57,6 +57,16 @@ impl OrngHome {
         self.root().join("backups")
     }
 
+    /// What the user has chosen, as against what the machine says.
+    ///
+    /// Named here because the directory's layout is this crate's, and read
+    /// nowhere else: the injected class finds the entry list and knows nothing
+    /// about a preference, so unlike [`OrngHome::entries`] this is not a wire
+    /// format and its contents are the application's own.
+    pub fn settings(&self) -> PathBuf {
+        self.root().join("settings.toml")
+    }
+
     /// What a JVM has to be told `user.home` is for the injected class to find
     /// this entry list. On a real installation that is already true of the JVM
     /// Bitwig starts, which is why nothing sets it outside verification.

@@ -36,6 +36,13 @@ fills the viewport and measures nothing useful.
 | `EntryRow` | 796 x 36 |
 | `EmptyState` | 820 x 420 |
 | `Inspector` | 272 x 520 |
+| `SettingsScreen` | 820 x 560 |
+
+The three screens behind the overflow are the easy case and worth knowing about: each is
+a whole window rather than a component, so its own `.dc.html` renders the entire surface
+with no shell around it and section 1a's probe script can be appended to a copy of it
+directly. Render tall - `--window-size=820,1400` - because the body scrolls and anything
+below 560 is clipped otherwise.
 
 `ORNG Registry.dc.html` renders the whole shell, but only its default screen: the
 others are picked by clicking, which headless Chrome will not do.
@@ -206,6 +213,20 @@ the design states its own gaps. It made rows 42 apart instead of 36, and bar gap
 and 8 instead of 8 and 2. The list zeroes the vertical half in `widget::list`; the
 three bars zero the horizontal half. **A new container that lays out to the design's
 numbers must zero it too.**
+
+**And so is `interact_size.y`, which is the same trap one level down.** The theme
+sets it to a bar control's 26, and a horizontal layout starts its row at that
+height whatever is in the row - so a row the design draws 24 or 25 tall comes out
+26, and everything below it slides. On the Settings screen that put four pixels
+into the Paths group, two into Appearance, two into Diagnostics and ten into the
+row at the foot, and none of it was visible until the group boxes were measured
+against the bundle's four positions. `widget::screen_body` zeroes it for a whole
+screen and `keyword_box` pins it to the chip's own height; either is right, and
+doing neither is what looks fine.
+
+Both of these are found the same way and in one command: take a column scanline
+down the left padding of the boxes, collapse it into runs, and compare the tops
+and heights against the bundle's. Four numbers beat four glances.
 
 **A widget's inner margin subtracts its state's outline width.** From
 `widget_style.rs`: `button_padding + expansion - bg_stroke.width`. A hovered state

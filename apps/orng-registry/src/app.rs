@@ -195,10 +195,33 @@ impl App {
     ///
     /// Separate from [`eframe::App::update`] so that it can be driven without a
     /// window, which is how it gets looked at.
+    ///
+    /// Two things only, because everything else belongs to a surface: what the
+    /// workers have said since the last frame, and the surface itself. The
+    /// progress dialog is over all of them.
     pub fn draw(&mut self, ui: &mut egui::Ui) {
         self.pump();
         self.take_drop(ui.ctx());
 
+        self.browse(ui);
+
+        // Last, and over everything: while a preparation runs the window is
+        // held still, and the list behind it is what the work is being done to.
+        if let Some(applying) = self.applying.as_ref().filter(|a| a.steps.is_some()) {
+            progress(ui, self.palette, applying);
+        }
+    }
+
+    /// The surface the window is for: the install bar, whichever list the view
+    /// selects, and the action bar under it.
+    ///
+    /// Whole, and in one place, because it is one of several. The three
+    /// surfaces behind the overflow are not panels over the list - each is
+    /// `width:100%; height:100%` on the page colour with a header of its own -
+    /// so each replaces every one of these, the bars included. Drawing this
+    /// from `draw` directly meant that swapping in another would have been four
+    /// separate conditions that all had to agree about one fact.
+    fn browse(&mut self, ui: &mut egui::Ui) {
         egui::Panel::top("install")
             .exact_size(metric::INSTALL_BAR)
             .frame(widget::bar(self.palette))
@@ -238,12 +261,6 @@ impl App {
         // After the page it falls on, for the reason written on it.
         if let Some(aside) = inspector {
             aside.shadow(ui, self.palette);
-        }
-
-        // Last, and over everything: while a preparation runs the window is
-        // held still, and the list behind it is what the work is being done to.
-        if let Some(applying) = self.applying.as_ref().filter(|a| a.steps.is_some()) {
-            progress(ui, self.palette, applying);
         }
     }
 

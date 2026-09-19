@@ -21,7 +21,7 @@ use uuid::Uuid;
 
 use crate::manifest::ItemVersion;
 use crate::signing::{PublicKey, Signature};
-use crate::{AuthorId, Error, Item, Result, Slug};
+use crate::{AuthorId, Digest, Error, Item, Result, Slug};
 
 /// Bumped when the shape changes in a way older readers cannot handle. A reader
 /// that does not recognise the number refuses the file rather than guessing.
@@ -134,8 +134,8 @@ pub struct IndexEntry {
     pub keywords: Vec<String>,
     /// Repository-relative path of the document.
     pub path: String,
-    /// Lowercase hex SHA-256 of the document.
-    pub digest: String,
+    /// SHA-256 of the document.
+    pub digest: Digest,
     pub size: u64,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub homepage: Option<String>,

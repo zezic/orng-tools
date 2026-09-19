@@ -9,7 +9,7 @@
 use std::path::{Path, PathBuf};
 
 use orng_catalog::{
-    CONTENT_DIR, History, Index, Item, Problem, Revision, Severity, scan, validate,
+    CONTENT_DIR, Digest, History, Index, Item, Problem, Revision, Severity, scan, validate,
 };
 
 /// Documents to build a tree from.
@@ -137,7 +137,6 @@ fn a_well_formed_tree_validates_and_indexes() {
     assert_eq!(index.items.len(), items.len());
     assert_eq!(index.revision, Some(index_revision));
     for entry in &index.items {
-        assert_eq!(entry.digest.len(), 64, "digest is not a sha-256");
         assert!(entry.size > 0);
         assert!(entry.path.starts_with(&format!("{CONTENT_DIR}/example/")));
         assert!(!entry.name.is_empty());
@@ -151,6 +150,12 @@ fn a_well_formed_tree_validates_and_indexes() {
     assert_eq!(indexed(&items[0]).merged_in, Some(merge_revision));
     for item in &items[1..] {
         assert_eq!(indexed(item).merged_in, None);
+    }
+    // The digest published for an item is the hash of that item's own bytes.
+    // Its shape is the type's business now; that it names the right document is
+    // this test's, and is what a downloader checks against.
+    for item in &items {
+        assert_eq!(indexed(item).digest, Digest::of(&item.document));
     }
     // The index must survive the trip it actually makes: serialize, publish, parse.
     assert_eq!(Index::parse(&index.to_json()).unwrap(), index);

@@ -20,7 +20,7 @@ pub mod signing;
 pub mod validate;
 
 pub use index::{History, Index, IndexEntry, Revision};
-pub use item::{AuthorId, Item, Slug, scan};
+pub use item::{AuthorId, Digest, Item, Slug, scan};
 pub use manifest::Manifest;
 pub use owners::{Authorization, Owner, Owners, Refusal, authorize};
 pub use signing::{PublicKey, SecretKey, Signature};
@@ -52,6 +52,8 @@ pub enum Error {
     BadVersion(String),
     #[error("{0} is not a commit: expected forty lowercase hex digits")]
     BadRevision(String),
+    #[error("{0} is not a content digest: expected sixty-four lowercase hex digits")]
+    BadDigest(String),
     /// Deliberately holds no copy of what it refused. One thing parsed through
     /// here is the signing key, and an error message goes to a workflow log.
     #[error("malformed {what}: {why}")]

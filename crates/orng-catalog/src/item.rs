@@ -81,6 +81,64 @@ macro_rules! identifier {
 identifier!(AuthorId, "author id");
 identifier!(Slug, "slug");
 
+/// The SHA-256 of a document, as the index publishes it and as a registration
+/// records it.
+///
+/// A newtype rather than a `String` because the only thing ever done with one is
+/// compare it against another, and two spellings of the same hash - upper case,
+/// or a paste that lost a character - compare unequal while looking identical
+/// wherever a person is reading. Refused on the way in for the same reason the
+/// [`Revision`](crate::Revision) beside it is: a digest that cannot be one would
+/// otherwise sit in a published index quietly never matching.
+///
+/// One type for both sides on purpose. The catalog states what a document should
+/// hash to and the entry list records what a registered one did, and the whole
+/// value of either is that they can be held up against each other.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[serde(try_from = "String", into = "String")]
+pub struct Digest(String);
+
+impl Digest {
+    /// Sixty-four lowercase hex digits, and nothing else: [`Digest::of`] is the
+    /// only writer here and that is the form it produces.
+    pub fn new(text: &str) -> Result<Self> {
+        let shaped = text.len() == 64 && text.chars().all(|c| matches!(c, '0'..='9' | 'a'..='f'));
+        shaped.then(|| Digest(text.to_owned())).ok_or_else(|| Error::BadDigest(text.to_owned()))
+    }
+
+    /// Hash some bytes. The one place this project computes a content digest.
+    pub fn of(bytes: &[u8]) -> Self {
+        use sha2::{Digest as _, Sha256};
+        let mut hasher = Sha256::new();
+        hasher.update(bytes);
+        Digest(crate::hex(&hasher.finalize()))
+    }
+
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+impl TryFrom<String> for Digest {
+    type Error = Error;
+
+    fn try_from(text: String) -> Result<Self> {
+        Self::new(&text)
+    }
+}
+
+impl From<Digest> for String {
+    fn from(value: Digest) -> String {
+        value.0
+    }
+}
+
+impl std::fmt::Display for Digest {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.0)
+    }
+}
+
 /// An item as it exists in the repository tree: what the manifest declares, plus
 /// what its document says about itself.
 #[derive(Debug, Clone)]
@@ -136,11 +194,8 @@ impl Item {
     }
 
     /// Content hash, as published in the index and checked after download.
-    pub fn digest(&self) -> String {
-        use sha2::{Digest, Sha256};
-        let mut hasher = Sha256::new();
-        hasher.update(&self.document);
-        crate::hex(&hasher.finalize())
+    pub fn digest(&self) -> Digest {
+        Digest::of(&self.document)
     }
 }
 
@@ -230,5 +285,30 @@ mod tests {
         for bad in ["Example", "glue comp", "glue_comp", "-lead", "trail-", "a--b", ""] {
             assert!(Slug::new(bad).is_err(), "accepted {bad:?}");
         }
+    }
+
+    /// The published value, against a hash taken somewhere else entirely:
+    /// `printf '' | shasum -a 256`. A digest this project computes differently
+    /// from the rest of the world is one nothing can be checked against.
+    #[test]
+    fn a_digest_is_a_sha_256_in_lowercase_hex() {
+        let empty = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855";
+        assert_eq!(Digest::of(b"").as_str(), empty);
+        assert_eq!(Digest::of(b""), Digest::new(empty).unwrap());
+    }
+
+    /// Refused on the way in, because the only thing a digest is for is being
+    /// compared: one that cannot be a hash would never match and never say why.
+    #[test]
+    fn a_digest_that_cannot_be_one_is_refused_rather_than_stored() {
+        let real = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855";
+        assert!(Digest::new(real).is_ok());
+        // Upper case is the one that matters: it is a real hash of the real
+        // bytes, written the other way round, and it compares unequal.
+        assert!(Digest::new(&real.to_uppercase()).is_err());
+        assert!(Digest::new(&real[..63]).is_err());
+        assert!(Digest::new(&format!("{real}0")).is_err());
+        assert!(Digest::new("").is_err());
+        assert!(Digest::new(&"z".repeat(64)).is_err());
     }
 }

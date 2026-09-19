@@ -427,7 +427,6 @@ impl App {
         let mut update = Update::to(found.entries.clone());
         update.revise(revised);
         self.applying = Some(Applying::start(
-            Work::Entries,
             Errand::Edit,
             found.to.clone(),
             update,
@@ -531,7 +530,6 @@ impl App {
         // reported is not work in flight, and leaving it in that field is what
         // made every screen after a press have to ask whether it had finished.
         let result = result.clone();
-        let prepared = applying.prepared();
         let errand = applying.errand;
         let written = self.ready().count();
         self.applying = None;
@@ -552,7 +550,7 @@ impl App {
                 // back.
                 self.staged.clear();
                 let in_effect = entries.entries().len();
-                if prepared {
+                if errand.prepares() {
                     // A preparation changes what is true of the installation:
                     // the archive, the guard, the links. Nothing short of
                     // reading it again answers that.
@@ -572,7 +570,7 @@ impl App {
             // A failure is announced either way: an edit that did not reach
             // the disk is the one thing about it the panel cannot show.
             Err(why) => {
-                self.outcome = Some(Outcome::Failed { what: Stopped::of(prepared, errand), why });
+                self.outcome = Some(Outcome::Failed { what: errand, why });
             }
         }
         // After the session, because it answers against the list that is now
@@ -773,39 +771,17 @@ enum Outcome {
     /// Entries were written into an installation that was already prepared.
     Registered { written: usize },
     Failed {
-        /// Which of the three runs stopped, which is what decides what can
-        /// honestly be promised about the state left behind.
-        what: Stopped,
+        /// Which run stopped, which is what decides what can honestly be
+        /// promised about the state left behind: the three differ in what they
+        /// had already done. Carried from the run rather than worked out at the
+        /// end of it - a boolean said only whether a preparation was involved,
+        /// which left an edit that could not be written reporting that nothing
+        /// had been registered, true and about the wrong thing entirely.
+        what: Errand,
         /// The worker's own words, which go into a bug report rather than onto
         /// the screen.
         why: String,
     },
-}
-
-/// What it was that stopped.
-///
-/// The three differ in what they had already done when they stopped, and
-/// therefore in what the banner may promise. A boolean said only whether a
-/// preparation was involved, which left an edit that could not be written
-/// reporting that nothing had been registered - true, and about the wrong
-/// thing entirely.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum Stopped {
-    Preparation,
-    /// A press that was writing entries into an installation already prepared.
-    Registration,
-    /// An edit made in the inspector.
-    Edit,
-}
-
-impl Stopped {
-    fn of(prepared: bool, errand: Errand) -> Stopped {
-        match (prepared, errand) {
-            (true, _) => Stopped::Preparation,
-            (false, Errand::Press) => Stopped::Registration,
-            (false, Errand::Edit) => Stopped::Edit,
-        }
-    }
 }
 
 impl Outcome {
@@ -836,7 +812,7 @@ impl Outcome {
             // which is the design's order. The worker's own words are behind
             // the control, because they are for a bug report and not for the
             // person reading this.
-            Outcome::Failed { what: Stopped::Preparation, .. } => (
+            Outcome::Failed { what: Errand::Preparation, .. } => (
                 Tone::Err,
                 "The preparation stopped, and your installation was not changed.".to_owned(),
                 "The patched archive is written beside the original and only moved into place \
@@ -844,7 +820,7 @@ impl Outcome {
                     .to_owned(),
                 Some("Copy details"),
             ),
-            Outcome::Failed { what: Stopped::Registration, .. } => (
+            Outcome::Failed { what: Errand::Registration, .. } => (
                 Tone::Err,
                 "Nothing was registered.".to_owned(),
                 "The entry list is written last, so it is unchanged. Any document already \
@@ -852,7 +828,7 @@ impl Outcome {
                     .to_owned(),
                 Some("Copy details"),
             ),
-            Outcome::Failed { what: Stopped::Edit, .. } => (
+            Outcome::Failed { what: Errand::Edit, .. } => (
                 Tone::Err,
                 "The change was not saved.".to_owned(),
                 "Descriptions and search keywords live in the installation's own files, and \
@@ -1548,7 +1524,7 @@ impl App {
         // What the last press came to is not what this one will come to.
         self.outcome = None;
         self.applying =
-            Some(Applying::start(work, Errand::Press, found.to.clone(), update, ctx.clone()));
+            Some(Applying::start(work.into(), found.to.clone(), update, ctx.clone()));
     }
 }
 

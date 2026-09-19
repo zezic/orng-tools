@@ -46,18 +46,57 @@ pub enum Work {
     PrepareThenEntries,
 }
 
-/// Why a run is happening, which is what decides how its ending is told.
+/// Why a run is happening: what it therefore does, and how its ending is told.
 ///
-/// Not a property of the work - both write the entry list the same way - but of
-/// the occasion. A press is something the user did and asked to be told the
-/// result of. An edit in the inspector is something the panel is already
-/// showing, so a banner for every description would be the window talking over
-/// itself; only a failure is worth saying, and a failure is worth saying in
-/// either case.
+/// One enum rather than the work and the occasion held beside each other. Those
+/// two crossed gave four combinations for the three runs that exist, and the
+/// fourth (an inspector edit that prepares the installation) had to be
+/// swallowed by a constructor at the end of the run rather than being
+/// impossible to say in the first place.
+///
+/// The distinction the occasion carries is still here, in the last variant. A
+/// press is something the user did and asked to be told the result of. An edit
+/// in the inspector is something the panel is already showing, so a banner for
+/// every description would be the window talking over itself; only a failure is
+/// worth saying, and a failure is worth saying either way.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Errand {
-    Press,
+    /// The primary action, where the installation does not read the entry list
+    /// yet: it is prepared first and the entries follow.
+    Preparation,
+    /// The primary action, where the installation is already prepared and only
+    /// the entries change.
+    Registration,
+    /// Words changed in the inspector. Entries only - a description is not a
+    /// reason to touch the installation.
     Edit,
+}
+
+impl Errand {
+    /// What the worker actually has to do.
+    pub fn work(self) -> Work {
+        match self {
+            Errand::Preparation => Work::PrepareThenEntries,
+            Errand::Registration | Errand::Edit => Work::Entries,
+        }
+    }
+
+    /// Whether it touched the installation, which is what decides whether the
+    /// machine has to be read again afterwards.
+    pub fn prepares(self) -> bool {
+        self == Errand::Preparation
+    }
+}
+
+impl From<Work> for Errand {
+    /// A press, named by what the action bar had already worked out it would
+    /// do. The occasion is the press; only the work was still in question.
+    fn from(work: Work) -> Errand {
+        match work {
+            Work::PrepareThenEntries => Errand::Preparation,
+            Work::Entries => Errand::Registration,
+        }
+    }
 }
 
 /// What the worker says as it goes.
@@ -115,12 +154,12 @@ pub struct Applying {
 impl Applying {
     /// Start it. Returns immediately.
     pub fn start(
-        work: Work,
         errand: Errand,
         to: Destination,
         update: Update,
         ctx: egui::Context,
     ) -> Applying {
+        let work = errand.work();
         let (tx, updates) = channel();
         thread::spawn(move || {
             // Every send is followed by a wake, so the window redraws when
@@ -227,12 +266,6 @@ impl Applying {
         self.outcome.is_none()
     }
 
-    /// Whether this press touched the installation, which is what decides
-    /// whether the machine has to be read again afterwards.
-    pub fn prepared(&self) -> bool {
-        self.steps.is_some()
-    }
-
     /// One held still in a given state, for drawing it without running
     /// anything. Tests only: real work writes to an installation, and rendering
     /// a picture of one must not.
@@ -248,7 +281,15 @@ impl Applying {
         // died, which `poll` correctly turns into a failure - so a held-still
         // run would draw itself as one the moment it was polled.
         std::mem::forget(tx);
-        Applying { updates, steps, stage, errand: Errand::Press, outcome }
+        Applying {
+            updates,
+            // Derived, so a frozen run cannot claim to prepare and show no
+            // steps, or the other way about.
+            errand: if steps.is_some() { Errand::Preparation } else { Errand::Registration },
+            steps,
+            stage,
+            outcome,
+        }
     }
 }
 
@@ -283,7 +324,7 @@ mod tests {
             updates,
             steps: Some(Step::ALL.map(|s| (s, State::Waiting))),
             stage: Stage::Preparing,
-            errand: Errand::Press,
+            errand: Errand::Preparation,
             outcome: None,
         }
     }
@@ -361,7 +402,7 @@ mod tests {
             updates,
             steps: Some(Step::ALL.map(|s| (s, State::Waiting))),
             stage: Stage::Preparing,
-            errand: Errand::Press,
+            errand: Errand::Preparation,
             outcome: None,
         };
         tx.send(Progress::Began(Step::Backup)).unwrap();
@@ -383,7 +424,7 @@ mod tests {
                 updates,
                 steps: None,
                 stage: Stage::Registering,
-                errand: Errand::Press,
+                errand: Errand::Registration,
                 outcome: None,
             };
         tx.send(Progress::Finished(Ok(Manifest::default()))).unwrap();
@@ -391,6 +432,6 @@ mod tests {
         assert!(p.poll());
         assert!(!p.is_running());
         assert!(p.outcome.as_ref().expect("it ended").is_ok());
-        assert!(!p.prepared(), "an entries-only apply must not ask for a re-read");
+        assert!(!p.errand.prepares(), "an entries-only apply must not ask for a re-read");
     }
 }

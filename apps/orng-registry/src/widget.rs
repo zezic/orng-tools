@@ -424,35 +424,6 @@ pub fn search_field(ui: &mut Ui, palette: Palette, query: &mut String, hint: &st
         });
 }
 
-/// A control that is on or off, and says which by a mark rather than a fill.
-pub fn check(ui: &mut Ui, palette: Palette, label: &str, on: bool) -> Response {
-    let mark = if on { "[x]" } else { "[ ]" };
-    let mut text = egui::text::LayoutJob::default();
-    text.append(
-        mark,
-        0.0,
-        egui::TextFormat {
-            color: if on { palette.accent } else { palette.ink_3 },
-            ..font::format(font::mono(font::MONO))
-        },
-    );
-    text.append(
-        label,
-        metric::TIGHT,
-        egui::TextFormat {
-            color: if on { palette.ink_2 } else { palette.ink_3 },
-            ..font::format(font::plain(font::CHIP))
-        },
-    );
-    ui.add(
-        egui::Button::new(text)
-            .fill(Color32::TRANSPARENT)
-            .stroke(Stroke::NONE)
-            .min_size(vec2(0.0, metric::CONTROL)),
-    )
-    .on_hover_cursor(egui::CursorIcon::PointingHand)
-}
-
 /// The one thing the window does, drawn as the one thing the window does.
 ///
 /// Filled with the accent when it can be pressed and with the button fill when

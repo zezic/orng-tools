@@ -77,6 +77,25 @@ jobs:
       - name: Test
         run: cargo test --workspace
 
+      # A snapshot that differs here reports a pixel count and nothing to look
+      # at, on the one platform nobody has locally - which is the case this
+      # workflow exists for and the case it was worst at. The harness writes the
+      # rendered picture and a diff beside the stored one; both are what says
+      # whether a difference is a glyph, a gap, or the whole column moving.
+      #
+      # `if: failure()` rather than `always()`: a passing run leaves the tree
+      # clean and there would be nothing to collect.
+      - name: What the difference looked like
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: snapshots-${{ matrix.os }}
+          path: |
+            apps/orng-registry/tests/snapshots/*.diff.png
+            apps/orng-registry/tests/snapshots/*.new.png
+          if-no-files-found: ignore
+          retention-days: 14
+
   validator:
     name: The catalog's validator still installs
     runs-on: ubuntu-latest

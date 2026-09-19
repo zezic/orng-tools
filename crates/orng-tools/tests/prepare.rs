@@ -310,6 +310,7 @@ fn the_injected_class_registers_the_entry_list() {
                 .unwrap(),
             description: "written by a test".into(),
             keywords: vec!["orng".into(), "test".into()],
+            digest: None,
             // One of each source, so the row the class has to read past the
             // columns it knows is covered too.
             provenance: match kind {
@@ -440,6 +441,7 @@ fn copying_documents_keeps_them_inside_the_installation() {
         library_path: LibraryPath::for_document(Kind::Device, "ORNG COPIED.bwdevice").unwrap(),
         description: "written by a test".into(),
         keywords: Vec::new(),
+        digest: None,
         provenance: Provenance::Local,
     };
     let written =

@@ -91,6 +91,7 @@ mod tests {
             library_path: LibraryPath::new(format!("devices/My Devices/{name}.bwdevice")).unwrap(),
             description: "Allpass phase-rotator".into(),
             keywords: vec!["disperser".into(), "allpass".into()],
+            digest: None,
             provenance: Provenance::Local,
         }
     }

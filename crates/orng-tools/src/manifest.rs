@@ -14,7 +14,7 @@ use std::path::Path;
 
 use uuid::Uuid;
 
-use crate::{Error, ItemVersion, Kind, LibraryPath, Provenance, Registration, Result, fs};
+use crate::{Digest, Error, ItemVersion, Kind, LibraryPath, Provenance, Registration, Result, fs};
 
 /// Format marker, written first and checked on the way back in. The reader
 /// refuses a number it does not know rather than misreading a future layout.
@@ -34,15 +34,23 @@ enum Format {
     /// Eight columns: version and source, which is what tells an available
     /// update apart from a local edit.
     V2,
+    /// Nine columns: the digest of the document as it was placed, which is what
+    /// tells a file somebody else rewrote apart from one that is simply gone.
+    ///
+    /// Written before the two provenance columns rather than after them, so the
+    /// column that goes empty stays interior - the same hazard [`columns_for`]
+    /// names, and the digest is empty for every row registered before this.
+    V3,
 }
 
 impl Format {
-    const CURRENT: Format = Format::V2;
+    const CURRENT: Format = Format::V3;
 
     fn parse(number: &str) -> Option<Format> {
         match number {
             "1" => Some(Format::V1),
             "2" => Some(Format::V2),
+            "3" => Some(Format::V3),
             _ => None,
         }
     }
@@ -51,6 +59,7 @@ impl Format {
         match self {
             Format::V1 => 6,
             Format::V2 => 8,
+            Format::V3 => 9,
         }
     }
 
@@ -58,6 +67,7 @@ impl Format {
         match self {
             Format::V1 => 1,
             Format::V2 => 2,
+            Format::V3 => 3,
         }
     }
 }
@@ -115,8 +125,9 @@ impl Manifest {
         let mut out = format!("{MARKER} {}\n", Format::CURRENT.number());
         for entry in &self.entries {
             let (version, source) = columns_for(&entry.provenance);
+            let digest = entry.digest.as_ref().map(Digest::as_str).unwrap_or_default();
             out.push_str(&format!(
-                "{}\t{}\t{}\t{}\t{}\t{}\t{version}\t{source}\n",
+                "{}\t{}\t{}\t{}\t{}\t{}\t{digest}\t{version}\t{source}\n",
                 entry.uuid,
                 entry.kind.enum_constant(),
                 entry.name,
@@ -201,6 +212,20 @@ fn parse_line(line: &str, number: usize, format: Format) -> Result<Registration>
         Format::V1 => Provenance::Local,
         Format::V2 => parse_provenance(columns[6], columns[7])
             .ok_or(Error::MalformedManifest { line: number, reason: "bad provenance" })?,
+        Format::V3 => parse_provenance(columns[7], columns[8])
+            .ok_or(Error::MalformedManifest { line: number, reason: "bad provenance" })?,
+    };
+    // Nothing written before version 3 recorded what it placed, and an empty
+    // column says the same thing: this row cannot be held against its document.
+    // Anything else in that column has to be a digest, because a row that
+    // carries one and cannot be compared is worse than one that carries none.
+    let digest = match format {
+        Format::V1 | Format::V2 => None,
+        Format::V3 if columns[6].is_empty() => None,
+        Format::V3 => Some(
+            Digest::new(columns[6])
+                .map_err(|_| Error::MalformedManifest { line: number, reason: "bad digest" })?,
+        ),
     };
 
     Ok(Registration {
@@ -210,6 +235,7 @@ fn parse_line(line: &str, number: usize, format: Format) -> Result<Registration>
         library_path,
         description: columns[4].to_owned(),
         keywords: columns[5].split_whitespace().map(str::to_owned).collect(),
+        digest,
         provenance,
     })
 }
@@ -226,6 +252,7 @@ mod tests {
             library_path: LibraryPath::new("devices/My Devices/DISPERSER.bwdevice").unwrap(),
             description: "Allpass phase-rotator".into(),
             keywords: vec!["disperser".into(), "allpass".into()],
+            digest: Some(Digest::of(b"DISPERSER")),
             provenance: Provenance::Local,
         }
     }
@@ -269,8 +296,11 @@ mod tests {
 
     #[test]
     fn malformed_lines_are_refused_rather_than_skipped() {
-        assert!(Manifest::parse(&row("not-a-uuid\tDEVICE\tA\tdevices/a.bwdevice\t\t\t\tlocal")).is_err());
-        assert!(Manifest::parse("#orng-registry 2\n#comment\n\n").unwrap().is_empty());
+        assert!(
+            Manifest::parse(&row("not-a-uuid\tDEVICE\tA\tdevices/a.bwdevice\t\t\t\t\tlocal"))
+                .is_err()
+        );
+        assert!(Manifest::parse("#orng-registry 3\n#comment\n\n").unwrap().is_empty());
     }
 
     #[test]
@@ -291,6 +321,68 @@ mod tests {
         assert!(line.ends_with("\tlocal"), "{line:?}");
     }
 
+    /// The digest goes where an empty one is harmless. It is empty for every
+    /// row registered before this format, and a trailing empty column is the
+    /// one an editor that strips whitespace silently eats - which is the reason
+    /// the source column was put last in the first place.
+    #[test]
+    fn the_digest_column_is_interior_so_an_empty_one_survives() {
+        let mut manifest = Manifest::default();
+        manifest.insert(Registration { digest: None, ..sample() });
+        let line = manifest.to_tsv().lines().nth(1).unwrap().to_owned();
+        assert!(line.contains("\t\t\tlocal"), "{line:?}");
+        assert!(line.ends_with("\tlocal"), "{line:?}");
+        // And it comes back as nothing recorded rather than as a parse failure.
+        let parsed = Manifest::parse(&manifest.to_tsv()).unwrap();
+        assert_eq!(parsed.entries()[0].digest, None);
+    }
+
+    /// What a registration records about the document it was placed with, back
+    /// off the disk as the same value. Nothing else in the row can stand in for
+    /// it, so a round trip that lost it would read as a document nobody can say
+    /// anything about.
+    #[test]
+    fn the_recorded_digest_round_trips() {
+        let mut manifest = Manifest::default();
+        manifest.insert(sample());
+        let parsed = Manifest::parse(&manifest.to_tsv()).unwrap();
+        assert_eq!(parsed.entries()[0].digest, Some(Digest::of(b"DISPERSER")));
+    }
+
+    /// A row that carries a digest and cannot be compared is worse than one
+    /// that carries none: it would read as a document that differs from its
+    /// record forever, and the remedy the interface offers for that is to
+    /// register the document again.
+    #[test]
+    fn a_digest_that_cannot_be_one_is_refused_rather_than_read_as_absent() {
+        let uuid = "80c0dc4c-d142-53a7-85ee-b91427819b66";
+        let path = "devices/My Devices/A.bwdevice";
+        let real = Digest::of(b"DISPERSER").to_string();
+        for digest in ["nonsense", &real[..63], &real.to_uppercase()] {
+            let line = format!("{uuid}\tDEVICE\tA\t{path}\t\t\t{digest}\t\tlocal");
+            assert!(Manifest::parse(&row(&line)).is_err(), "accepted {digest:?}");
+        }
+        // And the real one is accepted, so the loop above is refusing the
+        // digest rather than the row around it.
+        let line = format!("{uuid}\tDEVICE\tA\t{path}\t\t\t{real}\t\tlocal");
+        assert!(Manifest::parse(&row(&line)).is_ok());
+    }
+
+    /// The other list on a user's disk today: eight columns under marker 2.
+    /// Everything in it was registered by a build that recorded nothing about
+    /// the bytes, and nothing can invent that record afterwards - hashing what
+    /// is there now would write the present down as the past.
+    #[test]
+    fn a_list_written_before_the_digest_says_nothing_about_its_documents() {
+        let v2 = "#orng-registry 2\n\
+            80c0dc4c-d142-53a7-85ee-b91427819b66\tDEVICE\tDISPERSER\t\
+            devices/My Devices/DISPERSER.bwdevice\tAllpass phase-rotator\tdisperser allpass\t\
+            \tlocal\n";
+        let parsed = Manifest::parse(v2).unwrap();
+        assert_eq!(parsed.entries(), &[Registration { digest: None, ..sample() }]);
+        assert!(parsed.to_tsv().starts_with("#orng-registry 3\n"));
+    }
+
     #[test]
     fn a_list_written_before_the_catalog_reads_as_local_content() {
         // What is on a user's disk today: six columns under marker 1. It has to
@@ -299,10 +391,10 @@ mod tests {
             80c0dc4c-d142-53a7-85ee-b91427819b66\tDEVICE\tDISPERSER\t\
             devices/My Devices/DISPERSER.bwdevice\tAllpass phase-rotator\tdisperser allpass\n";
         let parsed = Manifest::parse(v1).unwrap();
-        assert_eq!(parsed.entries(), &[sample()]);
+        assert_eq!(parsed.entries(), &[Registration { digest: None, ..sample() }]);
 
         // And is rewritten in the current format, not the one it arrived in.
-        assert!(parsed.to_tsv().starts_with("#orng-registry 2\n"));
+        assert!(parsed.to_tsv().starts_with("#orng-registry 3\n"));
     }
 
     #[test]
@@ -322,7 +414,7 @@ mod tests {
         // A local file cannot be at a published version, and a catalog item
         // cannot be at none: neither says anything an update check could use.
         for (version, source) in [("2.0.3", "local"), ("", "catalog"), ("nonsense", "catalog")] {
-            let line = format!("{uuid}\tDEVICE\tA\t{path}\t\t\t{version}\t{source}");
+            let line = format!("{uuid}\tDEVICE\tA\t{path}\t\t\t\t{version}\t{source}");
             assert!(Manifest::parse(&row(&line)).is_err(), "accepted {version:?} {source:?}");
         }
     }

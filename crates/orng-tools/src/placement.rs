@@ -463,6 +463,7 @@ mod tests {
             library_path: path,
             description: String::new(),
             keywords: Vec::new(),
+            digest: None,
             provenance: Provenance::Local,
         };
         // Nothing has been placed, so it must report as unresolved rather than

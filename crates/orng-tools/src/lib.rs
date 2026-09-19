@@ -49,6 +49,7 @@ pub use bitwig_install::{AppData, Installation, RunState, UserLibrary, running_s
 pub use bitwig_registry::{Anchor, Binding, BuildId, Entry, GuardState};
 pub use entries::{TheDocument, Update};
 pub use home::OrngHome;
+pub use orng_catalog::Digest;
 pub use orng_catalog::manifest::ItemVersion;
 pub use placement::{Placement, Strategy};
 pub use manifest::Manifest;
@@ -205,6 +206,18 @@ pub struct Registration {
     pub description: String,
     /// Words that find the entry when typed into the browser.
     pub keywords: Vec<String>,
+    /// What the document hashed to when this application last placed it.
+    ///
+    /// The record the design's `Changed` status is read against: a file whose
+    /// hash no longer matches has been rewritten by something that is not this
+    /// application, which is a different fact from the file being gone and
+    /// carries a different remedy.
+    ///
+    /// `None` for an entry registered by a build that recorded nothing. Not a
+    /// fault and not repairable: hashing whatever is there now would record the
+    /// present as the past and guarantee the answer "unchanged" forever. Such a
+    /// row simply says nothing about its document, which is the truth.
+    pub digest: Option<Digest>,
     /// Where the document came from, and what may be said about updating it.
     pub provenance: Provenance,
 }
@@ -248,6 +261,7 @@ impl Registration {
                 .clone()
                 .unwrap_or_else(|| format!("Custom {}", kind.label().to_lowercase())),
             keywords: identity.suggested_keywords(),
+            digest: Some(Digest::of(document.bytes())),
             provenance: Provenance::Local,
         })
     }

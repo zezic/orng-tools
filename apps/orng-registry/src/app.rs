@@ -3323,6 +3323,7 @@ mod tests {
                 .expect("a library path"),
             description: "Beat-synced volume LFO".to_owned(),
             keywords: vec!["volshaper".to_owned()],
+            digest: None,
             provenance: Provenance::Catalog {
                 version: "1.0.0".parse().expect("a version"),
             },

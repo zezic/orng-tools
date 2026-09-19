@@ -18,7 +18,8 @@
 use uuid::Uuid;
 
 use crate::{
-    Destination, Document, Kind, Manifest, Registration, Result, descriptions, fs, placement,
+    Destination, Digest, Document, Kind, Manifest, Registration, Result, descriptions, fs,
+    placement,
 };
 
 /// What a removal does with the document file the entry named.
@@ -71,7 +72,14 @@ impl Update {
     /// An identity already in the list is updated rather than added a second
     /// time, so re-dropping an edited document does the obvious thing instead of
     /// producing two rows under one UUID.
-    pub fn add(&mut self, registration: Registration, document: Document) {
+    ///
+    /// **The recorded digest is taken from the document, not from the caller.**
+    /// It is a statement about the bytes this is placing, so it can only be
+    /// right if it is derived here: a caller carrying an older registration
+    /// forward - which locating a missing file does, deliberately, to keep the
+    /// words the user edited - would otherwise record what some earlier file
+    /// hashed to and leave the entry reading `Changed` the moment it was fixed.
+    pub fn add(&mut self, mut registration: Registration, document: Document) {
         // A registration describes the document it is placed with. Deriving one
         // from the other is the caller's job, because the description and the
         // keywords may have been edited between the two; that they still match
@@ -91,6 +99,7 @@ impl Update {
             registration.kind,
             document.kind()
         );
+        registration.digest = Some(Digest::of(document.bytes()));
         self.entries.insert(registration.clone());
         self.place.push((registration, document));
     }
@@ -472,5 +481,27 @@ mod tests {
         let (registration, _) = staged(Kind::Device, "DISPERSER");
         let (_, other) = staged(Kind::Device, "SOMETHING ELSE");
         Update::to(Manifest::default()).add(registration, other);
+    }
+
+    /// The digest recorded is the one the placed bytes hash to, whatever the
+    /// caller was carrying.
+    ///
+    /// Locating a missing file is the caller that gets this wrong: it hands the
+    /// registration already on record forward on purpose, to keep the words the
+    /// user edited, and that registration remembers an older file. Taking its
+    /// digest would leave the entry reading `Changed` the instant it was fixed.
+    #[test]
+    fn placing_a_document_records_what_was_placed_and_not_what_was_asked_for() {
+        let machine = machine();
+        let (registration, document) = staged(Kind::Device, "DISPERSER");
+        let stale = Registration { digest: Some(Digest::of(b"an older file")), ..registration };
+
+        let mut update = Update::to(Manifest::default());
+        update.add(stale, document.clone());
+        let entries = update.apply(&machine.to).unwrap();
+
+        let placed = std::fs::read(machine.placed(Kind::Device, "DISPERSER.bwdevice")).unwrap();
+        assert_eq!(entries.entries()[0].digest, Some(Digest::of(&placed)));
+        assert_eq!(entries.entries()[0].digest, Some(Digest::of(document.bytes())));
     }
 }

@@ -18,8 +18,23 @@
 use uuid::Uuid;
 
 use crate::{
-    Destination, Document, Kind, Manifest, Registration, Result, descriptions, placement,
+    Destination, Document, Kind, Manifest, Registration, Result, descriptions, fs, placement,
 };
+
+/// What a removal does with the document file the entry named.
+///
+/// An enum rather than a flag, because `remove(uuid, true)` says nothing at a
+/// call site about which way round the truth is, and the two answers differ by
+/// whether work the user cannot get back survives. The interface draws it as a
+/// preference and names the one in force on the control itself.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TheDocument {
+    /// Left in the library. The entry goes and the file stays, so the removal
+    /// can be undone by dropping the same document again.
+    Kept,
+    /// Deleted along with the entry. Nothing here can put it back.
+    Deleted,
+}
 
 /// A change to the entry list, together with the documents it names.
 ///
@@ -37,12 +52,17 @@ pub struct Update {
     entries: Manifest,
     /// Documents whose bytes are not yet where their registration resolves.
     place: Vec<(Registration, Document)>,
+    /// Entries taken out of the list whose document is to go as well. The
+    /// registration and not the path, because where a document lives is a
+    /// question only the destination can answer and the destination arrives at
+    /// [`Update::apply`].
+    delete: Vec<Registration>,
 }
 
 impl Update {
     /// Start from the list as it stands.
     pub fn to(entries: Manifest) -> Update {
-        Update { entries, place: Vec::new() }
+        Update { entries, place: Vec::new(), delete: Vec::new() }
     }
 
     /// Register `document` under `registration`, and place the document where
@@ -96,12 +116,20 @@ impl Update {
         self.entries.insert(registration);
     }
 
-    /// Take an identity out of the list.
+    /// Take an identity out of the list, and say what becomes of its document.
     ///
-    /// The document file is left where it is. Whether it goes too is a choice
-    /// the user makes on the removal itself, and the default is to keep it.
-    pub fn remove(&mut self, uuid: Uuid) {
-        self.entries.remove(uuid);
+    /// **Refuses an identity the list does not carry**, for the reason
+    /// [`Update::revise`] does: a removal of something that is not there is a
+    /// control offered for a row that does not exist, and swallowing it would
+    /// let the interface go on offering it.
+    pub fn remove(&mut self, uuid: Uuid, document: TheDocument) {
+        let gone = self
+            .entries
+            .remove(uuid)
+            .unwrap_or_else(|| panic!("{uuid} is not registered, so there is nothing to remove"));
+        if document == TheDocument::Deleted {
+            self.delete.push(gone);
+        }
     }
 
     /// The list as it will be once this is applied.
@@ -121,6 +149,12 @@ impl Update {
     ///    exists. A description key naming an entry that was never registered is
     ///    read by nobody; an entry whose document was never written is the
     ///    `Missing file` state staring back at the user.
+    /// 4. **The documents a removal takes with it**, last for the mirror of the
+    ///    same reason. Deleting before the list is written would leave, for as
+    ///    long as the write takes and for ever if it fails, an entry still
+    ///    registered with nothing behind it - `Missing file`, arrived at by
+    ///    doing what was asked. Deleting after leaves at worst a file nothing
+    ///    points at, which is the answer the other setting gives anyway.
     ///
     /// This is not a transaction and does not pretend to be one. A failure part
     /// way leaves files written and nothing registered, and applying again from
@@ -141,6 +175,10 @@ impl Update {
         }
 
         self.entries.save(&to.home.entries())?;
+
+        for registration in &self.delete {
+            fs::delete_if_exists(&placement::target(to, registration))?;
+        }
         Ok(self.entries)
     }
 }
@@ -231,7 +269,7 @@ mod tests {
         assert!(machine.bundle(Kind::Device).contains("device.dropped.desc"));
 
         let mut update = Update::to(entries);
-        update.remove(dropped.uuid);
+        update.remove(dropped.uuid, TheDocument::Kept);
         update.apply(&machine.to).unwrap();
 
         let bundle = machine.bundle(Kind::Device);
@@ -241,6 +279,89 @@ mod tests {
         // The entry goes; the file it named stays. Deleting it is a choice made
         // on the removal, and the default is to keep it.
         assert!(machine.placed(Kind::Device, "DROPPED.bwdevice").is_file());
+    }
+
+    /// The other answer, and the one that cannot be undone: the file goes with
+    /// the entry, and only that entry's file does.
+    #[test]
+    fn removing_an_entry_can_take_its_document_with_it() {
+        let machine = machine();
+        let (kept, kept_document) = staged(Kind::Device, "KEPT");
+        let (dropped, dropped_document) = staged(Kind::Device, "DROPPED");
+
+        let mut update = Update::to(Manifest::default());
+        update.add(kept.clone(), kept_document);
+        update.add(dropped.clone(), dropped_document);
+        let entries = update.apply(&machine.to).unwrap();
+
+        let mut update = Update::to(entries);
+        update.remove(dropped.uuid, TheDocument::Deleted);
+        update.apply(&machine.to).unwrap();
+
+        assert!(!machine.placed(Kind::Device, "DROPPED.bwdevice").exists());
+        assert!(
+            machine.placed(Kind::Device, "KEPT.bwdevice").is_file(),
+            "a removal deleted a document it was not about"
+        );
+    }
+
+    /// The document is deleted after the list is written, and the order is what
+    /// decides what a failure leaves behind. A delete that fails must still have
+    /// de-registered the entry: the other way round leaves an entry registered
+    /// with nothing behind it, which is `Missing file` reached by doing exactly
+    /// what was asked.
+    #[test]
+    fn a_document_that_cannot_be_deleted_is_still_de_registered() {
+        let machine = machine();
+        let (registration, document) = staged(Kind::Device, "DISPERSER");
+
+        let mut update = Update::to(Manifest::default());
+        update.add(registration.clone(), document);
+        let entries = update.apply(&machine.to).unwrap();
+
+        // A directory where the document was. Deleting one as a file fails on
+        // every platform, which a permission bit does not.
+        let placed = machine.placed(Kind::Device, "DISPERSER.bwdevice");
+        std::fs::remove_file(&placed).unwrap();
+        std::fs::create_dir(&placed).unwrap();
+
+        let mut update = Update::to(entries);
+        update.remove(registration.uuid, TheDocument::Deleted);
+        assert!(update.apply(&machine.to).is_err(), "the blocked delete was not reported");
+
+        assert!(
+            !machine.list().contains(&registration.uuid.to_string()),
+            "the entry survived its own removal: {}",
+            machine.list()
+        );
+        assert!(!machine.bundle(Kind::Device).contains("device.disperser"));
+    }
+
+    /// A document somebody had already deleted by hand is the state the removal
+    /// was asking for, so it is not a failure. Anything else about the delete
+    /// still is one, which the test above proves.
+    #[test]
+    fn deleting_a_document_that_is_already_gone_is_not_a_failure() {
+        let machine = machine();
+        let (registration, document) = staged(Kind::Device, "DISPERSER");
+
+        let mut update = Update::to(Manifest::default());
+        update.add(registration.clone(), document);
+        let entries = update.apply(&machine.to).unwrap();
+        std::fs::remove_file(machine.placed(Kind::Device, "DISPERSER.bwdevice")).unwrap();
+
+        let mut update = Update::to(entries);
+        update.remove(registration.uuid, TheDocument::Deleted);
+        assert!(update.apply(&machine.to).is_ok());
+    }
+
+    /// Removing is for an identity the list carries, exactly as revising is.
+    /// Swallowing one that is not there would let the interface go on offering
+    /// a control for a row that no longer exists.
+    #[test]
+    #[should_panic(expected = "is not registered")]
+    fn removing_something_that_is_not_registered_is_refused() {
+        Update::to(Manifest::default()).remove(Uuid::new_v4(), TheDocument::Kept);
     }
 
     /// Editing the words is a change to the bundles and to the list, and to

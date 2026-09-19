@@ -43,6 +43,20 @@ pub(crate) fn write(path: &Path, contents: impl AsRef<[u8]>) -> Result<()> {
     std::fs::write(path, contents).map_err(|source| error(path, source))
 }
 
+/// Delete a file that may already be gone.
+///
+/// A removal that takes the document with it wants the file not to be there,
+/// and a file somebody had already deleted by hand is that state rather than a
+/// failure to report. Every other kind of failure still is one: a document left
+/// behind because the library is read-only is a file the user has to know about.
+pub(crate) fn delete_if_exists(path: &Path) -> Result<()> {
+    match std::fs::remove_file(path) {
+        Ok(()) => Ok(()),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        Err(source) => Err(error(path, source)),
+    }
+}
+
 /// Write a file, creating the directories leading to it.
 pub(crate) fn write_new(path: &Path, contents: impl AsRef<[u8]>) -> Result<()> {
     if let Some(parent) = path.parent() {

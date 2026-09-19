@@ -389,24 +389,35 @@ pub fn centred_block(ui: &mut Ui, contents: impl Fn(&mut Ui)) {
 /// How wide the search field draws, on a toolbar with `fixed` pixels already
 /// spoken for.
 ///
-/// The field is the toolbar's flexible thing: `flex:1 1 auto` with a 200-pixel
-/// cap and a 64-pixel floor, which across the box is [`metric::SEARCH_FIELD`]
-/// and [`metric::SEARCH_FLOOR`]. What is easy to miss is the second flexible
-/// item - a bare `flex:1 1 0` between the kind chips and the controls at the
-/// right end - because the two grow and shrink *together*. So the field gets
-/// its own content width plus half of whatever the toolbar has left over, and
-/// the gap gets the other half.
+/// The field is the toolbar's flexible thing: `flex:1 1 auto` with a cap and a
+/// 64-pixel floor, which across the box is `cap` and [`metric::SEARCH_FLOOR`].
+/// The cap is the one number the two toolbars disagree about -
+/// [`metric::SEARCH_FIELD`] against [`metric::CATALOG_SEARCH_FIELD`] - because
+/// the catalog's placeholder names four fields where Local's names two.
 ///
-/// Which is why the bundle draws the field 216 across at 820 and 146 at 548,
-/// rather than the 207 that "the field takes what is left" would give.
+/// What is easy to miss is the second flexible item - a bare `flex:1 1 0`
+/// between the kind chips and the controls at the right end - because the two
+/// grow and shrink *together*. So the field gets its own content width plus half
+/// of whatever the toolbar has left over, and the gap gets the other half.
+///
+/// Which is why the bundle draws the Local field 216 across at 820 and 146 at
+/// 548, rather than the 207 that "the field takes what is left" would give.
+///
+/// **Until the gap reaches its own floor**, which is where the sharing stops:
+/// the bundle writes `min-width:8px` on it, and a flex item at its minimum
+/// stops shrinking while the other one carries on. That is the catalog toolbar
+/// beside the panel, where the gap is pinned at eight and the field takes the
+/// whole of the remainder - 82 rather than the 84 an even split would give.
 ///
 /// `content` is measured from the hint rather than from what has been typed,
 /// which the design does not do: its field is sized by whichever text is in it.
 /// A field that widened under the pointer as somebody typed into it would push
 /// every chip beside it along, and nothing is worth that.
-pub fn search_width(available: f32, fixed: f32, content: f32) -> f32 {
+pub fn search_width(available: f32, fixed: f32, content: f32, cap: f32) -> f32 {
     let spare = available - fixed - content;
-    (content + spare / 2.0).clamp(metric::SEARCH_FLOOR, metric::SEARCH_FIELD)
+    let share = content + spare / 2.0;
+    let most = available - fixed - metric::FLEXIBLE_GAP_FLOOR;
+    share.min(most).clamp(metric::SEARCH_FLOOR, cap)
 }
 
 /// What the search field asks for before anything is shared out: the glyph, the
@@ -2780,56 +2791,167 @@ fn marked_row(ui: &mut Ui, palette: Palette, marked: &Marked<'_>) -> Response {
     outer.interact(Sense::click()).on_hover_cursor(egui::CursorIcon::PointingHand)
 }
 
+/// The numbers one of the design's segmented switches is drawn to.
+///
+/// There are two of them and they are the same control: a well, segments inside
+/// it, exactly one held. What differs is four numbers and the weight of the held
+/// word, so the shape is written once and each surface states its own - which is
+/// what [`segmented`] and [`install_filter`] are, rather than one function with
+/// a flag saying which screen called it.
+struct Segments {
+    /// Whichever of the two surface colours the thing under it is not. The
+    /// appearance switch sits on a group and takes the page colour; the install
+    /// filter sits on the page and takes the panel's.
+    well: Color32,
+    /// The well's own height, and a segment's inside it.
+    height: f32,
+    segment: f32,
+    pad_x: f32,
+    held: Held,
+}
+
+/// How the held segment's word is set.
+///
+/// The design writes the appearance switch's at the ordinary weight and the
+/// catalog's install filter at 500, and that is the only difference between the
+/// two switches that is not a number.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Held {
+    Plain,
+    Heavier,
+}
+
 /// A switch between a few states, drawn as one control rather than as a row of
-/// buttons: the well behind the segments is the page colour, and that is what
-/// says they belong together.
+/// buttons: the well behind the segments says they belong together.
 ///
 /// Answers which segment was pressed, if one was.
-pub fn segmented<T: Copy + PartialEq>(
+fn segments<T: Copy + PartialEq>(
     ui: &mut Ui,
     palette: Palette,
+    shape: &Segments,
     current: T,
-    options: &[(T, &str, &str)],
+    options: impl Iterator<Item = (T, &'static str, &'static str)>,
 ) -> Option<T> {
     let mut pressed = None;
     Frame::new()
-        .fill(palette.bg)
+        .fill(shape.well)
         .corner_radius(CornerRadius::same(metric::FIELD_RADIUS))
         .inner_margin(Margin::same(metric::SEGMENTS_PAD as i8))
         .show(ui, |ui| {
-            ui.set_height(metric::SEGMENTS - 2.0 * metric::SEGMENTS_PAD);
+            ui.set_height(shape.height - 2.0 * metric::SEGMENTS_PAD);
             ui.spacing_mut().item_spacing.x = metric::BETWEEN_SEGMENTS;
-            ui.spacing_mut().button_padding = vec2(metric::SEGMENT_PAD_X, 0.0);
-            ui.horizontal_centered(|ui| {
+            ui.spacing_mut().button_padding = vec2(shape.pad_x, 0.0);
+            // `min_size` is a floor and not a ceiling, and the theme sets a bar
+            // control's 26 here - so a segment asked for 22 was drawn 26 and
+            // filled the well it was meant to sit two pixels inside.
+            ui.spacing_mut().interact_size.y = shape.segment;
+            // Stated, and `horizontal_centered` would not do: it *inherits* the
+            // caller's direction, and the order of these is the design's rather
+            // than the row's. Laid out inside a right-to-left group - which is
+            // how the Local toolbar reaches its own right end - the switch drew
+            // `Updatable Installed All`, three answers in the order nobody
+            // wrote them in.
+            ui.with_layout(Layout::left_to_right(Align::Center), |ui| {
                 for (value, glyph, label) in options {
-                    let on = *value == current;
+                    let on = value == current;
                     let ink = if on { palette.ink } else { palette.ink_3 };
-                    let button = egui::Button::new(labelled_icon(
-                        ui,
-                        glyph,
-                        label,
-                        font::CHIP,
-                        ink,
-                        ink,
-                        metric::ALONG_A_SEGMENT,
-                    ))
-                    .stroke(Stroke::NONE)
-                    // The design rounds a segment by three where it rounds the
-                    // well around it by four, so the segment sits inside the
-                    // corner rather than cutting across it.
-                    .corner_radius(CornerRadius::same(metric::RADIUS))
-                    .min_size(vec2(0.0, metric::SEGMENT));
+                    let button = egui::Button::new(segment_text(ui, shape, glyph, label, ink, on))
+                        .stroke(Stroke::NONE)
+                        // The design rounds a segment by three where it rounds
+                        // the well around it by four, so the segment sits inside
+                        // the corner rather than cutting across it.
+                        .corner_radius(CornerRadius::same(metric::RADIUS))
+                        .min_size(vec2(0.0, shape.segment));
                     let base = if on { palette.btn } else { Color32::TRANSPARENT };
                     if filled_button(ui, base, palette.btn_hover, button)
                         .on_hover_cursor(egui::CursorIcon::PointingHand)
                         .clicked()
                     {
-                        pressed = Some(*value);
+                        pressed = Some(value);
                     }
                 }
             });
         });
     pressed
+}
+
+/// What one segment says, which is a glyph and a word or a word on its own.
+///
+/// Not [`labelled_icon`]: that puts the design's gap in front of the label
+/// unconditionally, and a segment with no glyph would then draw five pixels
+/// indented from its own padding. And the held word may be set heavier, which is
+/// a choice about the label alone.
+fn segment_text(
+    ui: &Ui,
+    shape: &Segments,
+    glyph: &str,
+    label: &str,
+    ink: Color32,
+    on: bool,
+) -> egui::WidgetText {
+    let mut job = egui::text::LayoutJob::default();
+    if !glyph.is_empty() {
+        job.append(
+            glyph,
+            0.0,
+            egui::TextFormat {
+                color: ink,
+                valign: Align::Center,
+                ..font::format(font::icon(ui.ctx(), font::ICON))
+            },
+        );
+    }
+    let face = if on && shape.held == Held::Heavier {
+        font::emphasis(ui.ctx(), font::CHIP)
+    } else {
+        font::plain(font::CHIP)
+    };
+    job.append(
+        label,
+        if glyph.is_empty() { 0.0 } else { metric::ALONG_A_SEGMENT },
+        egui::TextFormat { color: ink, valign: Align::Center, ..font::format(face) },
+    );
+    job.into()
+}
+
+/// The appearance switch on the Settings screen - `SettingsScreen.dc.html:133`.
+pub fn segmented<T: Copy + PartialEq>(
+    ui: &mut Ui,
+    palette: Palette,
+    current: T,
+    options: &[(T, &'static str, &'static str)],
+) -> Option<T> {
+    let shape = Segments {
+        well: palette.bg,
+        height: metric::SEGMENTS,
+        segment: metric::SEGMENT,
+        pad_x: metric::SEGMENT_PAD_X,
+        held: Held::Plain,
+    };
+    segments(ui, palette, &shape, current, options.iter().copied())
+}
+
+/// The catalog toolbar's install filter - `CatalogToolbar.dc.html:33-37`.
+///
+/// No glyphs, because these are not three things to do: they are one question
+/// about the list, asked three ways, and a word is the whole of each answer.
+/// The well takes the panel colour rather than the page's, which is the switch
+/// on Settings the other way up - a control reads as one control by standing
+/// clear of what is behind it, and what is behind it here is the bar.
+pub fn install_filter<T: Copy + PartialEq>(
+    ui: &mut Ui,
+    palette: Palette,
+    current: T,
+    options: &[(T, &'static str)],
+) -> Option<T> {
+    let shape = Segments {
+        well: palette.panel,
+        height: metric::CONTROL,
+        segment: metric::INSTALL_FILTER_SEGMENT,
+        pad_x: metric::INSTALL_FILTER_PAD_X,
+        held: Held::Heavier,
+    };
+    segments(ui, palette, &shape, current, options.iter().map(|(v, l)| (*v, "", *l)))
 }
 
 /// The diagnostics block: a column of monospaced lines, meant to be copied
@@ -4261,10 +4383,64 @@ mod tests {
     #[test]
     fn the_search_field_is_as_wide_as_the_bundle_draws_it() {
         let gaps = 4.0 * metric::TOOL_GAP;
-        let wide = search_width(796.0, 237.0 + 62.0 + 98.0 + gaps, 157.0);
+        let wide = search_width(796.0, 237.0 + 62.0 + 98.0 + gaps, 157.0, metric::SEARCH_FIELD);
         assert_eq!(wide, metric::SEARCH_FIELD, "at 820 the cap is what holds it");
-        let narrow = search_width(524.0, 225.0 + 16.0 + 36.0 + gaps, 77.0);
+        let narrow = search_width(524.0, 225.0 + 16.0 + 36.0 + gaps, 77.0, metric::SEARCH_FIELD);
         assert_eq!(narrow, 146.0, "beside the inspector");
+    }
+
+    /// And the catalog's, which is the same arithmetic against a bar with one
+    /// box fewer and a cap a hundred pixels higher.
+    ///
+    /// Both numbers are `CatalogToolbar.dc.html` probed at its own two widths.
+    /// The inputs are its boxes - the three chips at 237.31 in *both* widths,
+    /// because this bar's `chip()` takes no `narrow` argument, the install
+    /// filter at 172.41, three gaps of eight, and the field's own content.
+    ///
+    /// **The narrow one is where the even split stops being the answer.** The
+    /// share would put the field at 83.73 and the bundle draws 82.28, because
+    /// the flexible gap beside it has reached its `min-width:8px` and stopped
+    /// shrinking while the field carried on. A formula that only ever halved
+    /// the spare would draw this bar a pixel and a half too wide and push the
+    /// install filter off the right edge of the window.
+    #[test]
+    fn the_catalogs_search_field_is_as_wide_as_its_own_bundle_draws_it() {
+        let gaps = 3.0 * metric::TOOL_GAP;
+        let fixed = 237.31 + 172.41 + gaps;
+        let wide = search_width(796.0, fixed, 288.78, metric::CATALOG_SEARCH_FIELD);
+        assert_eq!(wide, metric::CATALOG_SEARCH_FIELD, "at 820 the cap is what holds it");
+        // The wider of the two caps, which is the whole reason there are two.
+        const _: () = assert!(metric::CATALOG_SEARCH_FIELD > metric::SEARCH_FIELD);
+
+        let narrow = search_width(524.0, fixed, 77.17, metric::CATALOG_SEARCH_FIELD);
+        assert!(
+            (narrow - 82.28).abs() < 0.01,
+            "beside the panel the bundle draws 82.28, not {narrow}"
+        );
+        // What the gap has left, which is the whole reason that number is not
+        // the share: eight, exactly, and never less.
+        assert_eq!(524.0 - fixed - narrow, metric::FLEXIBLE_GAP_FLOOR);
+        // And still clear of the floor a search field stops being worth having
+        // at, which is what lets this bar keep the chips at their full padding
+        // where the Local bar has to tighten them.
+        assert!(narrow > metric::SEARCH_FLOOR);
+    }
+
+    /// The install filter, against `CatalogToolbar.dc.html:33-37` and against
+    /// the switch it is nearly a copy of.
+    ///
+    /// Constants against constants, which proves less than a measurement - the
+    /// drawn control is measured in `render.rs`. What this pins is the pair of
+    /// numbers that differ, because the temptation is to call these one control
+    /// and draw both at the appearance switch's height.
+    #[test]
+    fn the_install_filter_stands_at_a_bar_controls_height() {
+        const _: () = assert!(
+            metric::INSTALL_FILTER_SEGMENT + 2.0 * metric::SEGMENTS_PAD == metric::CONTROL,
+            "the well is the height of everything else on the bar"
+        );
+        const _: () = assert!(metric::INSTALL_FILTER_SEGMENT != metric::SEGMENT);
+        const _: () = assert!(metric::INSTALL_FILTER_PAD_X != metric::SEGMENT_PAD_X);
     }
 
     /// The inspector, against the shell probed with the panel open.

@@ -544,6 +544,29 @@ fn the_filters_match_nothing() {
     look(&mut harness, "no-match");
 }
 
+/// And the catalog's, which is a different sentence over the same icon.
+///
+/// The bundle keeps them apart on purpose - `EmptyState.dc.html:93` against
+/// `:99`: this one names three filters because the catalog has three, and the
+/// list behind it is one somebody was browsing rather than one they own. The
+/// toolbar stays above it either way, which is the half of this a picture does
+/// hold: the control that undoes the filter must not go away with the rows.
+#[test]
+fn the_catalogs_filters_match_nothing() {
+    let root = fixture("catalog-no-match");
+    let session = copying(&root, superseded_entries());
+    let mut session = Some(session);
+    let mut harness = Harness::builder().with_size(SIZE).build_eframe(move |cc| {
+        let mut app = App::with(&cc.egui_ctx, session.take().expect("built once"));
+        let index = orng_catalog::Index::parse(SUPERSEDED).expect("the sample index parses");
+        app.set_catalog(Fetching::frozen(Ok(index)));
+        app.show_view(View::Catalog);
+        app.set_query("granular");
+        app
+    });
+    look(&mut harness, "catalog-no-match");
+}
+
 /// What a press leaves behind. The dialog is gone by then - the work is over -
 /// and what happened is stated above the action bar until it is put away.
 ///
@@ -1354,6 +1377,173 @@ fn the_detail_panels_foot_is_the_bundles_bar() {
     // control is centred in it rather than sitting on its floor, so the taller
     // one's centre is where the shorter one's is.
     assert_eq!(remove.center().y, primary.center().y);
+}
+
+/// One control on a toolbar, as drawn.
+///
+/// **Two nodes carry each of these words**, and the second is not a second
+/// control: a toolbar measures its chips and the box at its right end in an
+/// invisible sizing pass before it can work out how wide the search field is,
+/// and a sizing pass reaches the accessibility tree. The one that was drawn is
+/// the one the row placed, so it is the rightmost; the probe is laid out at the
+/// bar's own left edge. The same trap `widget::centred_block` sets on the
+/// action bar, and the same way out - take extremes across every match.
+fn on_the_bar<'t>(harness: &'t Harness<'static, App>, label: &'t str) -> egui_kittest::Node<'t> {
+    harness
+        .get_all_by_label(label)
+        .max_by(|a, b| a.rect().right().total_cmp(&b.rect().right()))
+        .expect("the bar has no such control")
+}
+
+/// The same, for a control in the middle region rather than on a bar.
+///
+/// The displacement is the other way round: an empty state measures into a
+/// probe at the top of the region it is centred in, so the drawn control is the
+/// lower of the two. One rule either way - take the extreme away from wherever
+/// the probe was laid out.
+fn in_the_region<'t>(harness: &'t Harness<'static, App>, label: &'t str) -> egui_kittest::Node<'t> {
+    harness
+        .get_all_by_label(label)
+        .max_by(|a, b| a.rect().top().total_cmp(&b.rect().top()))
+        .expect("the region has no such control")
+}
+
+/// Whether anything in the window carries this word.
+///
+/// `query_by_label` insists on exactly one node and several of these words are
+/// on two - a control that was measured as well as drawn, or a name the list
+/// and the panel both write.
+fn anywhere<S>(harness: &Harness<'_, S>, label: &str) -> bool {
+    harness.query_all_by_label(label).next().is_some()
+}
+
+/// The catalog toolbar, measured against `CatalogToolbar.dc.html` at both the
+/// widths the bundle was probed at.
+///
+/// Three claims a picture cannot hold. The search field is capped 104 pixels
+/// wider than the Local toolbar's, and a picture of a wide field says nothing
+/// about which cap held it. The install filter stands at the right edge of the
+/// bar, which is a subtraction rather than a look. And its segments are 22 tall
+/// inside a 26 well - four pixels that a `min_size` cannot state on its own,
+/// because the theme's `interact_size` is a floor under every button.
+#[test]
+fn the_catalog_toolbar_is_the_bundles_bar() {
+    use egui::accesskit::Role;
+
+    let harness = catalog_listing("catalog-toolbar", superseded_entries());
+
+    // The field's box, which is what the bundle's `max-width` is measured
+    // across: the text area plus the eight of padding the frame puts either
+    // side of it, which is the same eight a bar puts between its boxes. Its
+    // right edge at 332 is the design's 12 of gutter and the 320 cap.
+    let text = harness.get_by_role(Role::TextInput).rect();
+    assert_eq!(text.right() + metric::TOOL_GAP, metric::PAD + metric::CATALOG_SEARCH_FIELD);
+
+    // The install filter against the other gutter. The well is two pixels
+    // outside its last segment, so the group ends at 808 where the bundle's
+    // does.
+    let last = on_the_bar(&harness, "Updatable").rect();
+    assert_eq!(last.right() + metric::SEGMENTS_PAD, metric::WINDOW[0] - metric::PAD);
+    // Every segment the design's height, and not a bar control's.
+    for word in ["All", "Installed", "Updatable"] {
+        let seg = on_the_bar(&harness, word).rect();
+        assert_eq!(seg.height(), metric::INSTALL_FILTER_SEGMENT, "{word}");
+        assert_ne!(seg.height(), metric::CONTROL, "{word} grew to a bar control's height");
+    }
+    // In the order the design wrote them, which a reversed layout would have
+    // got wrong while leaving every other number here right.
+    let held = on_the_bar(&harness, "All").rect();
+    assert!(held.right() < on_the_bar(&harness, "Installed").rect().left());
+    assert!(on_the_bar(&harness, "Installed").rect().right() < last.left());
+    // And on the line the chips are on, rather than two pixels above them.
+    assert_eq!(held.center().y, on_the_bar(&harness, "Modulators2").rect().center().y);
+
+    // Beside the panel the whole bar is 272 narrower, and both ends move with
+    // it: the filter to the panel's edge, and the field off its cap.
+    let open = detail_on("catalog-toolbar-narrow", superseded_entries(), BREATH_FOLLOWER_II);
+    let narrow_last = on_the_bar(&open, "Updatable").rect();
+    assert_eq!(
+        narrow_last.right() + metric::SEGMENTS_PAD,
+        metric::WINDOW[0] - metric::ASIDE - metric::PAD
+    );
+    let narrow_text = open.get_by_role(Role::TextInput).rect();
+    assert!(
+        narrow_text.width() < text.width(),
+        "the field kept its full width on a bar 272 narrower"
+    );
+}
+
+/// The three filters, each narrowing the list and each saying so.
+///
+/// The index is the constant here and the machine is the variable, as it is
+/// everywhere else in the catalog: `BREATH FOLLOWER` is registered and reads
+/// `Replacement available`, and `BREATH FOLLOWER II` is not and reads
+/// `Available`. So `Installed` must keep exactly the first and `Updatable`
+/// neither - which is the one thing the design's three-state control is for.
+#[test]
+fn the_install_filter_shows_what_it_says_and_says_when_it_shows_nothing() {
+    let mut harness = catalog_listing("catalog-filtering", superseded_entries());
+    assert!(anywhere(&harness, "BREATH FOLLOWER II"), "the list did not draw");
+
+    // Installed: the registered one stays, the one nobody has goes.
+    on_the_bar(&harness, "Installed").click();
+    harness.run();
+    assert!(anywhere(&harness, "BREATH FOLLOWER"));
+    assert!(
+        !anywhere(&harness, "BREATH FOLLOWER II"),
+        "an item this machine does not have was shown under Installed"
+    );
+    // And the facet counts follow the filter rather than the list: the shell
+    // counts what the install filter left, so one modulator and not two.
+    assert!(anywhere(&harness, "Modulators1"));
+
+    // Updatable: neither, because an update keeps the identity and a
+    // replacement does not. The design's own quieter word, and here it is the
+    // difference between one row and none.
+    on_the_bar(&harness, "Updatable").click();
+    harness.run();
+    assert!(!anywhere(&harness, "BREATH FOLLOWER"));
+    assert!(anywhere(&harness, "Nothing in the catalog matches"));
+    // The toolbar stays put over the empty state, because it is how the filter
+    // gets undone - `ORNG Registry.dc.html:484` sets `toolbar` on this
+    // scenario. A chip is what says so: it is drawn by the bar and by nothing
+    // else, and it is still counting against a list with no rows in it.
+    assert!(anywhere(&harness, "Modulators0"));
+
+    in_the_region(&harness, "Clear filters").click();
+    harness.run();
+    assert!(anywhere(&harness, "BREATH FOLLOWER II"), "the filter was not undone");
+    assert!(anywhere(&harness, "Modulators2"), "the counts were not undone");
+}
+
+/// The catalog's search reads four fields where the Local list's reads two.
+///
+/// Worth its own test because the claim is entirely invisible: a picture of a
+/// filtered list is a picture of a shorter list, whatever it was matched on.
+/// Each word here appears in exactly one of the two items and in exactly one
+/// field of it, so a search that had quietly dropped the description or the
+/// keywords would still pass a name-only check.
+#[test]
+fn the_catalogs_search_reaches_the_description_and_the_keywords() {
+    use egui::accesskit::Role;
+
+    let typed = |query: &str| {
+        let mut harness = catalog_listing("catalog-search", superseded_entries());
+        let field = harness.get_by_role(Role::TextInput);
+        field.focus();
+        field.type_text(query);
+        harness.run();
+        anywhere(&harness, "BREATH FOLLOWER")
+    };
+
+    // In the first item's description and nowhere else.
+    assert!(typed("ducking"), "the description is not searched");
+    // A keyword of the first item, and not of the second.
+    assert!(typed("envelope"), "the keywords are not searched");
+    // The author, which both share, so this says the field is read at all.
+    assert!(typed("mono-lab"), "the author is not searched");
+    // And a word in neither.
+    assert!(!typed("granular"), "something matched a word that is in no item");
 }
 
 /// The catalog list with the detail open on one item, against a given machine.

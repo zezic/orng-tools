@@ -631,9 +631,26 @@ pub mod metric {
     /// inside, at 200 and 64, plus eight of padding on each side.
     pub const SEARCH_FIELD: f32 = 216.0;
     pub const SEARCH_FLOOR: f32 = 80.0;
+    /// The catalog's, which the design draws wider because it says what it
+    /// searches: `CatalogToolbar.dc.html:23` caps the text area at 304 where the
+    /// Local toolbar caps it at 200. The floor is the same 64 and so is the
+    /// padding, so only the cap differs.
+    pub const CATALOG_SEARCH_FIELD: f32 = 320.0;
+    /// How narrow the flexible gap between the kind chips and the controls at
+    /// the right end is allowed to get - the `min-width:8px` both toolbars write
+    /// on it. It is what stops the field taking the last of the bar and running
+    /// the two groups together.
+    pub const FLEXIBLE_GAP_FLOOR: f32 = 8.0;
     /// A kind chip's padding, which the design tightens beside the inspector.
     pub const CHIP_PAD: f32 = 9.0;
     pub const NARROW_CHIP_PAD: f32 = 7.0;
+
+    /// The catalog's install filter: `All` / `Installed` / `Updatable` in a well
+    /// of the panel colour - `CatalogToolbar.dc.html:33-37`. The same well the
+    /// appearance switch sits in, two pixels shallower so that the whole control
+    /// stands at [`CONTROL`], which is the height everything else on a bar is.
+    pub const INSTALL_FILTER_SEGMENT: f32 = 22.0;
+    pub const INSTALL_FILTER_PAD_X: f32 = 9.0;
 }
 
 /// Where a piece of text sits in the hierarchy.

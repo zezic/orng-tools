@@ -157,24 +157,67 @@ enum Which {
     Library,
 }
 
+/// How much of the catalog the install filter is letting through -
+/// `CatalogToolbar.dc.html:34-36`.
+///
+/// Three states and not a checkbox, which is the design's own decision: the
+/// question a returning user asks is "what have I got that has moved on", and a
+/// two-state control cannot ask it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+enum Shown {
+    #[default]
+    All,
+    Installed,
+    Updatable,
+}
+
+impl Shown {
+    /// Whether a published item in this state is one of the ones being shown.
+    ///
+    /// Read off [`Published`] rather than kept beside it, because the catalog's
+    /// own statuses are what the design words these three with: `Installed` is
+    /// exactly the three states the detail panel offers to remove, which is the
+    /// README's one rule that the two views must agree about what is installed.
+    fn lets_through(self, status: &Published) -> bool {
+        match self {
+            Shown::All => true,
+            Shown::Installed => status.installed(),
+            Shown::Updatable => *status == Published::UpdateAvailable,
+        }
+    }
+}
+
 /// What the list toolbar is showing of the list.
 ///
 /// A filter is not a property of the entries, so it does not live in the
 /// session: re-reading the machine must not silently clear what the user typed.
+///
+/// **One filter and not one per view**, which is the shell's own arrangement:
+/// `ORNG Registry.dc.html:101` and `:111` hand the same `query` and the same
+/// `kinds` to both toolbars, and only the install filter is the catalog's alone.
+/// Switching views keeps what was asked for rather than quietly widening it.
 #[derive(Debug)]
 struct Filter {
-    /// Matched against the display name and against the identity, which is the
-    /// pair of questions this view answers: what is this thing I have, and
-    /// which row is the one this UUID names.
+    /// On the Local list, matched against the display name and against the
+    /// identity - what is this thing I have, and which row is the one this UUID
+    /// names. The catalog answers a different question and so searches
+    /// different fields; see [`Filter::accepts_published`].
     query: String,
     /// Empty means none, not all: the toolbar shows every kind switched on and
     /// switching all three off is a thing a user can do and undo.
     kinds: BTreeSet<Kind>,
+    /// Read by the Catalog view alone. Nothing on the Local list is published,
+    /// so there is nothing there for it to say.
+    shown: Shown,
 }
 
 impl Default for Filter {
     fn default() -> Self {
-        Filter { query: String::new(), kinds: Kind::ALL.into_iter().collect() }
+        Filter {
+            query: String::new(),
+            kinds: Kind::ALL.into_iter().collect(),
+            shown: Shown::default(),
+        }
     }
 }
 
@@ -189,6 +232,24 @@ impl Filter {
             || entry.uuid.to_string().contains(&query)
     }
 
+    /// The same three questions asked of a published item.
+    ///
+    /// **The search covers four fields where Local's covers two**, and the
+    /// design says so in the placeholder: browsing is looking for a thing that
+    /// does X, so the description and the keywords are where the answer is. The
+    /// UUID is deliberately not among them - it names a thing you already have,
+    /// and a catalog row does not even draw one.
+    fn accepts_published(&self, item: &orng_catalog::IndexEntry, status: &Published) -> bool {
+        if !self.kinds.contains(&item.kind.into()) || !self.shown.lets_through(status) {
+            return false;
+        }
+        let query = self.query.trim().to_lowercase();
+        query.is_empty()
+            || item.name.to_lowercase().contains(&query)
+            || item.author.to_string().to_lowercase().contains(&query)
+            || item.description.to_lowercase().contains(&query)
+            || item.keywords.iter().any(|word| word.to_lowercase().contains(&query))
+    }
 }
 
 pub struct App {
@@ -568,16 +629,29 @@ impl App {
         // is 548 wide, and so is every row under it.
         let inspector = self.aside(ui);
 
-        if self.shows_a_list() {
+        // Every published item's state, worked out once for the frame because
+        // two surfaces are drawn from it: the toolbar counts the kinds the
+        // install filter is letting through, and the list draws the rows. Only
+        // in the Catalog view - in Local there is nothing on screen it answers
+        // for, and it walks the whole index against the whole entry list.
+        let states = match self.view {
+            View::Catalog => self.published_states(),
+            View::Local => std::collections::BTreeMap::new(),
+        };
+
+        if let Some(listing) = self.shows_a_list() {
             egui::Panel::top("toolbar")
                 .exact_size(metric::TOOLBAR)
                 .frame(widget::toolbar(self.palette))
-                .show(ui, |ui| self.list_toolbar(ui));
+                .show(ui, |ui| match listing {
+                    View::Local => self.list_toolbar(ui),
+                    View::Catalog => self.catalog_toolbar(ui, &states),
+                });
         }
 
         egui::CentralPanel::default()
             .frame(widget::page(self.palette))
-            .show(ui, |ui| self.page(ui));
+            .show(ui, |ui| self.page(ui, &states));
 
         // After the page it falls on, for the reason written on it.
         if let Some(aside) = inspector {
@@ -1638,18 +1712,27 @@ impl App {
         ));
     }
 
-    /// Whether the middle region is a list, which is what the toolbar belongs to.
-    fn shows_a_list(&self) -> bool {
-        let Session::Found(found) = &self.session else { return false };
-        // Nothing to filter is nothing to filter with. The design keeps the
-        // toolbar when a filter has narrowed the list to nothing, because that
-        // is how the filter gets cleared, and drops it on the onboarding
-        // screen, where there is no list behind it.
-        //
-        // Work in flight does not take it away either: the design draws the
-        // preparation over the list rather than instead of it.
-        let anything = !found.entries().is_empty() || !self.staged.is_empty();
-        self.view == View::Local && anything
+    /// Which list the middle region is, if it is one - and so which toolbar
+    /// belongs above it.
+    ///
+    /// Nothing to filter is nothing to filter with. The design keeps the
+    /// toolbar when a filter has narrowed the list to nothing, because that is
+    /// how the filter gets cleared, and drops it on the onboarding screen and on
+    /// the catalog's own two full-region states, where there is no list behind
+    /// it - `ORNG Registry.dc.html:484` sets `toolbar` on the no-match scenario
+    /// and `:470` leaves it off the never-fetched one.
+    ///
+    /// Work in flight does not take it away either: the design draws the
+    /// preparation over the list rather than instead of it.
+    fn shows_a_list(&self) -> Option<View> {
+        let Session::Found(found) = &self.session else { return None };
+        let anything = match self.view {
+            View::Local => !found.entries().is_empty() || !self.staged.is_empty(),
+            // A catalog that has not arrived, did not verify or is empty has no
+            // list under it: the whole region is the one thing there is to say.
+            View::Catalog => self.index().is_some_and(|index| !index.items.is_empty()),
+        };
+        anything.then_some(self.view)
     }
 
     /// The rows that are ready to be written.
@@ -2248,6 +2331,7 @@ impl App {
             ui.available_width(),
             fixed,
             widget::search_content(ui, hint),
+            metric::SEARCH_FIELD,
         );
 
         let mut toggled = None;
@@ -2260,14 +2344,142 @@ impl App {
         });
 
         if let Some(kind) = toggled {
-            if self.filter.kinds.contains(&kind) {
-                self.filter.kinds.remove(&kind);
-            } else {
-                self.filter.kinds.insert(kind);
-            }
+            self.toggle_kind(kind);
         }
         if adding {
             self.add_files(ui);
+        }
+    }
+
+    /// Above the catalog: what to show of it, and how much of it is already here.
+    ///
+    /// The Local toolbar's shape with the box at the right end exchanged.
+    /// `Add files...` and the factory toggle are about documents on this
+    /// machine; what somebody browsing needs instead is to be able to ask which
+    /// of this list they already have - `CatalogToolbar.dc.html`.
+    fn catalog_toolbar(
+        &mut self,
+        ui: &mut egui::Ui,
+        states: &std::collections::BTreeMap<Uuid, Published>,
+    ) {
+        let palette = self.palette;
+        ui.spacing_mut().item_spacing.x = 0.0;
+        let Some(index) = self.index() else { return };
+
+        // Counted against the install filter and against nothing else, which is
+        // the shell's own arithmetic - `ORNG Registry.dc.html:672-675` facets
+        // `installFiltered` rather than the drawn list. A facet answers "how
+        // many would I see if I switched this kind on", so narrowing it by the
+        // kind filter it is the control for would make every count read the
+        // number the row already shows or nothing at all. The search does not
+        // narrow it either, for the reason the Local toolbar's counts do not.
+        let shown = self.filter.shown;
+        let kinds: Vec<(Kind, usize, bool)> = Kind::ALL
+            .into_iter()
+            .map(|kind| {
+                let count = index
+                    .items
+                    .iter()
+                    .filter(|item| Kind::from(item.kind) == kind)
+                    .filter(|item| {
+                        let status = states.get(&item.uuid).expect(
+                            "every published item was answered for before the bar was drawn",
+                        );
+                        shown.lets_through(status)
+                    })
+                    .count();
+                (kind, count, self.filter.kinds.contains(&kind))
+            })
+            .collect();
+
+        let width = self.width();
+        // The design says what it searches, because it searches more than the
+        // other one does. Beside the panel there is no room to say it, and the
+        // placeholder falls back to the word the Local toolbar uses there too.
+        let hint = match width {
+            widget::Width::Full => "Search name, author, description or keywords",
+            widget::Width::Narrow => "Search",
+        };
+
+        // Laid out twice for the reason the Local toolbar's are: the field
+        // between them is the flexible one and cannot be given its share until
+        // everything that is not flexible has taken its own.
+        //
+        // **At the full chip padding in both widths**, which is the one place
+        // this bar and the Local one disagree: `CatalogToolbar.dc.html:43` takes
+        // no `narrow` argument where `ListToolbar.dc.html:56` does. It has one
+        // box fewer to fit, and the probe puts the field at 82 beside the panel
+        // - still clear of the 80 a search field stops being worth having at.
+        let chips = |ui: &mut egui::Ui| -> Option<Kind> {
+            let mut toggled = None;
+            for (at, (kind, count, on)) in kinds.iter().enumerate() {
+                if at > 0 {
+                    ui.add_space(metric::SNUG);
+                }
+                let label = plural(*kind);
+                let chip =
+                    widget::filter_chip(ui, palette, label, *count, *on, widget::Width::Full);
+                if chip.clicked() {
+                    toggled = Some(*kind);
+                }
+            }
+            toggled
+        };
+        // The design's three, in the design's order, which is also the order of
+        // how much they narrow: everything, what is here, what has moved on.
+        const OFFERED: [(Shown, &str); 3] = [
+            (Shown::All, "All"),
+            (Shown::Installed, "Installed"),
+            (Shown::Updatable, "Updatable"),
+        ];
+        let tail = |ui: &mut egui::Ui| widget::install_filter(ui, palette, shown, &OFFERED);
+
+        // Four boxes and all four drawn, unlike the Local bar: the field, the
+        // chips, the flexible gap, and the install filter.
+        const BETWEEN_TOOLBAR_GROUPS: f32 = 3.0 * metric::TOOL_GAP;
+        let chips_wide = widget::measured(ui, "catalog-chips", |ui| {
+            chips(ui);
+        });
+        let filter_wide = widget::measured(ui, "catalog-tail", |ui| {
+            tail(ui);
+        });
+        let fixed = chips_wide + filter_wide + BETWEEN_TOOLBAR_GROUPS;
+        let field = widget::search_width(
+            ui.available_width(),
+            fixed,
+            widget::search_content(ui, hint),
+            metric::CATALOG_SEARCH_FIELD,
+        );
+
+        let mut toggled = None;
+        let mut picked = None;
+        ui.horizontal_centered(|ui| {
+            widget::search_field(ui, palette, &mut self.filter.query, hint, field);
+            ui.add_space(metric::TOOL_GAP);
+            toggled = chips(ui);
+            // The design's second flexible box, laid out rather than achieved by
+            // reversing the row. A `right_to_left` wrapper is what the Local bar
+            // ends with, and it cannot be what this one ends with: the install
+            // filter is three controls, and a reversed layout draws them
+            // `Updatable Installed All` - a switch whose answers are in the
+            // order nobody wrote them in - while stretching the well behind them
+            // across everything the row had left.
+            ui.add_space((ui.available_width() - filter_wide).max(metric::FLEXIBLE_GAP_FLOOR));
+            picked = tail(ui);
+        });
+
+        if let Some(kind) = toggled {
+            self.toggle_kind(kind);
+        }
+        if let Some(shown) = picked {
+            self.filter.shown = shown;
+        }
+    }
+
+    /// Switch one kind filter, which both toolbars offer and neither owns.
+    fn toggle_kind(&mut self, kind: Kind) {
+        if !self.filter.kinds.remove(&kind) {
+            self.filter.kinds.insert(kind);
         }
     }
 
@@ -2294,7 +2506,10 @@ impl App {
     }
 
     /// Region two: whatever the current view has to show.
-    fn page(&mut self, ui: &mut egui::Ui) {
+    ///
+    /// `states` is every published item's state, worked out once for the frame
+    /// by [`App::browse`] because the toolbar above this is drawn from it too.
+    fn page(&mut self, ui: &mut egui::Ui, states: &std::collections::BTreeMap<Uuid, Published>) {
         match &self.session {
             Session::NoInstallation { searched } => {
                 let body = format!(
@@ -2361,22 +2576,20 @@ impl App {
                 if self.catalog.is_none() {
                     self.catalog = Some(Fetching::start(ui.ctx().clone()));
                 }
-                // Every row's state, worked out once against the list and the
-                // index, before either is borrowed to draw from. A row cannot
-                // answer this for itself: what state a published item is in is a
-                // fact about this machine, and the machine is not in the index.
-                let states = self.published_states();
                 let catalog = self.catalog.as_ref().expect("a fetch was just started");
                 // Taken after the list has been drawn, for the reason the
                 // Local list takes its own: opening the panel changes how wide
                 // every row is, and changing that half way down a list draws
                 // the rest of it to a different grid.
-                let pressed = published(ui, palette, catalog, width, open, &states);
+                let pressed = published(ui, palette, catalog, width, open, states, &self.filter);
                 if let Some(opened) = pressed.opened {
                     self.detailing = opened;
                 }
                 if let Some((uuid, offer)) = pressed.acted {
                     self.offer(uuid, offer, ui.ctx());
+                }
+                if pressed.cleared {
+                    self.filter = Filter::default();
                 }
             }
             Session::Found(_) => self.local(ui),
@@ -3654,6 +3867,10 @@ struct Pressed {
     opened: Option<Option<Uuid>>,
     /// The item whose own control was pressed, and which control it was.
     acted: Option<(Uuid, Offer)>,
+    /// Whether the empty state the filter left behind was asked to undo itself.
+    /// Not a row press at all, and it is here because it is the one other thing
+    /// this region answers.
+    cleared: bool,
 }
 
 /// The Catalog view: what ORNG Catalog publishes, once it has been proved.
@@ -3664,6 +3881,7 @@ fn published(
     width: widget::Width,
     open: Option<Uuid>,
     states: &std::collections::BTreeMap<Uuid, Published>,
+    filter: &Filter,
 ) -> Pressed {
     match catalog.outcome.as_ref() {
         None => {
@@ -3723,10 +3941,49 @@ fn published(
         // view divides into pending, registered and factory, and the catalog is
         // one list of one kind of thing.
         Some(Ok(index)) => {
+            let shown: Vec<&orng_catalog::IndexEntry> = index
+                .items
+                .iter()
+                .filter(|item| {
+                    let status = states
+                        .get(&item.uuid)
+                        .expect("every published item was answered for before the list was drawn");
+                    filter.accepts_published(item, status)
+                })
+                .collect();
+            if shown.is_empty() {
+                // The design's own words, and a different sentence from the
+                // Local list's: this one names three filters because the
+                // catalog has three - `EmptyState.dc.html:93-97`.
+                //
+                // **`Browse all` is drawn as the alt there and is not drawn
+                // here.** The shell's two handlers do the same thing -
+                // `ORNG Registry.dc.html:770` and `:773` both put the kinds and
+                // the install filter back to their defaults - so the second
+                // control offers the user nothing the first does not.
+                // `docs/design-review.md` round 3 item 3.
+                let empty = widget::Empty {
+                    icon: icon::NO_MATCH,
+                    inviting: false,
+                    marks: false,
+                    title: "Nothing in the catalog matches",
+                    body: "No item matches the current search, kind and install filters.",
+                    extensions: false,
+                    aside: None,
+                    action: Some("Clear filters"),
+                    action_is_primary: false,
+                    alt: None,
+                    foot: None,
+                    minor: true,
+                };
+                let cleared = widget::empty_state(ui, palette, &empty) == widget::Pressed::Action;
+                return Pressed { cleared, ..Pressed::default() };
+            }
+
             let mut pressed = Pressed::default();
             let mut acted = None;
             widget::list(ui, |ui| {
-                for entry in &index.items {
+                for entry in shown {
                     let selected = open == Some(entry.uuid);
                     let secondary = widget::supporting_ink(palette, selected);
                     let status = states

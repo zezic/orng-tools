@@ -890,8 +890,15 @@ fn a_row_opens_the_inspector_and_the_panel_closes_itself() {
     // The panel is taller than the window gives it, in the bundle as well as
     // here, so its last group is below the fold and no picture of it exists.
     // Asserted rather than left to the snapshot for exactly that reason.
+    //
+    // Named through the glyph as well as the words. The row beneath offers
+    // `Reveal file` too, and the pointer is still on that row after the press
+    // that opened the panel, so the words alone now match twice. The panel's
+    // item is the one carrying both on a single node, which is what
+    // `labelled_icon` builds and what a row's icon-only control is not.
+    let in_the_panel = format!("{}Reveal file", crate::widget::icon::REVEAL);
     assert!(
-        harness.query_by_label_contains("Reveal file").is_some(),
+        harness.query_by_label(&in_the_panel).is_some(),
         "the panel's action list was not laid out"
     );
 
@@ -900,6 +907,290 @@ fn a_row_opens_the_inspector_and_the_panel_closes_itself() {
     assert!(
         harness.query_by_label(shortened).is_some(),
         "the inspector's own control did not close it"
+    );
+}
+
+/// A window with the sample list in it, and nothing else set.
+fn listing(name: &str) -> Harness<'static, App> {
+    let root = fixture(name);
+    let session = found(&root, Helper::Present, GuardState::Disarmed);
+    let mut session = Some(session);
+    let mut harness = Harness::builder().with_size(SIZE).build_eframe(move |cc| {
+        App::with(&cc.egui_ctx, session.take().expect("built once"))
+    });
+    harness.run();
+    harness
+}
+
+/// The list with the pointer on a row, which is the only way the row's own
+/// controls are ever on screen.
+///
+/// The one picture of them, and the reason it is worth having: the geometry is
+/// asserted through the tree, but which glyph each control wears and what the
+/// hover does to the ink are not things a rectangle holds. The other list
+/// snapshots are all drawn with the pointer nowhere, so before this one nothing
+/// looked at these at all.
+#[test]
+fn a_row_under_the_pointer() {
+    let name = "row-actions";
+    let root = fixture(name);
+    let session = found(&root, Helper::Present, GuardState::Disarmed);
+    let mut session = Some(session);
+    let mut harness = Harness::builder().with_size(SIZE).build_eframe(move |cc| {
+        App::with(&cc.egui_ctx, session.take().expect("built once"))
+    });
+    harness.run();
+    // Between the name and the identity rather than on either. Both of those
+    // carry a tooltip of their own - the library path and "click to copy" - and
+    // a picture of the row's controls with a tooltip over the row beneath it is
+    // a picture of the tooltip.
+    let row = harness.get_by_label("DISPERSER").rect();
+    harness.hover_at(egui::pos2(400.0, row.center().y));
+    look(&mut harness, name);
+}
+
+/// The row's own controls: hidden until the pointer arrives, and then laid out
+/// as `EntryRow.dc.html:44-60` lays them out.
+///
+/// **Asserted through the tree and not through a picture**, because neither
+/// half of this claim is something a picture holds. A snapshot of a row with no
+/// pointer on it cannot say whether the controls are hidden or absent - the
+/// design's whole point is that those look identical - and a rectangle is what
+/// says a 22-pixel square is 22 pixels rather than what the eye settles for.
+#[test]
+fn a_row_reveals_its_controls_under_the_pointer_and_sizes_them_as_the_bundle_does() {
+    let mut harness = listing("row-action-sizes");
+
+    assert!(
+        harness.query_by_label_contains("Remove entry").is_none(),
+        "a row offered its controls with the pointer nowhere near it"
+    );
+
+    // On the name, which is inside the row and is what anybody aims at on the
+    // way to the controls at its other end.
+    harness.get_by_label("DISPERSER").hover();
+    harness.run();
+
+    let name = harness.get_by_label("DISPERSER").rect();
+    let reveal = harness.get_by_label("Reveal file").rect();
+    let remove = harness.get_by_label_contains("Remove entry").rect();
+
+    // The bundle's own numbers and not this application's transcription of
+    // them: `width:22px; height:22px` and `gap:1px` on `EntryRow.dc.html:44-58`.
+    // Written against `metric::ROW_ACTION` these passed with that constant set
+    // to 24, which is the whole difference between checking the design and
+    // checking the arithmetic.
+    for (what, control) in [("Reveal file", reveal), ("Remove entry", remove)] {
+        assert_eq!(control.width(), 22.0, "{what} is not the design's width");
+        assert_eq!(control.height(), 22.0, "{what} is not the design's height");
+    }
+    assert_eq!(
+        remove.left() - reveal.right(),
+        1.0,
+        "the design's one-pixel seam is not between them"
+    );
+    // Right-aligned against the row's own twelve of padding, which is where the
+    // reserved column ends: `an_entry_row_is_divided_as_the_bundle_divides_it`
+    // puts that edge at 808 in a window the design's width. Four entries in a
+    // 560-tall window need no scrollbar, so the list is the whole width.
+    assert_eq!(remove.right(), 808.0);
+    // And centred down the row rather than sitting on its top edge.
+    assert_eq!(remove.center().y, name.center().y);
+}
+
+/// What each state offers, through the window rather than through the table.
+///
+/// `status::every_state_offers_what_the_bundle_offers` already asserts the
+/// table. This asserts that the table is what the list draws from - that a
+/// registered row really does get those two controls and a staged one really
+/// does get the other pair, rather than the table being right and unconsulted.
+#[test]
+fn the_controls_a_row_offers_are_the_ones_its_state_offers() {
+    let root = fixture("row-actions-by-state");
+    let to = destination(&root);
+    let entries = entries();
+    let staged = dropped(&root, &to, &entries);
+    let session = found_with(&root, Helper::Present, GuardState::Disarmed, entries);
+    let mut session = Some(session);
+    let mut staged = Some(staged);
+    let mut harness = Harness::builder().with_size(SIZE).build_eframe(move |cc| {
+        let mut app = App::with(&cc.egui_ctx, session.take().expect("built once"));
+        app.set_staged(staged.take().expect("built once"));
+        app
+    });
+    harness.run();
+
+    // A staged row: an identity to mint and a press that cancels it. Nothing to
+    // reveal, because nothing of ours has been placed for it yet.
+    harness.get_by_label("WAVESHAPER ALPHA").hover();
+    harness.run();
+    assert!(harness.query_by_label("Assign new UUID").is_some(), "a staged row cannot be minted");
+    assert!(harness.query_by_label("Cancel").is_some(), "a staged row cannot be cancelled");
+    assert!(
+        harness.query_by_label("Reveal file").is_none(),
+        "a staged row offered to reveal a document that has not been placed"
+    );
+
+    // A rejected row: nothing was read, so there is nothing to act on.
+    harness.get_by_label("BROKEN.bwmodule").hover();
+    harness.run();
+    assert!(
+        harness.query_by_label_contains("Remove entry").is_none()
+            && harness.query_by_label("Cancel").is_none(),
+        "a rejected row offered a control"
+    );
+}
+
+/// Removing a registered entry queues it and does not write anything.
+///
+/// The design keeps the row registered and strikes it through until the apply
+/// that takes it away, which is what makes one press of the primary action the
+/// confirmation for every removal in the list.
+#[test]
+fn removing_a_registered_entry_queues_it_and_the_press_counts_it() {
+    let mut harness = listing("queue-a-removal");
+
+    harness.get_by_label("DISPERSER").hover();
+    harness.run();
+    harness.get_by_label_contains("Remove entry").click();
+    harness.run();
+
+    assert!(
+        harness.query_by_label("Pending removal").is_some(),
+        "the row was not queued for removal"
+    );
+    assert!(
+        harness.query_by_label("DISPERSER").is_some(),
+        "the row went away before anything was applied"
+    );
+    // A queued removal is work, and the primary action has to say so: counting
+    // only the additions leaves it disabled beside a list of struck-through
+    // rows, claiming there is nothing to apply.
+    assert!(
+        harness.query_by_label_contains("Apply 1 change").is_some(),
+        "the primary action does not count the removal"
+    );
+    // Counted rather than fetched: `centred_block` lays its contents out twice,
+    // once into an invisible sizing Ui to learn the height and once for real,
+    // and both passes reach the accessibility tree - so every action-bar
+    // summary is two nodes saying the same thing.
+    assert!(
+        harness.query_all_by_label("1 to remove").next().is_some(),
+        "the action bar does not say what the press would do"
+    );
+
+    // And the undo, which is the only control the design leaves on a row that
+    // is already queued.
+    harness.get_by_label("Undo removal").click();
+    harness.run();
+    assert!(
+        harness.query_by_label("Pending removal").is_none(),
+        "the removal could not be taken back"
+    );
+    assert!(
+        harness.query_by_label_contains("Apply 1 change").is_none(),
+        "the press still counts a removal that was undone"
+    );
+}
+
+/// Cancelling a staged row takes it out of the pending list - and settles the
+/// row it was colliding with.
+///
+/// The second half is the point. A conflict is a statement about the whole set,
+/// so a row still saying it collides with a document that has been cancelled is
+/// a claim about something that is no longer there.
+#[test]
+fn cancelling_a_staged_row_settles_the_row_it_collided_with() {
+    let root = fixture("cancel-a-staged-row");
+    let to = destination(&root);
+    let entries = Manifest::default();
+    let drop = root.join("dropped");
+    std::fs::create_dir_all(&drop).expect("a place to drop from");
+
+    // Two files claiming one identity. Without the cancel the second is a
+    // conflict, and it is a conflict only because the first is there.
+    let shared = "1f6c85d4-9a02-47be-83c1-d5e70b14a629";
+    let mut paths = Vec::new();
+    for display in ["FIRST", "SECOND"] {
+        let path = drop.join(format!("{display}.bwdevice"));
+        let document =
+            orng_tools::testing::document(orng_tools::Kind::Device, shared.parse().unwrap(), display);
+        std::fs::write(&path, document.bytes()).expect("could not write the sample");
+        paths.push(path);
+    }
+    let staged = staging::read(&paths, &entries, &to, &[]);
+    let session = found_with(&root, Helper::Present, GuardState::Disarmed, entries);
+
+    let mut session = Some(session);
+    let mut staged = Some(staged);
+    let mut harness = Harness::builder().with_size(SIZE).build_eframe(move |cc| {
+        let mut app = App::with(&cc.egui_ctx, session.take().expect("built once"));
+        app.set_staged(staged.take().expect("built once"));
+        app
+    });
+    harness.run();
+    assert!(harness.query_by_label("Conflict").is_some(), "the two identities did not collide");
+
+    harness.get_by_label("FIRST").hover();
+    harness.run();
+    harness.get_by_label("Cancel").click();
+    harness.run();
+
+    assert!(harness.query_by_label("FIRST").is_none(), "the cancelled row is still listed");
+    assert!(
+        harness.query_by_label("Conflict").is_none(),
+        "the row that collided with the cancelled one still says it collides"
+    );
+    assert!(harness.query_by_label("SECOND").is_some(), "the wrong row was cancelled");
+}
+
+/// Minting a new identity settles the collision a new identity can settle.
+///
+/// The one repair the design offers from the list itself, and the row it is
+/// pressed on is not the only one it changes: the other document claiming that
+/// identity stops colliding at the same moment.
+#[test]
+fn assigning_a_new_uuid_settles_two_documents_claiming_one_identity() {
+    let root = fixture("assign-a-new-uuid");
+    let to = destination(&root);
+    let entries = Manifest::default();
+    let drop = root.join("dropped");
+    std::fs::create_dir_all(&drop).expect("a place to drop from");
+
+    let shared = "1f6c85d4-9a02-47be-83c1-d5e70b14a629";
+    let mut paths = Vec::new();
+    for display in ["FIRST", "SECOND"] {
+        let path = drop.join(format!("{display}.bwdevice"));
+        let document =
+            orng_tools::testing::document(orng_tools::Kind::Device, shared.parse().unwrap(), display);
+        std::fs::write(&path, document.bytes()).expect("could not write the sample");
+        paths.push(path);
+    }
+    let staged = staging::read(&paths, &entries, &to, &[]);
+    let session = found_with(&root, Helper::Present, GuardState::Disarmed, entries);
+
+    let mut session = Some(session);
+    let mut staged = Some(staged);
+    let mut harness = Harness::builder().with_size(SIZE).build_eframe(move |cc| {
+        let mut app = App::with(&cc.egui_ctx, session.take().expect("built once"));
+        app.set_staged(staged.take().expect("built once"));
+        app
+    });
+    harness.run();
+    assert!(harness.query_by_label("Conflict").is_some(), "the two identities did not collide");
+
+    harness.get_by_label("SECOND").hover();
+    harness.run();
+    harness.get_by_label("Assign new UUID").click();
+    harness.run();
+
+    assert!(
+        harness.query_by_label("Conflict").is_none(),
+        "a new identity did not settle a collision of identities"
+    );
+    assert!(
+        harness.query_by_label_contains("Apply 2 changes").is_some(),
+        "both rows should be ready to write now"
     );
 }
 

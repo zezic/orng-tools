@@ -21,8 +21,9 @@ use eframe::egui::{
     self, Align, Color32, CornerRadius, Frame, Layout, Margin, Rect, Response, Sense,
     Stroke, Ui, vec2,
 };
-use orng_tools::{Kind, Placement};
+use orng_tools::{Kind, Placement, TheDocument};
 
+use crate::status::{Action, Status};
 use crate::theme::{Palette, font, metric};
 
 /// The frame behind the install bar and the action bar.
@@ -598,6 +599,17 @@ pub mod icon {
     /// same glyph as `CHANGE_INSTALL` and a different idea, so it is named
     /// again rather than borrowed.
     pub const REVEAL: &str = light::FOLDER_OPEN;
+    /// The four remedies a row offers besides revealing. Each is drawn only in
+    /// the states that can use it - see [`crate::status`].
+    pub const ASSIGN: &str = light::FINGERPRINT;
+    /// Go and find a document the entry says should be there and is not. Not
+    /// [`REVEAL`]'s folder: nothing is there to open, and the design colours
+    /// this one with the accent because it is the remedy rather than a look.
+    pub const LOCATE: &str = light::FILE_MAGNIFYING_GLASS;
+    /// Take a row out of the removal queue.
+    pub const UNDO: &str = light::ARROW_U_UP_LEFT;
+    /// Queue an entry for removal, or drop a staged row nothing was written for.
+    pub const REMOVE: &str = light::TRASH;
     /// Where a registered document came from: a file the user chose, or the
     /// catalog. The catalog's is `CATALOG`.
     pub const LOCAL_FILE: &str = light::FILE;
@@ -908,12 +920,12 @@ pub fn row(
     palette: Palette,
     width: Width,
     selected: bool,
-    contents: impl FnOnce(&mut Ui, &Columns),
+    contents: impl FnOnce(&mut Ui, &Columns, Controls),
 ) -> Response {
-    let (rect, response) = row_frame(ui, palette, metric::ROW, selected);
+    let (rect, controls, response) = row_frame(ui, palette, metric::ROW, selected);
     let columns = Columns::across(rect, width);
     let mut content = ui.new_child(egui::UiBuilder::new().max_rect(rect));
-    contents(&mut content, &columns);
+    contents(&mut content, &columns, controls);
     response.on_hover_cursor(egui::CursorIcon::PointingHand)
 }
 
@@ -925,7 +937,7 @@ pub fn catalog_row(
     selected: bool,
     contents: impl FnOnce(&mut Ui, &CatalogColumns),
 ) -> Response {
-    let (rect, response) = row_frame(ui, palette, metric::CATALOG_ROW, selected);
+    let (rect, _, response) = row_frame(ui, palette, metric::CATALOG_ROW, selected);
     let columns = CatalogColumns::across(rect, width);
     let mut content = ui.new_child(egui::UiBuilder::new().max_rect(rect));
     contents(&mut content, &columns);
@@ -937,18 +949,123 @@ pub fn catalog_row(
 /// Selection outranks the pointer. A hover says "this is what you would open"
 /// and a selection says "this is what is open", and the second is the one that
 /// has to survive the pointer moving away.
-fn row_frame(ui: &mut Ui, palette: Palette, height: f32, selected: bool) -> (Rect, Response) {
+fn row_frame(
+    ui: &mut Ui,
+    palette: Palette,
+    height: f32,
+    selected: bool,
+) -> (Rect, Controls, Response) {
     let (rect, response) =
         ui.allocate_exact_size(vec2(ui.available_width(), height), Sense::click());
-    let fill = match (selected, response.hovered()) {
+    // Asked of the rectangle rather than of the response. A control drawn
+    // inside the row is the widget egui calls hovered while the pointer is on
+    // it, so a row that asked `hovered()` would put its own controls away the
+    // moment the pointer reached one, and drop its fill under the identity the
+    // user was about to click. This still answers no while a menu or a modal
+    // covers the row, because those are areas of their own.
+    let controls =
+        if ui.rect_contains_pointer(rect) { Controls::Shown } else { Controls::Hidden };
+    let fill = match (selected, controls) {
         (true, _) => Some(palette.row_selected),
-        (false, true) => Some(palette.row_hover),
-        (false, false) => None,
+        (false, Controls::Shown) => Some(palette.row_hover),
+        (false, Controls::Hidden) => None,
     };
     if let Some(fill) = fill {
         ui.painter().rect_filled(rect, CornerRadius::ZERO, fill);
     }
-    (rect, response)
+    (rect, controls, response)
+}
+
+/// Whether a row's own controls are showing.
+///
+/// The design reveals them on hover and *hides* them off it rather than
+/// removing them, so the columns before them do not move when the pointer
+/// arrives. This therefore decides whether they are drawn and never whether
+/// their column is reserved.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Controls {
+    Shown,
+    Hidden,
+}
+
+/// The controls at the right end of a row, in the column reserved for them.
+///
+/// Which controls those are is the status's answer and not this function's -
+/// see [`crate::status`], where the design's table is transcribed once for the
+/// two surfaces that draw it.
+///
+/// Laid out right to left, because the design right-aligns the group and its
+/// DOM order puts the removal nearest the edge. At most two are ever offered at
+/// once, so the 84 the design reserves is never close to full.
+///
+/// Answers which one was pressed.
+pub fn row_actions(
+    ui: &mut Ui,
+    palette: Palette,
+    at: Rect,
+    controls: Controls,
+    status: Status,
+    document: TheDocument,
+) -> Option<Action> {
+    if controls == Controls::Hidden {
+        return None;
+    }
+    let mut pressed = None;
+    let mut group = ui.new_child(
+        egui::UiBuilder::new().max_rect(at).layout(Layout::right_to_left(Align::Center)),
+    );
+    group.spacing_mut().item_spacing.x = metric::ROW_ACTION_GAP;
+    for action in status.actions().rev() {
+        let label = action.label(status, document);
+        if row_action(&mut group, palette, action, &label).clicked() {
+            pressed = Some(action);
+        }
+    }
+    pressed
+}
+
+/// One of those controls: a square with a mark in it, and nothing else until
+/// the pointer is on it.
+///
+/// Two of the five are coloured apart from the rest, and both times because of
+/// what the press does rather than what it looks like.
+fn row_action(ui: &mut Ui, palette: Palette, action: Action, label: &str) -> Response {
+    let (glyph, ink, lit, fill) = match action {
+        // The remedy on a broken row, and the only one the design gives the
+        // accent rather than the quiet grey the others wear. It keeps its
+        // colour under the pointer; only the ground behind it arrives.
+        Action::Locate => (icon::LOCATE, palette.accent, palette.accent, palette.accent_soft),
+        // The one press on a row that can destroy the user's own work, so it
+        // turns red under the pointer instead of merely lighting up.
+        Action::Remove => (icon::REMOVE, palette.ink_2, palette.err, palette.err_bg),
+        Action::Assign => (icon::ASSIGN, palette.ink_2, palette.ink, palette.btn_hover),
+        Action::Undo => (icon::UNDO, palette.ink_2, palette.ink, palette.btn_hover),
+        Action::Reveal => (icon::REVEAL, palette.ink_2, palette.ink, palette.btn_hover),
+    };
+    let (rect, response) =
+        ui.allocate_exact_size(vec2(metric::ROW_ACTION, metric::ROW_ACTION), Sense::click());
+    // What it is, for anything reading the window rather than looking at it -
+    // the harness included. A button built from the glyph alone would be
+    // announced as a private-use codepoint, which is what the sentence on the
+    // tooltip is already for.
+    response.widget_info(|| {
+        egui::WidgetInfo::labeled(egui::WidgetType::Button, ui.is_enabled(), label)
+    });
+
+    if response.hovered() {
+        ui.painter().rect_filled(rect, CornerRadius::same(metric::RADIUS), fill);
+    }
+    // Painted rather than laid out, for the reason [`identity`] gives: a glyph
+    // centred both ways in a box of a stated size is one call here and a nest
+    // of centring layouts otherwise.
+    ui.painter().text(
+        rect.center(),
+        egui::Align2::CENTER_CENTER,
+        glyph,
+        font::icon(ui.ctx(), font::ICON),
+        if response.hovered() { lit } else { ink },
+    );
+    response.on_hover_text(label).on_hover_cursor(egui::CursorIcon::PointingHand)
 }
 
 /// Put one piece of a row in its column.
@@ -1006,15 +1123,19 @@ pub fn kind_label(ui: &mut Ui, ink: Color32, kind: Kind) {
 ///
 /// Transcribed here so that a status added to one screen cannot be drawn a
 /// different shade on another, and so the reason beside a row is the same colour
-/// as the word it explains. A status this does not know is drawn as quietly as
-/// `Registered`, which is the design's own fallback: an unfamiliar word should
-/// not shout.
-pub fn status_colour(palette: Palette, status: &str) -> Color32 {
+/// as the word it explains.
+///
+/// Grey means settled or inert, neutral means in flight with nothing to decide,
+/// orange means a decision is waiting, red means broken.
+pub fn status_colour(palette: Palette, status: Status) -> Color32 {
     match status {
-        "Staged" | "Pending restart" => palette.ink_2,
-        "Changed" | "Update available" => palette.accent_text,
-        "Missing file" | "Conflict" => palette.err_text,
-        _ => palette.ink_3,
+        Status::Staged | Status::PendingRestart => palette.ink_2,
+        Status::Changed | Status::UpdateAvailable => palette.accent_text,
+        Status::MissingFile | Status::Conflict => palette.err_text,
+        Status::Registered
+        | Status::Rejected
+        | Status::PendingRemoval
+        | Status::Factory => palette.ink_3,
     }
 }
 
@@ -1148,6 +1269,10 @@ pub struct Inspected<'a> {
     pub source_icon: &'a str,
     /// Where the document actually is, which is a different question.
     pub placement: &'a Placement,
+    /// What removing this entry would do to its document, which is a setting
+    /// and not a property of the entry. Carried here because the panel's
+    /// removal control has to name it, exactly as the row's does.
+    pub document: TheDocument,
 }
 
 /// What was pressed in the inspector, if anything was.
@@ -1157,6 +1282,10 @@ pub enum Inspecting {
     Closed,
     CopiedUuid,
     Reveal,
+    /// The entry was queued for removal. The same press the row's own trash
+    /// makes, which is why the panel does not close on it: the row is still
+    /// there, struck through, until the apply that takes it away.
+    Remove,
     /// A field was finished with: it lost focus, or a keyword was added or
     /// taken away. Whatever is in [`Words`] is what the entry should now say.
     Edited,
@@ -1212,8 +1341,18 @@ pub fn inspector(
         }
 
         rule(ui, palette, metric::BETWEEN_GROUPS);
-        if panel_action(ui, palette, icon::REVEAL, "Reveal file").clicked() {
+        if panel_action(ui, palette, icon::REVEAL, "Reveal file", Weight::Ordinary).clicked() {
             pressed = Inspecting::Reveal;
+        }
+        // The one action in this list the bundle draws unconditionally, and the
+        // only one whose tooltip is not its label: what it does to the document
+        // is the user's setting and not a property of the control, so the
+        // control says which way it is set.
+        let removal =
+            panel_action(ui, palette, icon::REMOVE, "Remove entry", Weight::Destructive)
+                .on_hover_text(crate::status::removal_consequence(item.document));
+        if removal.clicked() {
+            pressed = Inspecting::Remove;
         }
     });
     pressed
@@ -1589,6 +1728,18 @@ fn placement_chip(ui: &mut Ui, palette: Palette, placement: &Placement) {
         });
 }
 
+/// How loud one of the inspector's actions is.
+///
+/// The design colours exactly one of the four apart, and for the same reason
+/// the row's trash is coloured apart: it is the press that can destroy the
+/// user's own work. Red before the pointer arrives rather than under it - the
+/// panel has room to write the words, so it does not wait to warn.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Weight {
+    Ordinary,
+    Destructive,
+}
+
 /// One line of the inspector's action list.
 ///
 /// Its icon lines up with the labels above it and its fill reaches seven
@@ -1597,8 +1748,17 @@ fn placement_chip(ui: &mut Ui, palette: Palette, placement: &Placement) {
 /// only the fill is drawn outside it: allocating the wider box instead would
 /// push the whole action list seven pixels left of everything else in the
 /// panel.
-fn panel_action(ui: &mut Ui, palette: Palette, glyph: &str, label: &str) -> Response {
-    let ink = palette.ink_2;
+fn panel_action(
+    ui: &mut Ui,
+    palette: Palette,
+    glyph: &str,
+    label: &str,
+    weight: Weight,
+) -> Response {
+    let (ink, wash) = match weight {
+        Weight::Ordinary => (palette.ink_2, palette.btn_hover),
+        Weight::Destructive => (palette.err, palette.err_bg),
+    };
     let (rect, response) = ui.allocate_exact_size(
         vec2(ui.available_width(), metric::PANEL_ACTION),
         Sense::click(),
@@ -1607,7 +1767,7 @@ fn panel_action(ui: &mut Ui, palette: Palette, glyph: &str, label: &str) -> Resp
         ui.painter().rect_filled(
             rect.expand2(vec2(metric::PANEL_ACTION_PAD_X, 0.0)),
             CornerRadius::same(metric::FIELD_RADIUS),
-            palette.btn_hover,
+            wash,
         );
     }
     let mut line = ui.new_child(

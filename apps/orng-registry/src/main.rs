@@ -24,6 +24,7 @@ pub mod restore;
 pub mod session;
 pub mod settings;
 pub mod staging;
+pub mod status;
 pub mod theme;
 pub mod widget;
 pub mod work;

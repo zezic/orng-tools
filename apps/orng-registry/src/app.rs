@@ -22,8 +22,8 @@ use std::path::PathBuf;
 
 use eframe::egui::{self, Align, Layout, vec2};
 use orng_tools::{
-    Installation, Kind, Placement, Provenance, Registration, RunState, Step, Strategy, Update,
-    Uuid, placement,
+    Document, Installation, Kind, Placement, Provenance, Registration, RunState, Step, Strategy,
+    TheDocument, Update, Uuid, placement,
 };
 
 use crate::about::About;
@@ -33,6 +33,7 @@ use crate::restore::Backups;
 use crate::session::{Badge, Found, Session};
 use crate::settings::{Appearance, Preferences, Settings};
 use crate::staging::{self, Reading, Staged};
+use crate::status::{Action, Status};
 use crate::theme::{self, Palette, font, metric};
 use crate::widget::{self, Emphasis, Fact, Measure, Padding, Tone, icon};
 use crate::work::{Applying, Errand, Stage, Work};
@@ -207,6 +208,17 @@ pub struct App {
     filter: Filter,
     /// Documents dropped and not yet written. The pending work.
     staged: Vec<Staged>,
+    /// Entries the user has asked to be rid of, which are still registered
+    /// until the next apply - the design's `Pending removal`, and the other
+    /// half of the pending work.
+    ///
+    /// Held beside [`App::staged`] rather than in it: a staged row is a
+    /// document waiting to be written and this is an identity waiting to be
+    /// forgotten, and the row it draws is the registered one struck through
+    /// rather than a row of its own. A set because queueing the same entry
+    /// twice is queueing it once, and ordered so that a press writes the
+    /// removals in the same order every time.
+    removing: BTreeSet<Uuid>,
     /// A drop being read, off the interface thread.
     reading: Option<Reading>,
     /// Set while work is in flight, and only while it is in flight: the moment
@@ -269,6 +281,7 @@ impl App {
             dark: true,
             filter: Filter::default(),
             staged: Vec::new(),
+            removing: BTreeSet::new(),
             reading: None,
             applying: None,
             outcome: None,
@@ -1080,6 +1093,10 @@ impl App {
     /// list can be painted once the list is there to catch it.
     fn inspect(&mut self, ui: &mut egui::Ui) -> Option<widget::Aside> {
         let palette = self.palette;
+        // Read before the panel borrows, because the panel borrows mutably to
+        // type into the words and this asks the preferences the same `self`
+        // holds.
+        let document = self.deleting();
         let Session::Found(found) = &self.session else { return None };
         let open = self.inspecting.as_mut()?;
         let uuid = open.uuid;
@@ -1109,6 +1126,7 @@ impl App {
             source: &source,
             source_icon,
             placement,
+            document,
         };
 
         let (panel, pressed) =
@@ -1131,6 +1149,12 @@ impl App {
                 if let Some(open) = &self.inspecting {
                     reveal(open.placement.path());
                 }
+            }
+            // Queued, exactly as the row's own trash queues it, and the panel
+            // stays open on it: the entry is still registered and still drawn,
+            // struck through, until the apply that takes it away.
+            widget::Inspecting::Remove => {
+                self.removing.insert(uuid);
             }
             widget::Inspecting::Nothing => {}
         }
@@ -1355,6 +1379,10 @@ impl App {
         let result = result.clone();
         let errand = applying.errand;
         let written = self.ready().count();
+        let removed = match &self.session {
+            Session::Found(found) => self.removals(found).count(),
+            _ => 0,
+        };
         self.applying = None;
 
         match result {
@@ -1366,19 +1394,33 @@ impl App {
                     found.entries = entries;
                 }
             }
+            // Announced, unlike an edit: the user pressed a control on a row
+            // and nothing else on screen would show that the file is back.
+            // Nothing pending is cleared, because locating a file is not one of
+            // the things the primary action does.
+            Ok(entries) if errand == Errand::Locate => {
+                if let Session::Found(found) = &mut self.session {
+                    found.entries = entries;
+                }
+                self.outcome = Some(Outcome::Located);
+            }
             Ok(entries) => {
                 // What was written is no longer pending. Held until here rather
                 // than cleared when the press started, so that a failure leaves
                 // the same rows to press again instead of asking for the drop
-                // back.
+                // back. The removal queue goes the same way and for the same
+                // reason: those entries are gone from the list now, so a queue
+                // still naming them would strike through rows that do not
+                // exist.
                 self.staged.clear();
+                self.removing.clear();
                 let in_effect = entries.entries().len();
                 if errand.prepares() {
                     // A preparation changes what is true of the installation:
                     // the archive, the guard, the links. Nothing short of
                     // reading it again answers that.
                     self.session = Session::read(self.preferences.chosen());
-                    self.outcome = Some(Outcome::Prepared { entries: in_effect });
+                    self.outcome = Some(Outcome::Prepared { entries: in_effect, removed });
                 } else {
                     if let Session::Found(found) = &mut self.session {
                         // An entry update changes one text file, and the worker
@@ -1387,7 +1429,7 @@ impl App {
                         // already in hand.
                         found.entries = entries;
                     }
-                    self.outcome = Some(Outcome::Registered { written });
+                    self.outcome = Some(Outcome::Registered { written, removed });
                 }
             }
             // A failure is announced either way: an edit that did not reach
@@ -1482,7 +1524,17 @@ impl App {
             // record are not in effect until it does.
             return Some(Work::PrepareThenEntries);
         }
-        (self.ready().count() > 0).then_some(Work::Entries)
+        (self.changes(found) > 0).then_some(Work::Entries)
+    }
+
+    /// How many entries one press would change: the rows to add plus the rows
+    /// to forget.
+    ///
+    /// A queued removal is work in its own right. Counting only the additions
+    /// is what would leave the primary action disabled beside a list of struck
+    /// through rows, saying there was nothing to apply.
+    fn changes(&self, found: &Found) -> usize {
+        self.ready().count() + self.removals(found).count()
     }
 
     /// What stands between the user and the primary action, if anything does.
@@ -1592,9 +1644,15 @@ struct Blocked {
 enum Outcome {
     /// The installation was prepared, so what it now reads is the whole list
     /// rather than the few rows this press added.
-    Prepared { entries: usize },
+    Prepared { entries: usize, removed: usize },
     /// Entries were written into an installation that was already prepared.
-    Registered { written: usize },
+    Registered { written: usize, removed: usize },
+    /// An entry that had lost its document was pointed back at one.
+    ///
+    /// Its own variant rather than a registration of one: nothing was
+    /// registered, the entry was already there, and the only thing that changed
+    /// is that the file it names exists again.
+    Located,
     Failed {
         /// Which run stopped, which is what decides what can honestly be
         /// promised about the state left behind: the three differ in what they
@@ -1630,31 +1688,44 @@ impl Outcome {
     fn details(&self) -> Option<&str> {
         match self {
             Outcome::Failed { why, .. } | Outcome::NotRestored { why } => Some(why),
-            Outcome::Prepared { .. } | Outcome::Registered { .. } | Outcome::Restored => None,
+            Outcome::Prepared { .. }
+            | Outcome::Registered { .. }
+            | Outcome::Located
+            | Outcome::Restored => None,
         }
     }
 
     /// The two lines it is stated in, and what can be done about it.
     fn banner(&self) -> (Tone, String, String, Option<&'static str>) {
         match self {
-            Outcome::Prepared { entries } => (
+            Outcome::Prepared { entries, removed } => (
                 Tone::Ok,
                 "Start Bitwig Studio. Your devices are in the browser.".to_owned(),
                 format!(
-                    "{} in effect. Descriptions and search keywords were written too, so \
+                    "{} in effect{}. Descriptions and search keywords were written too, so \
                      typing a name finds the device.",
-                    counted(*entries)
+                    counted(*entries),
+                    also_removed(*removed)
                 ),
                 None,
             ),
-            Outcome::Registered { written } => (
+            Outcome::Registered { written, removed } => (
                 Tone::Ok,
                 "Restart Bitwig Studio to see your changes.".to_owned(),
                 format!(
-                    "{} registered. Bitwig reads the entry list when it launches, so an open \
+                    "{} registered{}. Bitwig reads the entry list when it launches, so an open \
                      Bitwig will not show the change yet.",
-                    counted(*written)
+                    counted(*written),
+                    also_removed(*removed)
                 ),
+                None,
+            ),
+            Outcome::Located => (
+                Tone::Ok,
+                "The document is back where the entry says it is.".to_owned(),
+                "The entry itself was never touched, so its description and search keywords \
+                 are the ones you had. Restart Bitwig Studio to load the document again."
+                    .to_owned(),
                 None,
             ),
             // What failed is the headline and the promise is the line under it,
@@ -1683,6 +1754,17 @@ impl Outcome {
                 "Descriptions and search keywords live in the installation's own files, and \
                  that is the write that can be refused. The entry list is written after it \
                  and is unchanged."
+                    .to_owned(),
+                Some("Copy details"),
+            ),
+            // Says nothing about which half failed, because both leave the same
+            // state: a file that was not this entry's was never written, and a
+            // write that could not finish placed nothing the entry points at.
+            Outcome::Failed { what: Errand::Locate, .. } => (
+                Tone::Err,
+                "The entry was not pointed at that file.".to_owned(),
+                "Nothing was changed. The entry still names the document it always named, \
+                 and that document is still missing."
                     .to_owned(),
                 Some("Copy details"),
             ),
@@ -1715,6 +1797,20 @@ fn counted(registered: usize) -> String {
     match registered {
         1 => "1 entry".to_owned(),
         many => format!("{many} entries"),
+    }
+}
+
+/// The clause naming what a press also took away, where it took anything away.
+///
+/// Empty when it took nothing, rather than ", 0 removed". Every count in this
+/// window suppresses its zero, for the same reason the summary does: a part of
+/// a sentence that is only ever there to say "none" is a part of the sentence
+/// nobody reads.
+fn also_removed(removed: usize) -> String {
+    match removed {
+        0 => String::new(),
+        1 => ", 1 removed".to_owned(),
+        many => format!(", {many} removed"),
     }
 }
 
@@ -2097,10 +2193,15 @@ impl App {
             .filter(|entry| !staged.iter().any(|pending| pending.uuid == entry.uuid))
             .filter(|entry| self.filter.accepts(entry))
             .collect();
-        let shown: Vec<&Staged> = self
+        // Numbered before the filter, so a row carries where it is in the
+        // pending list rather than where it is on screen. A control pressed on
+        // the third row of a filtered list acts on the third row of the list
+        // the filter was applied to, which is not the same row.
+        let shown: Vec<(usize, &Staged)> = self
             .staged
             .iter()
-            .filter(|s| s.registration().is_none_or(|r| self.filter.accepts(r)))
+            .enumerate()
+            .filter(|(_, s)| s.registration().is_none_or(|r| self.filter.accepts(r)))
             .collect();
 
         if found.entries.is_empty() && self.staged.is_empty() {
@@ -2157,24 +2258,36 @@ impl App {
         let palette = self.palette;
         let open = self.inspecting.as_ref().map(|open| open.uuid);
         let width = self.width();
+        let document = self.deleting();
         // What the list was clicked on, taken after it has been drawn: opening
         // the panel changes how wide every row is, and changing that half way
-        // down a list draws the rest of it to a different grid.
+        // down a list draws the rest of it to a different grid. A row control
+        // is taken the same way and for a stronger reason - what several of
+        // them do is add or remove a row, under the loop that is walking them.
         let mut opened = None;
+        let mut pressed = None;
         widget::list(ui, |ui| {
             // Pending work first, which is the designer's recommendation and
             // the only ordering under which the list answers "what am I about to
             // do" without scrolling.
             if !shown.is_empty() {
                 widget::section(ui, palette, "Pending", palette.accent_text, shown.len());
-                for pending in &shown {
-                    staged_row(ui, palette, width, pending);
+                for (at, pending) in &shown {
+                    if let Some(action) = staged_row(ui, palette, width, pending, document) {
+                        pressed = Some((Acting::Pending(*at), action));
+                    }
                 }
             }
             widget::section(ui, palette, "Registered", palette.ink_2, registered.len());
             for entry in &registered {
                 let selected = open == Some(entry.uuid);
-                if row(ui, palette, width, selected, entry).clicked() {
+                let status = self.status_of(entry);
+                let (response, action) =
+                    row(ui, palette, width, selected, entry, status, document);
+                if let Some(action) = action {
+                    pressed = Some((Acting::Registered(entry.uuid), action));
+                }
+                if response.clicked() {
                     // The same row again closes it, which is what makes the
                     // panel answerable from the list it is about. The words
                     // are taken here, where the entry to take them off is in
@@ -2186,6 +2299,155 @@ impl App {
         if let Some(entry) = opened {
             self.inspecting = entry;
         }
+        if let Some((on, action)) = pressed {
+            self.act(on, action, ui.ctx());
+        }
+    }
+
+    /// What the list says about one registered entry.
+    ///
+    /// Only the two states this application can currently tell apart. The rest
+    /// of the design's ten are computed from the disk and the catalog and are
+    /// not built yet - see `docs/project-spec.md` section 8.
+    fn status_of(&self, entry: &Registration) -> Status {
+        if self.removing.contains(&entry.uuid) {
+            Status::PendingRemoval
+        } else {
+            Status::Registered
+        }
+    }
+
+    /// What a removal does with the document, as the preferences have it.
+    fn deleting(&self) -> TheDocument {
+        if self.preferences.chosen().delete_file {
+            TheDocument::Deleted
+        } else {
+            TheDocument::Kept
+        }
+    }
+
+    /// The queued removals that are still registered.
+    ///
+    /// Filtered against the list rather than trusted. The queue is what the
+    /// user asked for and the list is what is there, and reading an
+    /// installation again under a queued removal would otherwise hand
+    /// [`Update::remove`] an identity it has no row for.
+    fn removals<'a>(&'a self, found: &'a Found) -> impl Iterator<Item = Uuid> + 'a {
+        self.removing.iter().copied().filter(|uuid| found.entries.get(*uuid).is_some())
+    }
+
+    /// Carry out what a row's own control asked for.
+    ///
+    /// Taken after the list has been drawn, never during it: three of the five
+    /// change which rows there are, and one of them changes how every remaining
+    /// row reads.
+    fn act(&mut self, on: Acting, action: Action, ctx: &egui::Context) {
+        let Session::Found(found) = &self.session else { return };
+        match (on, action) {
+            // Nothing has been written for a staged row, so this is not a
+            // removal at all and the design calls it Cancel: the row goes out
+            // of the pending list and the file it was read from is untouched.
+            // The rest are read again, because a row that collided with this
+            // one no longer does.
+            (Acting::Pending(at), Action::Remove) => {
+                let kept = std::mem::take(&mut self.staged)
+                    .into_iter()
+                    .enumerate()
+                    .filter(|(which, _)| *which != at)
+                    .map(|(_, row)| row)
+                    .collect();
+                self.staged = staging::restaged(kept, &found.entries, &found.to);
+            }
+            (Acting::Pending(at), Action::Assign) => {
+                let staged = std::mem::take(&mut self.staged);
+                self.staged = staging::reassign(staged, at, &found.entries, &found.to);
+            }
+            // Queued, not done. The design keeps the entry registered and
+            // struck through until the apply that removes it, which is what
+            // makes one press of the primary action the confirmation for every
+            // removal in the list.
+            (Acting::Registered(uuid), Action::Remove) => {
+                self.removing.insert(uuid);
+            }
+            (Acting::Registered(uuid), Action::Undo) => {
+                self.removing.remove(&uuid);
+            }
+            // Resolved on the press rather than held, which is the rule every
+            // screen here follows: asking the disk where a document is, once
+            // per row per frame, is the fault this application has already
+            // taken out of the inspector.
+            (Acting::Registered(uuid), Action::Reveal) => {
+                if let Some(entry) = found.entries.get(uuid) {
+                    reveal(placement::inspect(&found.to.install, entry).path());
+                }
+            }
+            (Acting::Registered(uuid), Action::Locate) => self.relocate(uuid, ctx),
+            // The design's table gives each state its own controls and the two
+            // kinds of row are never in the same state, so these combinations
+            // cannot be pressed: a pending row has nothing placed to reveal or
+            // locate and nothing registered to forget, and a registered one has
+            // no identity left to mint. Reached means the table and the list
+            // have come apart, which is worth the crash.
+            (on, action) => unreachable!("{action:?} was offered on {on:?}"),
+        }
+    }
+
+    /// Point a registered entry back at its document.
+    ///
+    /// The remedy for `Missing file`, and the only row control that reads a
+    /// file. **The recorded registration is kept** and only the document is
+    /// placed: the entry still exists, its description and search keywords may
+    /// have been edited since it was registered, and deriving them again from
+    /// whatever file was found would quietly undo that. This is the one thing
+    /// locating a file is not - it is not a re-drop, which is how an *edited*
+    /// document is re-applied and which does replace the words.
+    ///
+    /// **The file has to carry this entry's identity.** Anything else is
+    /// somebody pointing at the wrong document, and placing it under this
+    /// registration would put one device into the browser under another's name.
+    fn relocate(&mut self, uuid: Uuid, ctx: &egui::Context) {
+        // Nothing starts on top of something already running, for the reason
+        // `write_words` gives: the window has one piece of work at a time.
+        if self.applying.is_some() {
+            return;
+        }
+        let Session::Found(found) = &self.session else { return };
+        let Some(entry) = found.entries.get(uuid) else { return };
+        let Some(chosen) = rfd::FileDialog::new()
+            .set_title(format!("Locate the document for {}", entry.name))
+            .add_filter("Bitwig documents", &[entry.kind.extension()])
+            .pick_file()
+        else {
+            return;
+        };
+
+        let document = match Document::read(&chosen) {
+            Ok(document) => document,
+            Err(why) => return self.not_located(why.to_string()),
+        };
+        // Both halves of what `Update::add` asserts, checked here so that a
+        // user pointing at the wrong file is told rather than crashed at.
+        if document.identity().uuid != uuid || document.kind() != entry.kind {
+            let name = widget::drawn_path(&chosen);
+            return self.not_located(format!(
+                "{name} carries the identity {} and this entry is {uuid}",
+                document.identity().uuid
+            ));
+        }
+
+        let mut update = Update::to(found.entries.clone());
+        update.add(entry.clone(), document);
+        self.applying =
+            Some(Applying::start(Errand::Locate, found.to.clone(), update, ctx.clone()));
+    }
+
+    /// Say that the file chosen was not the entry's, without running anything.
+    ///
+    /// The same banner a failed run gets, because what the user is entitled to
+    /// know is the same either way: nothing was changed, and the entry is still
+    /// missing its document.
+    fn not_located(&mut self, why: String) {
+        self.outcome = Some(Outcome::Failed { what: Errand::Locate, why });
     }
 
     /// The drop target, while something is over the window.
@@ -2278,10 +2540,17 @@ impl App {
             };
         }
 
+        // The design's own order and wording: "2 to add, 1 to remove, 2 to
+        // fix". Each part is left out when it is nothing, so the line never
+        // says a count of zero.
         let mut parts = Vec::new();
         let ready = self.ready().count();
         if ready > 0 {
             parts.push(format!("{ready} to add"));
+        }
+        let to_remove = self.removals(found).count();
+        if to_remove > 0 {
+            parts.push(format!("{to_remove} to remove"));
         }
         let to_fix = self.staged.len() - ready;
         if to_fix > 0 {
@@ -2354,7 +2623,7 @@ impl App {
         let pending = self.pending(found);
         let label = match pending {
             Some(Work::PrepareThenEntries) => PREPARE.to_owned(),
-            Some(Work::Entries) => match self.ready().count() {
+            Some(Work::Entries) => match self.changes(found) {
                 1 => "Apply 1 change".to_owned(),
                 many => format!("Apply {many} changes"),
             },
@@ -2374,9 +2643,7 @@ impl App {
         // Preparing an installation that would then read an empty list is work
         // with no result. The design disables the press and says so, rather
         // than letting a first-run user modify their installation for nothing.
-        if work == Work::PrepareThenEntries
-            && found.entries.is_empty()
-            && self.ready().count() == 0
+        if work == Work::PrepareThenEntries && found.entries.is_empty() && self.changes(found) == 0
         {
             widget::primary_button(ui, palette, &label, mark, false, "Nothing to register yet");
             return;
@@ -2409,6 +2676,14 @@ impl App {
             if let crate::staging::State::Ready { registration, document } = &staged.state {
                 update.add(registration.clone(), (**document).clone());
             }
+        }
+        // And the rows the user asked to be rid of, which have been struck
+        // through in the list since they were queued. The document goes with
+        // them or does not, as the preference in force says, and the row's own
+        // control named that preference when it was pressed.
+        let document = self.deleting();
+        for uuid in self.removals(found).collect::<Vec<_>>() {
+            update.remove(uuid, document);
         }
         // What the last press came to is not what this one will come to.
         self.outcome = None;
@@ -2709,30 +2984,33 @@ fn short_uuid(registration: &Registration) -> String {
 
 /// One registered entry.
 ///
-/// Answers whether it was clicked, which is how the inspector is opened: the
+/// Answers whether it was clicked, which is how the inspector is opened - the
 /// design makes the whole row the control rather than putting a disclosure
-/// arrow on it.
+/// arrow on it - and which of the row's own controls was pressed, if one was.
 fn row(
     ui: &mut egui::Ui,
     palette: Palette,
     width: widget::Width,
     selected: bool,
     entry: &Registration,
-) -> egui::Response {
+    status: Status,
+    document: TheDocument,
+) -> (egui::Response, Option<Action>) {
     let secondary = widget::supporting_ink(palette, selected);
-    widget::row(ui, palette, width, selected, |ui, columns| {
+    let mut pressed = None;
+    let response = widget::row(ui, palette, width, selected, |ui, columns, controls| {
         widget::cell(ui, columns.kind, Align::Min, |ui| {
             widget::kind_label(ui, secondary, entry.kind);
         });
         widget::cell(ui, columns.name, Align::Min, |ui| {
-            ui.add(
-                egui::Label::new(
-                    font::run(&entry.name, font::emphasis(ui.ctx(), font::ROW_NAME))
-                        .color(palette.ink),
-                )
-                .truncate(),
-            )
-            .on_hover_text(entry.library_path.as_str());
+            // Struck through while a removal is queued, which is the design's
+            // way of showing a row that is about to stop existing without
+            // taking it out of the list the press has not yet been made on.
+            let name = font::run(&entry.name, font::emphasis(ui.ctx(), font::ROW_NAME))
+                .color(palette.ink);
+            let name = if status.struck_through() { name.strikethrough() } else { name };
+            ui.add(egui::Label::new(name).truncate())
+                .on_hover_text(entry.library_path.as_str());
         });
         if let Some(at) = columns.uuid {
             widget::cell(ui, at, Align::Min, |ui| {
@@ -2740,13 +3018,15 @@ fn row(
             });
         }
         widget::cell(ui, columns.status, Align::Min, |ui| {
-            let status = "Registered";
             ui.label(
-                font::run(status, font::plain(font::CHIP))
+                font::run(status.word(), font::plain(font::CHIP))
                     .color(widget::status_colour(palette, status)),
             );
         });
-    })
+        pressed =
+            widget::row_actions(ui, palette, columns.actions, controls, status, document);
+    });
+    (response, pressed)
 }
 
 /// An identity, short enough for a column and whole on hover. Clicking copies
@@ -2767,9 +3047,35 @@ fn identity(ui: &mut egui::Ui, ink: egui::Color32, entry: &Registration) {
     }
 }
 
+/// Which row one of the list's own controls was pressed on.
+///
+/// Not a UUID for both. Two dropped documents claiming one identity is exactly
+/// the state the pending list exists to show - it is the collision `Assign new
+/// UUID` settles - so an identity there can name two rows and did: the first
+/// `Cancel` written against one took both away.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Acting {
+    /// A row in the pending list, by its position in it.
+    Pending(usize),
+    /// A registered entry, which the entry list keys by identity.
+    Registered(Uuid),
+}
+
 /// One dropped document, and what can be done with it.
-fn staged_row(ui: &mut egui::Ui, palette: Palette, width: widget::Width, staged: &Staged) {
-    widget::row(ui, palette, width, false, |ui, columns| {
+///
+/// Answers which of its own controls was pressed, if one was. It is never the
+/// selected row: the inspector opens on registered entries, and a staged
+/// document is not one yet.
+fn staged_row(
+    ui: &mut egui::Ui,
+    palette: Palette,
+    width: widget::Width,
+    staged: &Staged,
+    document: TheDocument,
+) -> Option<Action> {
+    let status = staged.status();
+    let mut pressed = None;
+    widget::row(ui, palette, width, false, |ui, columns, controls| {
         widget::cell(ui, columns.kind, Align::Min, |ui| {
             // A rejected row has no kind, because nothing readable said what it
             // was. Drawing one would be inventing it.
@@ -2795,7 +3101,7 @@ fn staged_row(ui: &mut egui::Ui, palette: Palette, width: widget::Width, staged:
                 ui.add(
                     egui::Label::new(
                         font::run(why, font::plain(font::NOTE))
-                            .color(widget::status_colour(palette, staged.status())),
+                            .color(widget::status_colour(palette, status)),
                     )
                     .truncate(),
                 );
@@ -2811,11 +3117,14 @@ fn staged_row(ui: &mut egui::Ui, palette: Palette, width: widget::Width, staged:
         }
         widget::cell(ui, columns.status, Align::Min, |ui| {
             ui.label(
-                font::run(staged.status(), font::plain(font::CHIP))
-                    .color(widget::status_colour(palette, staged.status())),
+                font::run(status.word(), font::plain(font::CHIP))
+                    .color(widget::status_colour(palette, status)),
             );
         });
+        pressed =
+            widget::row_actions(ui, palette, columns.actions, controls, status, document);
     });
+    pressed
 }
 
 /// Between a name and the reason beside it, which is closer than two separate

@@ -70,6 +70,11 @@ pub enum Errand {
     /// Words changed in the inspector. Entries only - a description is not a
     /// reason to touch the installation.
     Edit,
+    /// An entry that had lost its document was pointed back at one. Entries
+    /// only, and the one run that places a document without registering
+    /// anything new: the entry was already there, and what was missing was the
+    /// file under it.
+    Locate,
 }
 
 impl Errand {
@@ -77,7 +82,7 @@ impl Errand {
     pub fn work(self) -> Work {
         match self {
             Errand::Preparation => Work::PrepareThenEntries,
-            Errand::Registration | Errand::Edit => Work::Entries,
+            Errand::Registration | Errand::Edit | Errand::Locate => Work::Entries,
         }
     }
 

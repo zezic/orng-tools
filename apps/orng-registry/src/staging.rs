@@ -19,8 +19,10 @@ use std::sync::mpsc::{Receiver, TryRecvError, channel};
 
 use eframe::egui;
 use orng_tools::{
-    Destination, Document, DocumentError, Kind, Manifest, Registration, placement,
+    Destination, Document, DocumentError, Kind, Manifest, Registration, Uuid, placement,
 };
+
+use crate::status::Status;
 
 /// A document the user has dropped, as the list shows it.
 #[derive(Debug)]
@@ -39,18 +41,22 @@ pub enum State {
     Ready { registration: Registration, document: Box<Document> },
     /// Readable, and registering it would collide with something already here.
     /// The reason is the useful half and is carried on the row.
-    Conflict { registration: Registration, why: String },
+    ///
+    /// Carries the document for the same reason [`State::Ready`] does, though
+    /// it will not be written as it stands: the row offers `Assign new UUID`,
+    /// and minting an identity means rewriting the bytes that hold the old one.
+    Conflict { registration: Registration, document: Box<Document>, why: String },
     /// Not something this application can register.
     Rejected { why: String },
 }
 
 impl Staged {
-    /// The status word the row shows, in the design's vocabulary.
-    pub fn status(&self) -> &'static str {
+    /// Which of the design's states this row is in.
+    pub fn status(&self) -> Status {
         match self.state {
-            State::Ready { .. } => "Staged",
-            State::Conflict { .. } => "Conflict",
-            State::Rejected { .. } => "Rejected",
+            State::Ready { .. } => Status::Staged,
+            State::Conflict { .. } => Status::Conflict,
+            State::Rejected { .. } => Status::Rejected,
         }
     }
 
@@ -202,22 +208,129 @@ fn read_one(
             return Staged { label: file_name, state: State::Rejected { why: rejection(&why) } };
         }
     };
+    settle(document, &file_name, entries, to, seen)
+}
+
+/// What one document in hand comes to, against everything else there is.
+///
+/// Split out of [`read_one`] because a row is settled twice: once when the file
+/// is read, and again whenever something it was measured against changes -
+/// which is [`restage`]'s job and is the whole reason a repair on one row is
+/// visible on another.
+fn settle(
+    document: Document,
+    file_name: &str,
+    entries: &Manifest,
+    to: &Destination,
+    seen: &[Registration],
+) -> Staged {
     // A name with a tab in it cannot survive the entry list, and is refused
     // here rather than at the write, where it would be a failure after a press.
-    let registration = match Registration::from_document(&document, &file_name) {
+    let registration = match Registration::from_document(&document, file_name) {
         Ok(registration) => registration,
         Err(why) => {
-            return Staged { label: file_name, state: State::Rejected { why: why.to_string() } };
+            return Staged {
+                label: file_name.to_owned(),
+                state: State::Rejected { why: why.to_string() },
+            };
         }
     };
 
     let label = registration.name.clone();
+    let document = Box::new(document);
     match objection(&registration, entries, to, seen) {
-        Some(why) => Staged { label, state: State::Conflict { registration, why } },
-        None => {
-            Staged { label, state: State::Ready { registration, document: Box::new(document) } }
-        }
+        Some(why) => Staged { label, state: State::Conflict { registration, document, why } },
+        None => Staged { label, state: State::Ready { registration, document } },
     }
+}
+
+/// Read every staged row again, from the documents already in hand, putting
+/// each through `each` on the way.
+///
+/// A row's state is a statement about the whole set and not about that row:
+/// two documents claiming one identity are both a conflict, so settling one of
+/// them settles the other. A repair applied to the row it was pressed on would
+/// leave the other still saying it collides with something that has gone.
+///
+/// So every edit to the set goes through here, and none of them edits a row in
+/// place. Between rewriting a document and reading it again there is a moment
+/// where the row's registration describes the bytes as they were, and that
+/// moment is inside this loop rather than expressible anywhere else.
+///
+/// Rejected rows pass through untouched. Nothing was read, so there is no
+/// document to read again and nothing about the rest of the set can change what
+/// such a row says.
+fn resettle(
+    rows: Vec<Staged>,
+    entries: &Manifest,
+    to: &Destination,
+    mut each: impl FnMut(usize, Document) -> Document,
+) -> Vec<Staged> {
+    let mut seen: Vec<Registration> = Vec::new();
+    let mut settled = Vec::with_capacity(rows.len());
+    for (at, row) in rows.into_iter().enumerate() {
+        let row = match row.state {
+            State::Rejected { .. } => row,
+            State::Ready { registration, document }
+            | State::Conflict { registration, document, .. } => {
+                let file_name = registration.library_path.file_name().to_owned();
+                settle(each(at, *document), &file_name, entries, to, &seen)
+            }
+        };
+        if let Some(registration) = row.registration() {
+            seen.push(registration.clone());
+        }
+        settled.push(row);
+    }
+    settled
+}
+
+/// Read the set again, unchanged.
+///
+/// What every edit that only *removes* rows has to end with. A row conflicts
+/// because of what else is there, so cancelling one is what settles the row it
+/// was colliding with - and a row still saying it collides with a document that
+/// has gone is the kind of stale claim this design keeps finding.
+pub fn restaged(rows: Vec<Staged>, entries: &Manifest, to: &Destination) -> Vec<Staged> {
+    resettle(rows, entries, to, |_, document| document)
+}
+
+/// Give the staged row at `at` a fresh identity, and read the set again.
+///
+/// By position and not by identity, which is the whole point of the control:
+/// the collision it settles is two dropped documents claiming one UUID, so a
+/// UUID here names both of them and minting one for each would settle nothing.
+/// The order is stable through [`resettle`], so a position taken off the drawn
+/// list still names the same row.
+///
+/// The one repair the design offers from the list itself, and it is offered
+/// only on rows nothing has been written for. Rewriting a UUID rewrites the
+/// document, and doing that to something already registered would orphan every
+/// project that refers to it.
+///
+/// A new identity settles exactly one of the collisions [`objection`] raises.
+/// A name already taken stays taken and the row goes on saying so. The design
+/// offers the control on every staged and conflicting row rather than only on
+/// the one it fixes, and a row that answers honestly is better than a control
+/// that refuses to try.
+pub fn reassign(
+    rows: Vec<Staged>,
+    at: usize,
+    entries: &Manifest,
+    to: &Destination,
+) -> Vec<Staged> {
+    resettle(rows, entries, to, |which, document| {
+        if which != at {
+            return document;
+        }
+        // A UUID is fixed width in both of Bitwig's forms, so this is a splice
+        // into bytes that were parsed a moment ago, at offsets parsing
+        // recorded. Failing means the reader and the writer disagree about this
+        // format, which is a bug here rather than a condition on the machine.
+        document
+            .with_uuid(Uuid::new_v4())
+            .expect("a document that parsed can be rewritten at the offsets parsing found")
+    })
 }
 
 /// Why this document cannot be registered as it stands, if it cannot.
@@ -338,7 +451,7 @@ mod tests {
 
         let staged = machine.stage(&[path], &Manifest::default());
         assert_eq!(staged.len(), 1);
-        assert_eq!(staged[0].status(), "Staged");
+        assert_eq!(staged[0].status(), Status::Staged);
         assert_eq!(staged[0].label, "DISPERSER");
         let registration = staged[0].registration().expect("a staged row has one");
         assert_eq!(registration.uuid.to_string(), A);
@@ -365,7 +478,7 @@ mod tests {
         // The text file is not even offered to the reader: a drop takes the
         // acceptable files out of what it was given.
         assert_eq!(staged.len(), 2, "{staged:?}");
-        assert_eq!(staged[0].status(), "Rejected");
+        assert_eq!(staged[0].status(), Status::Rejected);
         assert_eq!(staged[0].reason(), Some("Not a Bitwig document"));
         assert_eq!(staged[0].label, "BROKEN.bwdevice", "a rejected row is named by its file");
         assert!(staged[0].registration().is_none());
@@ -384,7 +497,7 @@ mod tests {
         let path = machine.document("drop/DISPERSER.bwdevice", A, "DISPERSER");
 
         let staged = machine.stage(&[path], &entries);
-        assert_eq!(staged[0].status(), "Conflict");
+        assert_eq!(staged[0].status(), Status::Conflict);
         assert_eq!(
             staged[0].reason(),
             Some("DISPERSER is already registered under another identity")
@@ -404,7 +517,7 @@ mod tests {
         let path = machine.document("drop/DISPERSER.bwdevice", A, "DISPERSER");
 
         let staged = machine.stage(&[path], &entries);
-        assert_eq!(staged[0].status(), "Staged", "{:?}", staged[0].reason());
+        assert_eq!(staged[0].status(), Status::Staged, "{:?}", staged[0].reason());
     }
 
     /// Two files in one drop, both claiming one identity. Without this the
@@ -416,8 +529,8 @@ mod tests {
         let second = machine.document("drop/two/SHAPER.bwdevice", A, "SHAPER COPY");
 
         let staged = machine.stage(&[first, second], &Manifest::default());
-        assert_eq!(staged[0].status(), "Staged");
-        assert_eq!(staged[1].status(), "Conflict");
+        assert_eq!(staged[0].status(), Status::Staged);
+        assert_eq!(staged[1].status(), Status::Conflict);
         assert_eq!(staged[1].reason(), Some("another dropped document has the same identity"));
     }
 
@@ -430,7 +543,7 @@ mod tests {
         let second = machine.document("drop/two/SHARED.bwdevice", B, "SECOND");
 
         let staged = machine.stage(&[first, second], &Manifest::default());
-        assert_eq!(staged[1].status(), "Conflict");
+        assert_eq!(staged[1].status(), Status::Conflict);
         assert_eq!(
             staged[1].reason(),
             Some("another dropped document would be placed in the same file")
@@ -449,7 +562,7 @@ mod tests {
 
         let path = machine.document("drop/X.bwdevice", A, "MINE");
         let staged = machine.stage(&[path], &Manifest::default());
-        assert_eq!(staged[0].status(), "Conflict");
+        assert_eq!(staged[0].status(), Status::Conflict);
         assert!(
             staged[0].reason().expect("a conflict says why").ends_with("a different document"),
             "{:?}",

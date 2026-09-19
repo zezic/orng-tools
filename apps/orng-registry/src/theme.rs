@@ -309,6 +309,12 @@ pub mod metric {
     /// removing them: a column that appears on hover would move every other
     /// column under the pointer.
     pub const ACTIONS_COLUMN: f32 = 84.0;
+    /// One of those controls: square, and the only thing in the design smaller
+    /// than a bar's 26.
+    pub const ROW_ACTION: f32 = 22.0;
+    /// Between two of them. One pixel, which is not a gap so much as a seam -
+    /// they read as one group and only their hover fills separate them.
+    pub const ROW_ACTION_GAP: f32 = 1.0;
     /// The same two columns beside the inspector, where the identity has gone
     /// and the row has 272 fewer pixels to spend. The design shortens these
     /// rather than letting the name take the whole difference.

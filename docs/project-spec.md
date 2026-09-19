@@ -808,6 +808,26 @@ missing `Cancel` takes. The guarantee is kept by the types rather than by intent
 press that writes a document is offered by `Available`, which means the identity is not
 registered here.
 
+**The catalog's own toolbar**, which is the Local one's shape with the box at its right
+end exchanged. `Add files...` and the factory toggle are about documents on this machine;
+what somebody browsing needs instead is `All / Installed / Updatable`, and the design
+makes it a three-state switch rather than a checkbox because `Updatable` is the state a
+returning user comes back for. The search is the other difference and it is a difference
+of question: Local matches a name and an identity - *what is this thing I have* - and the
+catalog matches the name, the author, the description and the keywords, because *is there
+a thing that does X* is answered in the description. The field says so, and is capped a
+hundred pixels wider to have room to. There is no identity among the fields it searches,
+for the same reason a catalog row does not draw one.
+
+The kind facets count what the install filter left and not what the list is showing: a
+facet answers "how many would I see if I switched this kind on", so narrowing it by the
+control it belongs to would make every count read the number already on screen. The query
+and the kinds are one setting across both views and the install filter is the catalog's
+alone, which is the bundle's own arrangement - switching views keeps what was asked for
+rather than quietly widening it. Narrowed to nothing, the region says so in the design's
+own sentence and offers the press that undoes it, with the toolbar still above it: the
+control that clears a filter must not go away with the rows it hid.
+
 The inspector, which a row opens and which slides over the right of the list: what the
 entry is called, what Bitwig's browser says under it, the words that find it, its
 identity, where the registry points, where the document came from and whether it is
@@ -887,13 +907,9 @@ machine that drew them.
 
 Not built yet:
 
-- Installing from the catalog: fetching a document by path, checking it against the digest
-  the index carries, and registering it. The catalog view has no toolbar of its own yet,
-  so its search, kind filters and `All / Installed / Updatable` switch are missing, and
-  the detail panel is drawn without the footer its `Install` and `Remove` live in.
-- A catalog row's status and its `Install` control, and the catalog detail's footer,
-  which wait on installing from the catalog. The columns are reserved at the design's
-  widths, because the design reserves them.
+- `Browse all`, the alt the design draws beside `Clear filters` on the catalog's no-match
+  state. The bundle's own two handlers reset the same two things, so a second control
+  there would offer nothing the first does not - see `design-review.md` round 3 item 3.
 - The entry row's overflow control, which the bundle draws on every row in every state
   and never says the contents of. A question for the designer rather than work - see
   `design-review.md` round 3 item 3.

@@ -259,12 +259,48 @@ next reader will see `\u{b7}` and wonder.
   which by definition means the identity is not registered here. **For the
   designer:** the modal.
 
-- **The catalog's own toolbar** - `CatalogToolbar.dc.html`. The Catalog view
-  draws its list with no toolbar above it, so there is no wide-scope search, no
-  kind facets and no `All / Installed / Updatable`. Not a question for the
-  designer; just unbuilt. The search field is 320 there against the local view's
-  216 and narrows through the same rule, and the three-state segmented control
-  wants `Published`'s table, which now exists.
+- ~~**The catalog's own toolbar**~~ - *Drawn.* `CatalogToolbar.dc.html`: the
+  wide-scope search, the three kind facets, and `All / Installed / Updatable` as
+  a three-state segmented control over `Published`'s table. Three things in it
+  are the design's own and none of them is obvious from a picture.
+
+  **The search field is capped at 320 where the Local toolbar's is capped at
+  216**, and it says what it searches - name, author, description and keywords -
+  because the question is a different one. Local answers *what is this thing I
+  have*; the catalog answers *is there a thing that does X*, and the answer is in
+  the description and the keywords rather than in the name. There is no UUID
+  among them, for the reason a catalog row does not draw one.
+
+  **The facet counts are taken after the install filter and before the kind
+  filter**, which is the shell's own arithmetic at `ORNG Registry.dc.html:672` -
+  it facets `installFiltered` rather than the drawn list. A facet answers "how
+  many would I see if I switched this kind on", so narrowing it by the control it
+  belongs to would make every count read either the number already on screen or
+  nothing at all.
+
+  **The query and the kind filters are shared with the Local toolbar and the
+  install filter is not**, which is also the shell's: `:101` and `:111` hand both
+  toolbars one `query` and one `kinds`, and only `catalogFilter` is the catalog's
+  alone. Switching views keeps what was asked for rather than quietly widening
+  it.
+
+  One difference from the Local bar that reads as an omission and is not: **the
+  kind chips keep their full 9px padding beside the panel**. `ListToolbar`'s
+  `chip()` takes a `narrow` argument and `CatalogToolbar`'s does not, and the
+  probe says why - this bar has one box fewer, so the field still comes to 82
+  there, clear of the 80 a search field stops being worth having at.
+
+- **`Browse all` in the catalog's no-match empty state** - `EmptyState.dc.html:97`
+  draws it as the alt beside `Clear filters`, and it is not drawn here. **The
+  shell's own two handlers do the same thing**: `Clear filters` at
+  `ORNG Registry.dc.html:770` sets `kinds: null, catalogFilter: null` and
+  `Browse all` at `:773` sets `kinds: null, catalogFilter: "All"` - and `:637`
+  resolves that null to `"All"`. So the second control offers the user nothing
+  the first does not, and it is drawn as one rather than as two that read as a
+  choice and are not. **For the designer:** if `Browse all` is meant to do something
+  `Clear filters` does not - leave the search but drop the filters, say, or take
+  the user out of a kind they had pinned - it needs saying, and then it is a
+  two-line change.
 
 - **The entry row's overflow** - `EntryRow.dc.html:60`, the
   `ph-dots-three-vertical` control the design draws on every row in every state.

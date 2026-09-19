@@ -1059,6 +1059,11 @@ impl App {
     /// Read the machine again, because where to look has changed.
     fn reread(&mut self) {
         self.session = Session::read(self.preferences.chosen());
+        // The queued removals go with the list they were queued against. Staged
+        // rows stay, and the difference is what each one means: a staged row is
+        // a document to register wherever this application is pointed, and a
+        // removal is an instruction about one particular list.
+        self.removing.clear();
         self.settle_screen();
     }
 
@@ -2326,14 +2331,29 @@ impl App {
         }
     }
 
-    /// The queued removals that are still registered.
+    /// The queued removals the list is actually showing as `Pending removal`.
     ///
-    /// Filtered against the list rather than trusted. The queue is what the
-    /// user asked for and the list is what is there, and reading an
-    /// installation again under a queued removal would otherwise hand
-    /// [`Update::remove`] an identity it has no row for.
+    /// Filtered rather than trusted, on both counts, so that this answers
+    /// exactly the rows the user can see struck through. Anything else is the
+    /// press doing something no row said it would.
+    ///
+    /// Not in the list at all: the queue is what was asked for and the list is
+    /// what is there, and handing [`Update::remove`] an identity it has no row
+    /// for is a panic rather than a no-op.
+    ///
+    /// Staged under the same identity: re-dropping the document of a queued
+    /// entry replaces its row with the staged one, which is what
+    /// [`App::local`] does to every registered row a drop covers. The row now
+    /// reads `Staged`, so the press must register it and not forget it.
     fn removals<'a>(&'a self, found: &'a Found) -> impl Iterator<Item = Uuid> + 'a {
-        self.removing.iter().copied().filter(|uuid| found.entries.get(*uuid).is_some())
+        self.removing.iter().copied().filter(|uuid| {
+            found.entries.get(*uuid).is_some()
+                && !self
+                    .staged
+                    .iter()
+                    .filter_map(Staged::registration)
+                    .any(|staged| staged.uuid == *uuid)
+        })
     }
 
     /// Carry out what a row's own control asked for.
@@ -2421,33 +2441,21 @@ impl App {
             return;
         };
 
-        let document = match Document::read(&chosen) {
+        let document = match this_entrys_document(entry, &chosen) {
             Ok(document) => document,
-            Err(why) => return self.not_located(why.to_string()),
+            // The same banner a failed run gets, because what the user is
+            // entitled to know is the same either way: nothing was changed, and
+            // the entry is still missing its document.
+            Err(why) => {
+                self.outcome = Some(Outcome::Failed { what: Errand::Locate, why });
+                return;
+            }
         };
-        // Both halves of what `Update::add` asserts, checked here so that a
-        // user pointing at the wrong file is told rather than crashed at.
-        if document.identity().uuid != uuid || document.kind() != entry.kind {
-            let name = widget::drawn_path(&chosen);
-            return self.not_located(format!(
-                "{name} carries the identity {} and this entry is {uuid}",
-                document.identity().uuid
-            ));
-        }
 
         let mut update = Update::to(found.entries.clone());
         update.add(entry.clone(), document);
         self.applying =
             Some(Applying::start(Errand::Locate, found.to.clone(), update, ctx.clone()));
-    }
-
-    /// Say that the file chosen was not the entry's, without running anything.
-    ///
-    /// The same banner a failed run gets, because what the user is entitled to
-    /// know is the same either way: nothing was changed, and the entry is still
-    /// missing its document.
-    fn not_located(&mut self, why: String) {
-        self.outcome = Some(Outcome::Failed { what: Errand::Locate, why });
     }
 
     /// The drop target, while something is over the window.
@@ -2977,6 +2985,40 @@ fn browse(url: &str) {
     }
 }
 
+/// Read the file somebody pointed at, and prove it is this entry's document.
+///
+/// Both halves of what [`Update::add`] asserts, asked here instead, because the
+/// file came from a picker rather than from the list: a user who chose the
+/// wrong document is to be told which one they chose, not crashed at. Placing
+/// it anyway would put one device into Bitwig's browser under another's name
+/// and under an identity that already belongs to something else.
+///
+/// Separate from [`App::relocate`] because the picker is the half no test can
+/// drive and this is the half worth driving.
+fn this_entrys_document(
+    entry: &Registration,
+    chosen: &std::path::Path,
+) -> Result<Document, String> {
+    let name = widget::drawn_path(chosen);
+    let document = Document::read(chosen).map_err(|why| format!("{name} could not be read: {why}"))?;
+    let found = document.identity().uuid;
+    if found != entry.uuid {
+        return Err(format!(
+            "{name} carries the identity {found}, and {} is {}",
+            entry.name, entry.uuid
+        ));
+    }
+    if document.kind() != entry.kind {
+        return Err(format!(
+            "{name} is a {:?} and {} is a {:?}",
+            document.kind(),
+            entry.name,
+            entry.kind
+        ));
+    }
+    Ok(document)
+}
+
 /// The first segment of an identity, which is what a row has room for.
 fn short_uuid(registration: &Registration) -> String {
     registration.uuid.to_string().split('-').next().unwrap_or_default().to_owned()
@@ -3319,5 +3361,59 @@ mod tests {
         assert_eq!(revised.kind, entry.kind);
         assert_eq!(revised.library_path, entry.library_path);
         assert_eq!(revised.provenance, entry.provenance);
+    }
+
+    /// The clause the result banner adds when a press took something away.
+    ///
+    /// `ORNG Registry.dc.html:532` writes it: "8 entries registered, 1
+    /// removed". Nothing is said when nothing was removed, which is what every
+    /// other count in this window does with its zero.
+    #[test]
+    fn a_press_that_removed_nothing_says_nothing_about_removals() {
+        assert_eq!(also_removed(0), "");
+        assert_eq!(also_removed(1), ", 1 removed");
+        assert_eq!(also_removed(4), ", 4 removed");
+    }
+
+    /// A file somebody pointed at has to be the document the entry names.
+    ///
+    /// The picker is the half no test can drive; this is the half that decides
+    /// whether a stranger's device is written into Bitwig's browser under this
+    /// entry's name and this entry's identity.
+    #[test]
+    fn locating_refuses_a_file_that_is_not_this_entry() {
+        let temp = tempfile::tempdir().expect("somewhere to write");
+        let entry = entry();
+
+        let write = |name: &str, kind: Kind, uuid: Uuid| {
+            let path = temp.path().join(name);
+            let document = orng_tools::testing::document(kind, uuid, "VOLSHAPER");
+            std::fs::write(&path, document.bytes()).expect("could not write the sample");
+            path
+        };
+
+        // The entry's own document, which is the whole point of the control.
+        let its_own = write("VOLSHAPER.bwdevice", entry.kind, entry.uuid);
+        let found = this_entrys_document(&entry, &its_own).expect("that is this entry");
+        assert_eq!(found.identity().uuid, entry.uuid);
+
+        // Another device entirely. Placing it would register somebody else's
+        // content under this entry's name and identity.
+        let stranger = write("STRANGER.bwdevice", entry.kind, Uuid::new_v4());
+        let why = this_entrys_document(&entry, &stranger).expect_err("that is not this entry");
+        assert!(why.contains("carries the identity"), "{why}");
+        assert!(why.contains("VOLSHAPER"), "{why}");
+
+        // The right identity on the wrong kind of document, which is the other
+        // half of what `Update::add` asserts and would otherwise be a panic.
+        let wrong_kind = write("VOLSHAPER.bwmodulator", Kind::Modulator, entry.uuid);
+        let why = this_entrys_document(&entry, &wrong_kind).expect_err("that is a modulator");
+        assert!(why.contains("Modulator"), "{why}");
+
+        // And something that is not a document at all.
+        let nonsense = temp.path().join("NONSENSE.bwdevice");
+        std::fs::write(&nonsense, vec![b'x'; 4096]).expect("could not write the sample");
+        let why = this_entrys_document(&entry, &nonsense).expect_err("that does not read");
+        assert!(why.contains("could not be read"), "{why}");
     }
 }

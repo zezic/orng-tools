@@ -1093,6 +1093,56 @@ fn removing_a_registered_entry_queues_it_and_the_press_counts_it() {
     );
 }
 
+/// Re-dropping the document of a queued entry takes the removal back off the
+/// press.
+///
+/// The row is the staged one then, not the registered one - a drop replaces
+/// every registered row it covers - so the list says `Staged` and says nothing
+/// about a removal. A press that forgot the entry anyway would be doing
+/// something no row on screen said it would, and would hand `Update` an add and
+/// a remove for one identity in the same change.
+#[test]
+fn re_dropping_a_queued_entrys_document_takes_the_removal_back() {
+    let root = fixture("queued-then-dropped");
+    let session = found(&root, Helper::Present, GuardState::Disarmed);
+    let to = destination(&root);
+    let mut session = Some(session);
+    let mut harness = Harness::builder().with_size(SIZE).build_eframe(move |cc| {
+        App::with(&cc.egui_ctx, session.take().expect("built once"))
+    });
+    harness.run();
+
+    harness.get_by_label("DISPERSER").hover();
+    harness.run();
+    harness.get_by_label_contains("Remove entry").click();
+    harness.run();
+    assert!(harness.query_all_by_label("1 to remove").next().is_some());
+
+    // The same identity the sample list carries for DISPERSER, dropped again.
+    let drop = root.join("dropped");
+    std::fs::create_dir_all(&drop).expect("a place to drop from");
+    let path = drop.join("DISPERSER.bwdevice");
+    let document = orng_tools::testing::document(
+        orng_tools::Kind::Device,
+        "80c0dc4c-d142-53a7-85ee-b91427819b66".parse().expect("a sample identity"),
+        "DISPERSER",
+    );
+    std::fs::write(&path, document.bytes()).expect("could not write the sample");
+    let staged = staging::read(&[path], &entries(), &to, &[]);
+    harness.state_mut().set_staged(staged);
+    harness.run();
+
+    assert!(
+        harness.query_by_label("Pending removal").is_none(),
+        "the list shows a removal queued against a row it is no longer drawing"
+    );
+    assert!(
+        harness.query_all_by_label("1 to remove").next().is_none(),
+        "the press would forget an entry the list is showing as staged"
+    );
+    assert!(harness.query_all_by_label("1 to add").next().is_some(), "the drop was not staged");
+}
+
 /// Cancelling a staged row takes it out of the pending list - and settles the
 /// row it was colliding with.
 ///

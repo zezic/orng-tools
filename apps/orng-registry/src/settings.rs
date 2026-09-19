@@ -86,7 +86,7 @@ impl Settings {
     /// parse stops the window, because it is a record of work that cannot be
     /// reconstructed and overwriting it would destroy it - and the difference is
     /// the point: this file is five choices.
-    pub fn load(home: &OrngHome) -> Settings {
+    fn load(home: &OrngHome) -> Settings {
         let path = home.settings();
         let text = match std::fs::read_to_string(&path) {
             Ok(text) => text,
@@ -110,7 +110,7 @@ impl Settings {
     /// A failure is reported and not raised. Nothing the user can do about a
     /// read-only home directory belongs on the screen they just changed a radio
     /// button on, and the choice is in force for this run either way.
-    pub fn save(&self, home: &OrngHome) {
+    fn save(&self, home: &OrngHome) {
         let path = home.settings();
         let text = match toml::to_string_pretty(self) {
             Ok(text) => text,
@@ -145,6 +145,57 @@ impl Settings {
     /// the one on record would be describing the wrong machine.
     pub fn installation(&self) -> Option<&Path> {
         self.install.as_deref().filter(|root| root.is_dir())
+    }
+}
+
+/// The preferences, and the one place they are written back to.
+///
+/// The two are one value because they are never usefully apart: a choice that is
+/// not written down lasts until the window closes, and the only way to be certain
+/// every choice is written is for changing one and writing them to be the same
+/// call. They used to be two fields on the window with a `remember` beside them,
+/// which meant every arm of the Settings dispatch had to remember to call it -
+/// four did, and the fifth arm anybody adds would have compiled, run, and lost
+/// the preference on the next launch with nothing to say so.
+///
+/// So [`Preferences::change`] is the only way to alter them, and it writes.
+pub struct Preferences {
+    chosen: Settings,
+    /// Where to write. **`None` under the tests**, so a render fixture neither
+    /// reads nor writes the preferences of whoever ran it.
+    home: Option<OrngHome>,
+}
+
+impl Preferences {
+    /// What was read off the disk, and the place to put it back.
+    pub fn read(home: OrngHome) -> Preferences {
+        Preferences { chosen: Settings::load(&home), home: Some(home) }
+    }
+
+    /// Preferences that are in force for this run and written nowhere.
+    ///
+    /// What the render fixtures get, and what a window with no reachable home
+    /// directory falls back to: the choices still work, they just do not outlive
+    /// the run. Nothing the user can do about that belongs on the screen.
+    pub fn unwritten(chosen: Settings) -> Preferences {
+        Preferences { chosen, home: None }
+    }
+
+    /// Read them.
+    pub fn chosen(&self) -> &Settings {
+        &self.chosen
+    }
+
+    /// Change one, and write them down.
+    ///
+    /// One call because it is one act. On the change rather than on quitting:
+    /// each is one line of TOML, and the alternative is a window that loses
+    /// whatever was chosen when it is killed.
+    pub fn change(&mut self, to: impl FnOnce(&mut Settings)) {
+        to(&mut self.chosen);
+        if let Some(home) = &self.home {
+            self.chosen.save(home);
+        }
     }
 }
 
@@ -262,6 +313,34 @@ mod tests {
         let settings =
             Settings { install: Some(PathBuf::from("/nonexistent/Bitwig Studio.app")), ..Settings::default() };
         assert!(settings.installation().is_none());
+    }
+
+    /// The contract the type exists for: changing a preference writes the file,
+    /// with nothing else to remember to call. Mutate `change` to skip the save
+    /// and this is what fails.
+    #[test]
+    fn changing_a_preference_writes_it_down() {
+        let temp = tempfile::tempdir().expect("a temporary home");
+        let home = OrngHome::at(temp.path());
+        assert!(!home.settings().exists(), "nothing is written before a change");
+
+        let mut preferences = Preferences::read(home);
+        preferences.change(|chosen| chosen.placement = Strategy::Copy);
+
+        let written = Settings::load(&OrngHome::at(temp.path()));
+        assert_eq!(written.placement, Strategy::Copy, "the change did not reach the file");
+        assert_eq!(preferences.chosen().placement, Strategy::Copy);
+    }
+
+    /// And preferences with nowhere to write still take the change, because the
+    /// choice is in force for this run either way. This is what the render
+    /// fixtures hold, so a failure here would mean tests writing to whoever ran
+    /// them.
+    #[test]
+    fn preferences_with_no_home_change_without_writing_anywhere() {
+        let mut preferences = Preferences::unwritten(Settings::default());
+        preferences.change(|chosen| chosen.appearance = Appearance::Light);
+        assert_eq!(preferences.chosen().appearance, Appearance::Light);
     }
 
     /// And a directory that is there is handed on even though it holds no

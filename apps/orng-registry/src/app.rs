@@ -29,7 +29,7 @@ use orng_tools::{
 use crate::catalog::Fetching;
 use crate::diagnostics::Diagnostics;
 use crate::session::{Badge, Found, Session};
-use crate::settings::{Appearance, Settings};
+use crate::settings::{Appearance, Preferences, Settings};
 use crate::staging::{self, Reading, Staged};
 use crate::theme::{self, Palette, font, metric};
 use crate::widget::{self, Emphasis, Padding, Tone, icon};
@@ -97,8 +97,10 @@ enum Chose {
     /// Give one of them back to discovery, which is `Reset to auto-detected`.
     Rediscover(Which),
     Placement(Strategy),
-    /// Whether removing an entry takes the document with it.
-    Keep(bool),
+    /// Whether removing an entry takes the document with it. Named for the
+    /// proposition it carries, so that `true` means what the word says: this was
+    /// `Keep`, where `Keep(true)` meant delete.
+    DeleteFile(bool),
     Appearance(Appearance),
     CopyReport,
 }
@@ -151,8 +153,9 @@ impl Filter {
 pub struct App {
     session: Session,
     /// What the user chose, which outlives the run where the session does not.
-    /// The one thing here written to disk, and written only when it changes.
-    settings: Settings,
+    /// The one thing here written to disk, and written only when it changes -
+    /// which is [`Preferences`]' own guarantee rather than this module's.
+    preferences: Preferences,
     view: View,
     /// Which surface is showing. The two views are what this changes the middle
     /// of; a screen replaces all of it.
@@ -187,16 +190,6 @@ pub struct App {
     /// that reaches for one before being asked is a window that hangs on a
     /// train.
     catalog: Option<Fetching>,
-    /// Where the preferences are written, and `None` where they cannot be.
-    ///
-    /// Held rather than taken off the session, because it is the one path here
-    /// that does not depend on there being an installation: the appearance can be
-    /// changed on a machine with no Bitwig Studio on it at all.
-    ///
-    /// **`None` under the tests.** A render fixture must not write to whoever ran
-    /// it - and cannot read them either, because [`App::with`] takes the defaults
-    /// and only [`App::new`] loads a file.
-    home: Option<orng_tools::OrngHome>,
 }
 
 impl App {
@@ -212,9 +205,12 @@ impl App {
                 eprintln!("no home directory, so no preferences: {why}");
             })
             .ok();
-        let settings = home.as_ref().map(Settings::load).unwrap_or_default();
-        let session = Session::read(&settings);
-        App::with(&cc.egui_ctx, session).having(settings, home)
+        let preferences = match home {
+            Some(home) => Preferences::read(home),
+            None => Preferences::unwritten(Settings::default()),
+        };
+        let session = Session::read(preferences.chosen());
+        App::with(&cc.egui_ctx, session).having(preferences)
     }
 
     /// The window over a session that is already known.
@@ -227,7 +223,7 @@ impl App {
         theme::apply(ctx, palette);
         App {
             session,
-            settings: Settings::default(),
+            preferences: Preferences::unwritten(Settings::default()),
             view: View::Local,
             screen: Screen::Browsing,
             palette,
@@ -240,7 +236,6 @@ impl App {
             inspecting: None,
             detailing: None,
             catalog: None,
-            home: None,
         }
     }
 
@@ -248,12 +243,11 @@ impl App {
     /// the place to write them back to.
     ///
     /// Separate from [`App::with`] so that the tests, which build a session
-    /// themselves, get the defaults and no home at all. A render fixture that
-    /// drew from `~/.orng/settings.toml` would be a picture of whoever ran it, and
-    /// one that wrote to it would be worse than that.
-    fn having(mut self, settings: Settings, home: Option<orng_tools::OrngHome>) -> Self {
-        self.settings = settings;
-        self.home = home;
+    /// themselves, get the defaults and nowhere to write at all. A render fixture
+    /// that drew from `~/.orng/settings.toml` would be a picture of whoever ran
+    /// it, and one that wrote to it would be worse than that.
+    fn having(mut self, preferences: Preferences) -> Self {
+        self.preferences = preferences;
         self
     }
 
@@ -267,10 +261,11 @@ impl App {
         self.screen = Screen::Settings(Diagnostics::of(&self.session));
     }
 
-    /// Put a preference on screen without pressing anything. Tests only.
+    /// Put a preference on screen without pressing anything. Tests only, and
+    /// unwritten, so a fixture cannot reach the preferences of whoever ran it.
     #[cfg(test)]
     pub fn set_settings(&mut self, settings: Settings) {
-        self.settings = settings;
+        self.preferences = Preferences::unwritten(settings);
     }
 
     /// Where a document would go, read off the destination every write is handed
@@ -327,7 +322,7 @@ impl App {
     /// Choose an appearance. Settings and the render tests share this, so neither
     /// can change palettes in a way the other does not.
     pub fn set_appearance(&mut self, appearance: Appearance, ctx: &egui::Context) {
-        self.settings.appearance = appearance;
+        self.preferences.change(|chosen| chosen.appearance = appearance);
         self.settle_palette(ctx);
     }
 
@@ -343,7 +338,7 @@ impl App {
     /// The applying is guarded on the answer having changed, because
     /// [`theme::apply`] rebuilds every style egui keeps.
     fn settle_palette(&mut self, ctx: &egui::Context) {
-        let dark = match self.settings.appearance {
+        let dark = match self.preferences.chosen().appearance {
             Appearance::Light => false,
             Appearance::Dark => true,
             // A platform that does not say is dark. That is what this
@@ -458,7 +453,7 @@ impl App {
         // through a method - which is what lets the one that is written to be
         // borrowed beside the one that is read.
         let Screen::Settings(facts) = &self.screen else { return };
-        let chosen = &self.settings;
+        let chosen = self.preferences.chosen();
 
         let mut chose = Chose::Nothing;
         egui::Panel::top("screen")
@@ -477,7 +472,7 @@ impl App {
                     ui.set_width(ui.available_width());
                     ui.spacing_mut().item_spacing.y = metric::BETWEEN_GROUP_ROWS;
 
-                    widget::path_row(ui, palette, "Bitwig install", &facts.install, |ui| {
+                    widget::path_row(ui, palette, "Bitwig install", facts.install.as_deref(), |ui| {
                         if widget::reset_control(ui, palette).clicked() {
                             chose = Chose::Rediscover(Which::Install);
                         }
@@ -487,7 +482,7 @@ impl App {
                             chose = Chose::Locate(Which::Install);
                         }
                     });
-                    widget::path_row(ui, palette, "User library", &facts.library, |ui| {
+                    widget::path_row(ui, palette, "User library", facts.library.as_deref(), |ui| {
                         if widget::reset_control(ui, palette).clicked() {
                             chose = Chose::Rediscover(Which::Library);
                         }
@@ -497,7 +492,7 @@ impl App {
                             chose = Chose::Locate(Which::Library);
                         }
                     });
-                    widget::path_row(ui, palette, "Backups", &facts.backups, |ui| {
+                    widget::path_row(ui, palette, "Backups", facts.backups.as_deref(), |ui| {
                         // Where backups live is not a preference - the class in
                         // the installation joins `user.home` with a fixed name
                         // to find the entry list beside them - so there is
@@ -558,7 +553,7 @@ impl App {
                     })
                     .inner;
                 if pressed.clicked() {
-                    chose = Chose::Keep(!on);
+                    chose = Chose::DeleteFile(!on);
                 }
 
                 ui.add_space(metric::BETWEEN_SETTINGS_GROUPS);
@@ -636,16 +631,14 @@ impl App {
             Chose::Back => self.screen = Screen::Browsing,
             Chose::Locate(which) => self.locate(which),
             Chose::Rediscover(which) => {
-                match which {
-                    Which::Install => self.settings.install = None,
-                    Which::Library => self.settings.library = None,
-                }
-                self.remember();
+                self.preferences.change(|chosen| match which {
+                    Which::Install => chosen.install = None,
+                    Which::Library => chosen.library = None,
+                });
                 self.reread();
             }
             Chose::Placement(strategy) => {
-                self.settings.placement = strategy;
-                self.remember();
+                self.preferences.change(|chosen| chosen.placement = strategy);
                 // **Not a re-read.** Where a document goes is a preference, not
                 // something read off the machine, and reading the machine again
                 // means opening the archive and resolving its anchors - seconds,
@@ -656,14 +649,10 @@ impl App {
                 }
                 self.settle_diagnostics();
             }
-            Chose::Keep(delete) => {
-                self.settings.delete_file = delete;
-                self.remember();
+            Chose::DeleteFile(delete) => {
+                self.preferences.change(|chosen| chosen.delete_file = delete);
             }
-            Chose::Appearance(appearance) => {
-                self.set_appearance(appearance, ui.ctx());
-                self.remember();
-            }
+            Chose::Appearance(appearance) => self.set_appearance(appearance, ui.ctx()),
             Chose::CopyReport => {
                 if let Screen::Settings(facts) = &self.screen {
                     ui.ctx().copy_text(facts.report.clone());
@@ -672,19 +661,9 @@ impl App {
         }
     }
 
-    /// Write the preferences down, now that one of them has changed.
-    ///
-    /// On the change rather than on quitting. Each is one line of TOML, and the
-    /// alternative is a window that loses whatever was chosen when it is killed.
-    fn remember(&self) {
-        if let Some(home) = &self.home {
-            self.settings.save(home);
-        }
-    }
-
     /// Read the machine again, because where to look has changed.
     fn reread(&mut self) {
-        self.session = Session::read(&self.settings);
+        self.session = Session::read(self.preferences.chosen());
         self.settle_diagnostics();
     }
 
@@ -1008,7 +987,7 @@ impl App {
                     // A preparation changes what is true of the installation:
                     // the archive, the guard, the links. Nothing short of
                     // reading it again answers that.
-                    self.session = Session::read(&self.settings);
+                    self.session = Session::read(self.preferences.chosen());
                     self.outcome = Some(Outcome::Prepared { entries: in_effect });
                 } else {
                     if let Session::Found(found) = &mut self.session {
@@ -1406,11 +1385,10 @@ impl App {
         let Some(root) = rfd::FileDialog::new().set_title(title).pick_folder() else {
             return;
         };
-        match which {
-            Which::Install => self.settings.install = Some(root),
-            Which::Library => self.settings.library = Some(root),
-        }
-        self.remember();
+        self.preferences.change(|chosen| match which {
+            Which::Install => chosen.install = Some(root),
+            Which::Library => chosen.library = Some(root),
+        });
         self.reread();
     }
 

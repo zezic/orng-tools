@@ -1053,6 +1053,76 @@ fn a_document_that_went_missing_and_one_that_was_rewritten_say_so_separately() {
     );
 }
 
+/// An entry the catalog has moved on from says so, and one it has not does not.
+///
+/// Both halves matter. A window that has never fetched the catalog knows
+/// nothing about what is published, and must not answer "up to date" for the
+/// same reason it must not answer "out of date" - so the first assertion here
+/// is that a list drawn with no index says nothing at all.
+///
+/// The index is the published one with a version moved forward, rather than an
+/// invented row: the entry list fixture carries `VOLSHAPER` at the version the
+/// catalog really publishes, so the untouched index is already the "nothing to
+/// update" case and one field is the whole difference between them.
+#[test]
+fn an_entry_says_when_the_catalog_has_a_newer_revision_of_it() {
+    let mut harness = listing("update-available");
+    let published = || {
+        orng_catalog::Index::parse(include_str!("../tests/published-index.json"))
+            .expect("the sample index does not parse")
+    };
+
+    assert!(
+        harness.query_by_label("Update available").is_none(),
+        "a window with no catalog claimed to know what is published"
+    );
+
+    harness.state_mut().set_catalog(Fetching::frozen(Ok(published())));
+    harness.run();
+    assert!(
+        harness.query_by_label("Update available").is_none(),
+        "an entry at the published version was offered an update to it"
+    );
+
+    let mut newer = published();
+    newer.items[0].version = "2.1.0".parse().expect("a version");
+    harness.state_mut().set_catalog(Fetching::frozen(Ok(newer)));
+    harness.run();
+    // One row and not the list: the other three are local files, which have
+    // nothing upstream to be behind.
+    assert_eq!(
+        harness.query_all_by_label("Update available").count(),
+        1,
+        "the update was claimed for entries with nothing upstream"
+    );
+}
+
+/// A row written into a live installation reads `Pending restart` until the
+/// list is read off the machine again.
+///
+/// Driven through the run rather than by setting the word: what has to hold is
+/// that the identities an [`orng_tools::Update`] wrote survive the worker and
+/// reach the row, and every step of that is between the press and the word.
+#[test]
+fn a_row_written_while_bitwig_is_open_waits_for_a_restart() {
+    let mut harness = listing("pending-restart");
+    let written = harness.state().registered().expect("the fixture is an installation").clone();
+    let volshaper: orng_tools::Uuid = VOLSHAPER.parse().expect("a sample identity");
+
+    let mut applying = Applying::frozen(None, Stage::Registering, Some(Ok(written)));
+    applying.writing.insert(volshaper);
+    harness.state_mut().set_applying(applying);
+    harness.run();
+
+    // And only that one: the other three were not touched by the run, and a
+    // word on them would say Bitwig is missing a change nobody made.
+    assert_eq!(
+        harness.query_all_by_label("Pending restart").count(),
+        1,
+        "rows the run never wrote were marked as waiting on a restart"
+    );
+}
+
 /// The two states a picture is worth having of, because what is being claimed
 /// is a colour: the design puts `Changed` in `--accent-text` and `Missing file`
 /// in `--err-text`, and reading one as the other is reading "decide something"

@@ -19,11 +19,12 @@
 //! times a second through a verification that takes half a minute, and still
 //! answers late.
 
+use std::collections::BTreeSet;
 use std::sync::mpsc::{Receiver, TryRecvError, channel};
 use std::thread;
 
 use eframe::egui;
-use orng_tools::{Destination, Manifest, Plan, Step, Update};
+use orng_tools::{Destination, Manifest, Plan, Step, Update, Uuid};
 
 /// What one press of the primary action has to do.
 ///
@@ -154,6 +155,12 @@ pub struct Applying {
     pub errand: Errand,
     /// `None` while it is still going, and then the entry list that was written.
     pub outcome: Option<Result<Manifest, String>>,
+    /// The rows this run writes.
+    ///
+    /// Taken off the [`Update`] rather than asked of the caller: the update is
+    /// the only thing that knows, and a caller that had to say would be a
+    /// caller that could say something else.
+    pub writing: BTreeSet<Uuid>,
 }
 
 impl Applying {
@@ -165,6 +172,7 @@ impl Applying {
         ctx: egui::Context,
     ) -> Applying {
         let work = errand.work();
+        let writing = update.writing().collect();
         let (tx, updates) = channel();
         thread::spawn(move || {
             // Every send is followed by a wake, so the window redraws when
@@ -190,6 +198,7 @@ impl Applying {
             },
             errand,
             outcome: None,
+            writing,
         }
     }
 
@@ -294,6 +303,9 @@ impl Applying {
             steps,
             stage,
             outcome,
+            // A run held still for a picture wrote nothing: what it would have
+            // written is not something a fixture can be asked to invent.
+            writing: BTreeSet::new(),
         }
     }
 }
@@ -331,6 +343,7 @@ mod tests {
             stage: Stage::Preparing,
             errand: Errand::Preparation,
             outcome: None,
+            writing: BTreeSet::new(),
         }
     }
 
@@ -409,6 +422,7 @@ mod tests {
             stage: Stage::Preparing,
             errand: Errand::Preparation,
             outcome: None,
+            writing: BTreeSet::new(),
         };
         tx.send(Progress::Began(Step::Backup)).unwrap();
         drop(tx);
@@ -431,6 +445,7 @@ mod tests {
                 stage: Stage::Registering,
                 errand: Errand::Registration,
                 outcome: None,
+                writing: BTreeSet::new(),
             };
         tx.send(Progress::Finished(Ok(Manifest::default()))).unwrap();
 

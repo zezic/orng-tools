@@ -15,6 +15,8 @@
 //! exist is the thing that keeps them in step, and keeping them in step is the
 //! whole of this module.
 
+use std::collections::BTreeSet;
+
 use uuid::Uuid;
 
 use crate::{
@@ -58,12 +60,19 @@ pub struct Update {
     /// question only the destination can answer and the destination arrives at
     /// [`Update::apply`].
     delete: Vec<Registration>,
+    /// Identities this writes a row for, which is what a caller needs in order
+    /// to say afterwards which rows a running Bitwig has not read yet.
+    ///
+    /// Recorded here rather than worked out at the three call sites that build
+    /// an update, because the two methods that write a row are the two that
+    /// fill this and there is no way to add one without the other.
+    wrote: BTreeSet<Uuid>,
 }
 
 impl Update {
     /// Start from the list as it stands.
     pub fn to(entries: Manifest) -> Update {
-        Update { entries, place: Vec::new(), delete: Vec::new() }
+        Update { entries, place: Vec::new(), delete: Vec::new(), wrote: BTreeSet::new() }
     }
 
     /// Register `document` under `registration`, and place the document where
@@ -100,6 +109,7 @@ impl Update {
             document.kind()
         );
         registration.digest = Some(Digest::of(document.bytes()));
+        self.wrote.insert(registration.uuid);
         self.entries.insert(registration.clone());
         self.place.push((registration, document));
     }
@@ -122,6 +132,7 @@ impl Update {
             "{} is not registered, so there is nothing to revise",
             registration.name
         );
+        self.wrote.insert(registration.uuid);
         self.entries.insert(registration);
     }
 
@@ -144,6 +155,17 @@ impl Update {
     /// The list as it will be once this is applied.
     pub fn entries(&self) -> &Manifest {
         &self.entries
+    }
+
+    /// The identities this writes a row for.
+    ///
+    /// Bitwig reads the entry list when it launches, so every row written here
+    /// is one a Bitwig that is already open will not show - the design's
+    /// `Pending restart`. A removal is not among them: what was taken out of
+    /// the list is a row a running Bitwig is still showing, and no word on a
+    /// row that no longer exists could say so.
+    pub fn writing(&self) -> impl Iterator<Item = Uuid> + '_ {
+        self.wrote.iter().copied()
     }
 
     /// Carry it out, and answer with the list that is now on disk.
@@ -481,6 +503,29 @@ mod tests {
         let (registration, _) = staged(Kind::Device, "DISPERSER");
         let (_, other) = staged(Kind::Device, "SOMETHING ELSE");
         Update::to(Manifest::default()).add(registration, other);
+    }
+
+    /// What a run wrote a row for, which is what a caller has to know to say
+    /// which rows a running Bitwig has not read yet.
+    ///
+    /// A removal is deliberately not among them. Bitwig is still showing the
+    /// entry it read at launch, and there is no row left to say `Pending
+    /// restart` on - so counting it would be a word with nowhere to go.
+    #[test]
+    fn an_update_says_which_rows_it_writes_and_a_removal_is_not_one() {
+        let machine = machine();
+        let (registration, document) = staged(Kind::Device, "DISPERSER");
+        let (going, its_document) = staged(Kind::Modulator, "SHAPER");
+
+        let mut update = Update::to(Manifest::default());
+        update.add(registration.clone(), document);
+        update.add(going.clone(), its_document);
+        let entries = update.apply(&machine.to).unwrap();
+
+        let mut update = Update::to(entries);
+        update.revise(Registration { description: "edited".into(), ..registration.clone() });
+        update.remove(going.uuid, TheDocument::Kept);
+        assert_eq!(update.writing().collect::<Vec<_>>(), [registration.uuid]);
     }
 
     /// The digest recorded is the one the placed bytes hash to, whatever the

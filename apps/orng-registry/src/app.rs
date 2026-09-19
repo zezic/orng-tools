@@ -21,6 +21,7 @@ use std::collections::BTreeSet;
 use std::path::PathBuf;
 
 use eframe::egui::{self, Align, Layout, vec2};
+use orng_catalog::Index;
 use orng_tools::{
     Content, Document, Kind, Placement, Provenance, Registration, RunState, Step, Strategy,
     TheDocument, Update, Uuid, placement,
@@ -219,6 +220,19 @@ pub struct App {
     /// twice is queueing it once, and ordered so that a press writes the
     /// removals in the same order every time.
     removing: BTreeSet<Uuid>,
+    /// Entries written into a live installation since the list was last read
+    /// off the machine - the design's `Pending restart`.
+    ///
+    /// Bitwig reads the entry list when it launches, so a row written while it
+    /// is open is a row it is not showing. Nothing here watches for Bitwig
+    /// being restarted, and nothing should: the window reads the machine rather
+    /// than polling it, so this is emptied when the list is read again and by
+    /// the preparation, which is the apply that starts from the archive.
+    ///
+    /// Identities rather than rows, and never filtered: [`App::status_of`] is
+    /// the only reader and it asks about registered entries, so a removal
+    /// leaving one behind here is a word nobody draws.
+    awaiting_restart: BTreeSet<Uuid>,
     /// A drop being read, off the interface thread.
     reading: Option<Reading>,
     /// Set while work is in flight, and only while it is in flight: the moment
@@ -282,6 +296,7 @@ impl App {
             filter: Filter::default(),
             staged: Vec::new(),
             removing: BTreeSet::new(),
+            awaiting_restart: BTreeSet::new(),
             reading: None,
             applying: None,
             outcome: None,
@@ -369,6 +384,16 @@ impl App {
     #[cfg(test)]
     pub fn set_applying(&mut self, applying: Applying) {
         self.applying = Some(applying);
+    }
+
+    /// The list as this window has it, so a test can hand it back to a run that
+    /// is pretending to have written it. Tests only.
+    #[cfg(test)]
+    pub fn registered(&self) -> Option<&orng_tools::Manifest> {
+        match &self.session {
+            Session::Found(found) => Some(found.entries()),
+            _ => None,
+        }
     }
 
     /// Put a catalog on screen without fetching one. Tests only.
@@ -1064,6 +1089,9 @@ impl App {
         // a document to register wherever this application is pointed, and a
         // removal is an instruction about one particular list.
         self.removing.clear();
+        // And so does what was waiting on a restart: it was a statement about
+        // rows in the list that has just been replaced.
+        self.awaiting_restart.clear();
         self.settle_screen();
     }
 
@@ -1176,10 +1204,7 @@ impl App {
         let palette = self.palette;
         let uuid = self.detailing?;
         let Session::Found(found) = &self.session else { return None };
-        let Some(Ok(index)) = self.catalog.as_ref().map(|c| &c.outcome).and_then(Option::as_ref)
-        else {
-            return None;
-        };
+        let index = self.index()?;
         let Some(entry) = index.items.iter().find(|item| item.uuid == uuid) else {
             // The index was fetched again and this item is not in it. Nothing
             // left to detail, so the panel closes rather than standing empty.
@@ -1383,6 +1408,9 @@ impl App {
         // made every screen after a press have to ask whether it had finished.
         let result = result.clone();
         let errand = applying.errand;
+        // Taken before the work is dropped: what a run wrote is the update's
+        // own answer, and the update went with the worker.
+        let wrote: Vec<Uuid> = applying.writing.iter().copied().collect();
         let written = self.ready().count();
         let removed = match &self.session {
             Session::Found(found) => self.removals(found).count(),
@@ -1398,6 +1426,7 @@ impl App {
                 if let Session::Found(found) = &mut self.session {
                     found.relist(entries);
                 }
+                self.awaiting_restart.extend(wrote);
             }
             // Announced, unlike an edit: the user pressed a control on a row
             // and nothing else on screen would show that the file is back.
@@ -1408,6 +1437,7 @@ impl App {
                     found.relist(entries);
                 }
                 self.outcome = Some(Outcome::Located);
+                self.awaiting_restart.extend(wrote);
             }
             Ok(entries) => {
                 // What was written is no longer pending. Held until here rather
@@ -1425,6 +1455,9 @@ impl App {
                     // the archive, the guard, the links. Nothing short of
                     // reading it again answers that.
                     self.session = Session::read(self.preferences.chosen());
+                    // Nothing is waiting on a restart after this: Bitwig had to
+                    // be closed for it, and the banner says to start it.
+                    self.awaiting_restart.clear();
                     self.outcome = Some(Outcome::Prepared { entries: in_effect, removed });
                 } else {
                     if let Session::Found(found) = &mut self.session {
@@ -1434,6 +1467,7 @@ impl App {
                         // already in hand.
                         found.relist(entries);
                     }
+                    self.awaiting_restart.extend(wrote);
                     self.outcome = Some(Outcome::Registered { written, removed });
                 }
             }
@@ -2322,6 +2356,36 @@ impl App {
     ///
     /// Nothing here touches the disk: the looking was done when the list was
     /// read, and this is the reading of it.
+    /// The published index, once a fetch has answered with one.
+    ///
+    /// `None` covers three states the callers treat alike - nobody has asked
+    /// for the catalog, the fetch is still running, or it did not verify - and
+    /// they are alike here: in all three this application knows nothing about
+    /// what is published and must not say that anything is up to date either.
+    fn index(&self) -> Option<&Index> {
+        self.catalog.as_ref()?.outcome.as_ref()?.as_ref().ok()
+    }
+
+    /// Whether the catalog publishes a newer revision of this entry.
+    ///
+    /// Only a catalog entry can have one. A local file has nothing upstream, so
+    /// a difference in it is the user's own change - which is the whole reason
+    /// the entry list records where a document came from.
+    ///
+    /// Answered against the index in hand rather than by asking the network,
+    /// so a window nobody has opened the catalog in says nothing about updates
+    /// instead of reaching for a socket to draw a list.
+    fn update_available(&self, entry: &Registration) -> bool {
+        let Provenance::Catalog { version } = &entry.provenance else { return false };
+        // By identity and never by name. The catalog allows two items to share
+        // a display name and this application renames an entry when they
+        // collide, so matching on the name would eventually mark the wrong row
+        // - and would do it first to the user who hit the rename.
+        self.index()
+            .and_then(|index| index.items.iter().find(|item| item.uuid == entry.uuid))
+            .is_some_and(|published| published.version > *version)
+    }
+
     fn status_of(&self, found: &Found, entry: &Registration) -> Status {
         if self.removing.contains(&entry.uuid) {
             return Status::PendingRemoval;
@@ -2335,6 +2399,15 @@ impl App {
         // edit, so the edit is what the row has to say first.
         if standing.content() == Content::Rewritten {
             return Status::Changed;
+        }
+        if self.update_available(entry) {
+            return Status::UpdateAvailable;
+        }
+        // Last of the four, because the design's colours put it last: an update
+        // is a decision waiting and this is only work in flight with nothing to
+        // decide. A row that is both has the decision to state.
+        if self.awaiting_restart.contains(&entry.uuid) {
+            return Status::PendingRestart;
         }
         Status::Registered
     }

@@ -133,7 +133,7 @@ fn of_installation(found: &Found) -> Diagnostics {
     );
 
     let install = short(found.to.install.root());
-    let entries = found.entries.entries().len();
+    let entries = found.entries().entries().len();
     let report = report(&[
         ("install", install.clone()),
         ("version", version),

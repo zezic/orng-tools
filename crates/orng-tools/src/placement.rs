@@ -17,7 +17,8 @@ use std::path::{Path, PathBuf};
 use uuid::Uuid;
 
 use crate::{
-    Destination, Document, Error, Installation, Kind, Registration, Result, UserLibrary, fs,
+    Destination, Digest, Document, Error, Installation, Kind, Registration, Result, UserLibrary,
+    fs,
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -62,6 +63,66 @@ pub fn inspect(install: &Installation, registration: &Registration) -> Placement
     match folder.symlink_metadata().map(|m| m.file_type().is_symlink()) {
         Ok(true) => Placement::Linked(target),
         _ => Placement::Copied(target),
+    }
+}
+
+/// Whether the document a registration names is still the one that was placed.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Content {
+    /// The bytes hash to what the entry recorded when it placed them.
+    AsPlaced,
+    /// They do not. Something other than this application rewrote the file,
+    /// which is a different fact from the file being gone and carries a
+    /// different remedy - the design keeps the two apart for that reason.
+    Rewritten,
+    /// Nothing to compare. Either there is no document there, or the entry was
+    /// registered by a build that recorded nothing about the bytes it placed.
+    Unknown,
+}
+
+/// Everything one look at a registered document answers.
+///
+/// The two are resolved together and neither can be set by hand, because the
+/// second is only meaningful when the first found a file: a [`Content`] other
+/// than [`Content::Unknown`] beside an unresolved [`Placement`] would be a
+/// claim about bytes nobody read.
+#[derive(Debug, Clone)]
+pub struct Standing {
+    placement: Placement,
+    content: Content,
+}
+
+impl Standing {
+    /// Look at what is where `registration` says its document is.
+    ///
+    /// Reads the file only when there is something to check it against, so a
+    /// list written before this application recorded digests costs the same
+    /// two syscalls it always did.
+    ///
+    /// Blocking, and deliberately so - the caller is expected to ask once when
+    /// it reads the list and hold the answer, not per frame. This audience
+    /// keeps Bitwig libraries on external and network volumes.
+    pub fn of(install: &Installation, registration: &Registration) -> Standing {
+        let placement = inspect(install, registration);
+        let content = match (&registration.digest, placement.is_resolved()) {
+            (Some(recorded), true) => match fs::read_if_exists(placement.path()) {
+                Ok(Some(bytes)) if Digest::of(&bytes) == *recorded => Content::AsPlaced,
+                Ok(Some(_)) => Content::Rewritten,
+                // Gone between the two calls, or unreadable. Neither licenses
+                // saying the bytes differ: nothing was compared.
+                Ok(None) | Err(_) => Content::Unknown,
+            },
+            _ => Content::Unknown,
+        };
+        Standing { placement, content }
+    }
+
+    pub fn placement(&self) -> &Placement {
+        &self.placement
+    }
+
+    pub fn content(&self) -> Content {
+        self.content
     }
 }
 
@@ -384,6 +445,47 @@ mod tests {
         let refused = place(&to, &colliding, &mine);
         assert!(matches!(refused, Err(Error::PathOccupied { .. })), "{refused:?}");
         assert_eq!(std::fs::read(&at).unwrap(), theirs.bytes(), "the other document was replaced");
+    }
+
+    /// The four things one look at a registered document can find, against a
+    /// real file on a real disk.
+    ///
+    /// Written as one test over four states rather than four tests, because
+    /// what has to hold is that they are told apart: a check that answers
+    /// `Rewritten` for a file that is merely gone offers the wrong remedy, and
+    /// that is the defect the design keeps the two statuses separate to avoid.
+    #[test]
+    fn a_registered_document_is_found_missing_rewritten_or_as_it_was_placed() {
+        let temp = tempfile::tempdir().unwrap();
+        let to = machine(temp.path(), Strategy::Copy);
+        let mine = document(Kind::Device, Uuid::new_v4(), "DISPERSER");
+        let registration = registration_for(&mine, "DISPERSER.bwdevice");
+        let at = place(&to, &registration, &mine).unwrap();
+
+        let standing = Standing::of(&to.install, &registration);
+        assert!(standing.placement().is_resolved());
+        assert_eq!(standing.content(), Content::AsPlaced);
+
+        // An entry registered before this application recorded anything. The
+        // file is untouched and still nothing can be said about it, which is
+        // the honest answer rather than the convenient one.
+        let unrecorded = Registration { digest: None, ..registration.clone() };
+        let standing = Standing::of(&to.install, &unrecorded);
+        assert!(standing.placement().is_resolved());
+        assert_eq!(standing.content(), Content::Unknown);
+
+        // Somebody else rewrote it. Bitwig's own "Save device..." writes into
+        // this folder, so this is the ordinary case and not a contrived one.
+        std::fs::write(&at, b"something else entirely").unwrap();
+        let standing = Standing::of(&to.install, &registration);
+        assert!(standing.placement().is_resolved());
+        assert_eq!(standing.content(), Content::Rewritten);
+
+        // And gone is not rewritten. There is nothing there to have differed.
+        std::fs::remove_file(&at).unwrap();
+        let standing = Standing::of(&to.install, &registration);
+        assert!(!standing.placement().is_resolved());
+        assert_eq!(standing.content(), Content::Unknown);
     }
 
     /// Re-applying an edited document is the case placing has to stay open to,

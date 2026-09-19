@@ -22,7 +22,7 @@ use std::path::PathBuf;
 
 use eframe::egui::{self, Align, Layout, vec2};
 use orng_tools::{
-    Document, Installation, Kind, Placement, Provenance, Registration, RunState, Step, Strategy,
+    Content, Document, Kind, Placement, Provenance, Registration, RunState, Step, Strategy,
     TheDocument, Update, Uuid, placement,
 };
 
@@ -395,8 +395,8 @@ impl App {
         let Session::Found(found) = &self.session else {
             panic!("there is no list to inspect a row of")
         };
-        let entry = found.entries.get(uuid).expect("the row to inspect is registered");
-        self.inspecting = Some(Inspection::of(entry, &found.to.install));
+        let entry = found.entries().get(uuid).expect("the row to inspect is registered");
+        self.inspecting = Some(Inspection::of(entry, found));
     }
 
     /// The same for the catalog's detail panel. Tests only.
@@ -1105,7 +1105,7 @@ impl App {
         let Session::Found(found) = &self.session else { return None };
         let open = self.inspecting.as_mut()?;
         let uuid = open.uuid;
-        let Some(entry) = found.entries.get(uuid) else {
+        let Some(entry) = found.entries().get(uuid) else {
             // Applied, removed, or gone from a list that was read again. There
             // is nothing left to inspect, so the panel closes rather than
             // standing empty - and the words it was holding go with it.
@@ -1271,12 +1271,12 @@ impl App {
         }
         let Some(open) = &self.inspecting else { return };
         let Session::Found(found) = &self.session else { return };
-        let Some(entry) = found.entries.get(open.uuid) else {
+        let Some(entry) = found.entries().get(open.uuid) else {
             return;
         };
         let Some(revised) = revised(entry, &open.words) else { return };
 
-        let mut update = Update::to(found.entries.clone());
+        let mut update = Update::to(found.entries().clone());
         update.revise(revised);
         self.applying = Some(Applying::start(
             Errand::Edit,
@@ -1396,7 +1396,7 @@ impl App {
             // window reading its own fields back.
             Ok(entries) if errand == Errand::Edit => {
                 if let Session::Found(found) = &mut self.session {
-                    found.entries = entries;
+                    found.relist(entries);
                 }
             }
             // Announced, unlike an edit: the user pressed a control on a row
@@ -1405,7 +1405,7 @@ impl App {
             // the things the primary action does.
             Ok(entries) if errand == Errand::Locate => {
                 if let Session::Found(found) = &mut self.session {
-                    found.entries = entries;
+                    found.relist(entries);
                 }
                 self.outcome = Some(Outcome::Located);
             }
@@ -1432,7 +1432,7 @@ impl App {
                         // answered with what it wrote. Reading the machine
                         // again would cost seconds to arrive at the value
                         // already in hand.
-                        found.entries = entries;
+                        found.relist(entries);
                     }
                     self.outcome = Some(Outcome::Registered { written, removed });
                 }
@@ -1451,17 +1451,20 @@ impl App {
         self.settle_screen();
     }
 
-    /// Resolve the open panel's placement again.
+    /// Give the open panel the placement the session has just looked up again.
     ///
     /// Called when a run has reported, because this application writing is the
     /// one thing that moves a document out from under a panel that is standing
     /// open: a preparation relinks the library, and a registration places the
-    /// documents it registers.
+    /// documents it registers. The looking itself was done by the session -
+    /// this only carries the answer across.
     fn settle_placement(&mut self) {
         let Session::Found(found) = &self.session else { return };
         let Some(open) = self.inspecting.as_mut() else { return };
-        let Some(entry) = found.entries.get(open.uuid) else { return };
-        open.placement = placement::inspect(&found.to.install, entry);
+        if found.entries().get(open.uuid).is_none() {
+            return;
+        }
+        open.placement = found.standing(open.uuid).placement().clone();
     }
 
     /// Whatever has been dropped on the window this frame.
@@ -1490,7 +1493,7 @@ impl App {
             self.staged.iter().filter_map(Staged::registration).cloned().collect();
         self.reading = Some(Reading::start(
             paths,
-            found.entries.clone(),
+            found.entries().clone(),
             found.to.clone(),
             already,
             ctx.clone(),
@@ -1507,7 +1510,7 @@ impl App {
         //
         // Work in flight does not take it away either: the design draws the
         // preparation over the list rather than instead of it.
-        let anything = !found.entries.is_empty() || !self.staged.is_empty();
+        let anything = !found.entries().is_empty() || !self.staged.is_empty();
         self.view == View::Local && anything
     }
 
@@ -1607,13 +1610,13 @@ struct Inspection {
     /// Where the document actually is, as against where the registry says it
     /// is - which is a question about the disk rather than about the entry.
     ///
-    /// Resolved when the panel opens and again whenever this application
-    /// writes, rather than every time the panel is drawn. Answering it costs a
-    /// `stat` and an `lstat`, and `inspect` runs on every repaint: with the
-    /// panel open that was two blocking syscalls per mouse move and per
-    /// keystroke, on the thread that draws. Invisible against a local disk and
-    /// not against a network or external volume, where a library on a
-    /// spun-down mount answers in tens of milliseconds.
+    /// Taken from what the session already looked at rather than asked again -
+    /// the list resolves this for every entry when it reads it, and asking
+    /// here would be a second `stat` and `lstat` for a row already answered.
+    ///
+    /// Copied rather than borrowed because the panel outlives the borrow: the
+    /// arms that follow the draw take `&mut self` to put the panel away and to
+    /// write the words.
     ///
     /// The trade is that a document moved by something *other* than this
     /// application, while the panel stands open, is not noticed until the panel
@@ -1623,13 +1626,13 @@ struct Inspection {
 }
 
 impl Inspection {
-    /// Open on an entry: its words as the entry states them, and where its
-    /// document resolves right now.
-    fn of(entry: &Registration, install: &Installation) -> Inspection {
+    /// Open on an entry: its words as the entry states them, and where the
+    /// session found its document.
+    fn of(entry: &Registration, found: &Found) -> Inspection {
         Inspection {
             uuid: entry.uuid,
             words: widget::Words::of(&entry.description, &entry.keywords),
-            placement: placement::inspect(install, entry),
+            placement: found.standing(entry.uuid).placement().clone(),
         }
     }
 }
@@ -1965,7 +1968,7 @@ impl App {
         // `Registered` is the ordinary state and the design does not label it.
         // The count is in the list's own heading, which is where somebody
         // counting would look.
-        let label = (state != Badge::Registered(found.entries.entries().len()))
+        let label = (state != Badge::Registered(found.entries().entries().len()))
             .then(|| state.label());
         let width = label.as_ref().map_or(0.0, |text| text.len() as f32 * BADGE_WIDTH_PER_CHAR);
         let room = (ui.available_width() - width - metric::GAP).max(0.0);
@@ -1989,7 +1992,7 @@ impl App {
             .into_iter()
             .map(|kind| {
                 let registered =
-                    found.entries.entries().iter().filter(|e| e.kind == kind).count();
+                    found.entries().entries().iter().filter(|e| e.kind == kind).count();
                 let staged = self
                     .staged
                     .iter()
@@ -2192,7 +2195,7 @@ impl App {
         let staged: Vec<&Registration> =
             self.staged.iter().filter_map(Staged::registration).collect();
         let registered: Vec<&Registration> = found
-            .entries
+            .entries()
             .entries()
             .iter()
             .filter(|entry| !staged.iter().any(|pending| pending.uuid == entry.uuid))
@@ -2209,7 +2212,7 @@ impl App {
             .filter(|(_, s)| s.registration().is_none_or(|r| self.filter.accepts(r)))
             .collect();
 
-        if found.entries.is_empty() && self.staged.is_empty() {
+        if found.entries().is_empty() && self.staged.is_empty() {
             // The primary onboarding surface, and the only screen whose icon
             // takes the accent: it is an invitation rather than a report.
             let empty = widget::Empty {
@@ -2286,7 +2289,7 @@ impl App {
             widget::section(ui, palette, "Registered", palette.ink_2, registered.len());
             for entry in &registered {
                 let selected = open == Some(entry.uuid);
-                let status = self.status_of(entry);
+                let status = self.status_of(found, entry);
                 let (response, action) =
                     row(ui, palette, width, selected, entry, status, document);
                 if let Some(action) = action {
@@ -2297,7 +2300,7 @@ impl App {
                     // panel answerable from the list it is about. The words
                     // are taken here, where the entry to take them off is in
                     // hand, so opening a panel is one statement.
-                    opened = Some((!selected).then(|| Inspection::of(entry, &found.to.install)));
+                    opened = Some((!selected).then(|| Inspection::of(entry, found)));
                 }
             }
         });
@@ -2311,15 +2314,29 @@ impl App {
 
     /// What the list says about one registered entry.
     ///
-    /// Only the two states this application can currently tell apart. The rest
-    /// of the design's ten are computed from the disk and the catalog and are
-    /// not built yet - see `docs/project-spec.md` section 8.
-    fn status_of(&self, entry: &Registration) -> Status {
+    /// One row says one thing, so these are in the order the design's own
+    /// colours put them in. A queued removal comes first because it is what the
+    /// user has just asked for, and a row about to stop existing has nothing
+    /// useful to say about its file. Then what is broken, then what is waiting
+    /// on a decision, and `Registered` when none of it applies.
+    ///
+    /// Nothing here touches the disk: the looking was done when the list was
+    /// read, and this is the reading of it.
+    fn status_of(&self, found: &Found, entry: &Registration) -> Status {
         if self.removing.contains(&entry.uuid) {
-            Status::PendingRemoval
-        } else {
-            Status::Registered
+            return Status::PendingRemoval;
         }
+        let standing = found.standing(entry.uuid);
+        if !standing.placement().is_resolved() {
+            return Status::MissingFile;
+        }
+        // Before an available update, and that order is the point of keeping
+        // the two apart: updating a document somebody has edited discards the
+        // edit, so the edit is what the row has to say first.
+        if standing.content() == Content::Rewritten {
+            return Status::Changed;
+        }
+        Status::Registered
     }
 
     /// What a removal does with the document, as the preferences have it.
@@ -2347,7 +2364,7 @@ impl App {
     /// reads `Staged`, so the press must register it and not forget it.
     fn removals<'a>(&'a self, found: &'a Found) -> impl Iterator<Item = Uuid> + 'a {
         self.removing.iter().copied().filter(|uuid| {
-            found.entries.get(*uuid).is_some()
+            found.entries().get(*uuid).is_some()
                 && !self
                     .staged
                     .iter()
@@ -2376,11 +2393,11 @@ impl App {
                     .filter(|(which, _)| *which != at)
                     .map(|(_, row)| row)
                     .collect();
-                self.staged = staging::restaged(kept, &found.entries, &found.to);
+                self.staged = staging::restaged(kept, found.entries(), &found.to);
             }
             (Acting::Pending(at), Action::Assign) => {
                 let staged = std::mem::take(&mut self.staged);
-                self.staged = staging::reassign(staged, at, &found.entries, &found.to);
+                self.staged = staging::reassign(staged, at, found.entries(), &found.to);
             }
             // Queued, not done. The design keeps the entry registered and
             // struck through until the apply that removes it, which is what
@@ -2397,7 +2414,7 @@ impl App {
             // per row per frame, is the fault this application has already
             // taken out of the inspector.
             (Acting::Registered(uuid), Action::Reveal) => {
-                if let Some(entry) = found.entries.get(uuid) {
+                if let Some(entry) = found.entries().get(uuid) {
                     reveal(placement::inspect(&found.to.install, entry).path());
                 }
             }
@@ -2432,7 +2449,7 @@ impl App {
             return;
         }
         let Session::Found(found) = &self.session else { return };
-        let Some(entry) = found.entries.get(uuid) else { return };
+        let Some(entry) = found.entries().get(uuid) else { return };
         let Some(chosen) = rfd::FileDialog::new()
             .set_title(format!("Locate the document for {}", entry.name))
             .add_filter("Bitwig documents", &[entry.kind.extension()])
@@ -2452,7 +2469,7 @@ impl App {
             }
         };
 
-        let mut update = Update::to(found.entries.clone());
+        let mut update = Update::to(found.entries().clone());
         update.add(entry.clone(), document);
         self.applying =
             Some(Applying::start(Errand::Locate, found.to.clone(), update, ctx.clone()));
@@ -2585,7 +2602,7 @@ impl App {
         // preparing puts the entries already on record back into effect, which
         // is the second most common session there is, and saying "nothing
         // pending" beside an enabled button that does something would be wrong.
-        let registered = found.entries.entries().len();
+        let registered = found.entries().entries().len();
         match (self.pending(found), registered) {
             (Some(Work::PrepareThenEntries), 0) => (
                 "Nothing staged yet".to_owned(),
@@ -2651,7 +2668,7 @@ impl App {
         // Preparing an installation that would then read an empty list is work
         // with no result. The design disables the press and says so, rather
         // than letting a first-run user modify their installation for nothing.
-        if work == Work::PrepareThenEntries && found.entries.is_empty() && self.changes(found) == 0
+        if work == Work::PrepareThenEntries && found.entries().is_empty() && self.changes(found) == 0
         {
             widget::primary_button(ui, palette, &label, mark, false, "Nothing to register yet");
             return;
@@ -2672,7 +2689,7 @@ impl App {
     /// Hand the pending work to a thread that is not this one.
     fn start(&mut self, work: Work, ctx: &egui::Context) {
         let Session::Found(found) = &self.session else { return };
-        let mut update = Update::to(found.entries.clone());
+        let mut update = Update::to(found.entries().clone());
         // Only the rows that are ready. A conflict is pending work the user has
         // to resolve, and writing it would be resolving it for them.
         //

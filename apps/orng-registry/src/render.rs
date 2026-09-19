@@ -92,6 +92,64 @@ fn entries() -> Manifest {
     Manifest::parse(rows).expect("the sample entry list does not parse")
 }
 
+/// Make the entry list above true: link the library folders and put a document
+/// where each entry says its document is.
+///
+/// Without this the fixture is a list of claims about files that were never
+/// written, and every registered row reads `Missing file` - which is a picture
+/// of a broken installation rather than of the screen being checked. The
+/// documents are *copied* rather than linked, which the design allows for and a
+/// relative fixture requires: linking writes a symbolic link whose target is
+/// the string it was given, and these paths are relative on purpose, so the
+/// link would resolve against its own folder and lead nowhere. An absolute
+/// library would fix the link and put this machine's home into the Settings
+/// screen's picture, which is the failure `fixture` above exists to prevent.
+///
+/// Answers with the list the placement recorded, so the digests are the ones
+/// the placed bytes hash to. Written here rather than into the literal above:
+/// four sixty-four character hashes would make the sample unreadable, and would
+/// be a hand-copied claim about bytes rather than a fact taken from them.
+fn placed(to: &Destination, entries: Manifest) -> Manifest {
+    let to = &Destination { placement: Strategy::Copy, ..to.clone() };
+    let mut update = orng_tools::Update::to(Manifest::default());
+    for entry in entries.entries() {
+        let document = orng_tools::testing::document(entry.kind, entry.uuid, &entry.name);
+        update.add(entry.clone(), document);
+    }
+    update.apply(to).expect("the fixture's documents could not be placed")
+}
+
+/// The sample list on a machine where two of its documents have gone wrong:
+/// `SHAPER` deleted from under its entry, `DISPERSER` rewritten by something
+/// that is not this application.
+///
+/// Damaged after the documents are placed and before the session looks at
+/// them, which is the order a real machine reaches this state in - the entries
+/// were registered while the files were still right, and something happened to
+/// the files afterwards.
+fn damaged(root: &std::path::Path) -> Session {
+    let to = destination(root);
+    let entries = placed(&to, entries());
+    let at = |name: &str| {
+        entries
+            .entries()
+            .iter()
+            .find(|entry| entry.name == name)
+            .expect("the sample list carries it")
+            .library_path
+            .resolve(&to.install)
+    };
+    std::fs::remove_file(at("SHAPER")).expect("the fixture's modulator could not be removed");
+    std::fs::write(at("DISPERSER"), b"not the document that was registered")
+        .expect("the fixture's device could not be rewritten");
+    Session::Found(Box::new(Found::new(
+        to,
+        Condition { build: build(), helper: Helper::Present, guard: GuardState::Disarmed },
+        RunState::Clear,
+        entries,
+    )))
+}
+
 /// A build to name in the install bar. Bitwig's own shape: a version, and forty
 /// hex characters of revision that the bar shows the first eight of.
 fn build() -> Option<orng_tools::BuildId> {
@@ -136,12 +194,14 @@ fn running_found(
     entries: Manifest,
     running: RunState,
 ) -> Session {
-    Session::Found(Box::new(Found {
-        to: destination(root),
-        condition: Condition { build: build(), helper, guard },
+    let to = destination(root);
+    let entries = placed(&to, entries);
+    Session::Found(Box::new(Found::new(
+        to,
+        Condition { build: build(), helper, guard },
         running,
         entries,
-    }))
+    )))
 }
 
 /// One dropped file of each kind a drop can produce, staged by the code that
@@ -947,6 +1007,65 @@ fn a_row_under_the_pointer() {
     let row = harness.get_by_label("DISPERSER").rect();
     harness.hover_at(egui::pos2(400.0, row.center().y));
     look(&mut harness, name);
+}
+
+/// What the list says about documents that are no longer what the entry list
+/// says they are.
+///
+/// **The two are kept apart and the design says why**: same remedy on the
+/// surface, different cause, and the cause is what the user needs in order to
+/// act. So this asserts both words at once, against rows that reached those
+/// states by having something done to their files - a check that answered
+/// `Changed` for a file that is merely gone would offer `Locate file` nowhere
+/// and `Reveal file` on nothing.
+///
+/// Through the tree rather than through the picture, because a word is what is
+/// being claimed here and the colours are `statuses.png`'s job.
+#[test]
+fn a_document_that_went_missing_and_one_that_was_rewritten_say_so_separately() {
+    let session = damaged(&fixture("statuses"));
+    let mut session = Some(session);
+    let mut harness = Harness::builder().with_size(SIZE).build_eframe(move |cc| {
+        App::with(&cc.egui_ctx, session.take().expect("built once"))
+    });
+    harness.run();
+
+    assert!(harness.query_by_label("Missing file").is_some(), "the deleted document said nothing");
+    assert!(harness.query_by_label("Changed").is_some(), "the rewritten document said nothing");
+    // And the two untouched ones are still what they were, so this is telling
+    // rows apart rather than marking the whole list.
+    assert_eq!(
+        harness.query_all_by_label("Registered").count(),
+        // The band above the list wears the same word as the rows under it.
+        3,
+        "an untouched document was reported as something other than registered"
+    );
+
+    // The controls follow the status, which is the point of computing it: the
+    // one state where revealing cannot work must offer the action that fixes it
+    // instead. `SHAPER` is the row whose document was deleted.
+    harness.get_by_label("SHAPER").hover();
+    harness.run();
+    assert!(harness.query_by_label("Locate file").is_some(), "a missing file offered no remedy");
+    assert!(
+        harness.query_by_label("Reveal file").is_none(),
+        "a missing file offered to reveal the file that is missing"
+    );
+}
+
+/// The two states a picture is worth having of, because what is being claimed
+/// is a colour: the design puts `Changed` in `--accent-text` and `Missing file`
+/// in `--err-text`, and reading one as the other is reading "decide something"
+/// as "something is broken".
+#[test]
+fn documents_that_are_missing_or_changed() {
+    let name = "statuses-shot";
+    let session = damaged(&fixture(name));
+    let mut session = Some(session);
+    let mut harness = Harness::builder().with_size(SIZE).build_eframe(move |cc| {
+        App::with(&cc.egui_ctx, session.take().expect("built once"))
+    });
+    look(&mut harness, "statuses");
 }
 
 /// The row's own controls: hidden until the pointer arrives, and then laid out

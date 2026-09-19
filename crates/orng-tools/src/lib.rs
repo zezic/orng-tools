@@ -51,7 +51,7 @@ pub use entries::{TheDocument, Update};
 pub use home::OrngHome;
 pub use orng_catalog::Digest;
 pub use orng_catalog::manifest::ItemVersion;
-pub use placement::{Placement, Strategy};
+pub use placement::{Content, Placement, Standing, Strategy};
 pub use manifest::Manifest;
 pub use prepare::{Condition, Helper, Plan, Step};
 /// The identity type a [`Registration`] carries. Re-exported because that field

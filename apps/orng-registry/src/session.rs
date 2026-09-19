@@ -21,9 +21,11 @@
 //! or a build number while there is no installation to have one - the case the
 //! interface has an empty state for.
 
+use std::collections::BTreeMap;
+
 use orng_tools::{
     Condition, Destination, GuardState, Helper, InstallError, Installation, Manifest, RunState,
-    UserLibrary, prepare, running_state,
+    Standing, UserLibrary, Uuid, prepare, running_state,
 };
 
 use crate::settings::Settings;
@@ -52,7 +54,67 @@ pub struct Found {
     /// Whether Bitwig is running, which preparation needs it not to be.
     pub running: RunState,
     /// Everything this app has registered.
-    pub entries: Manifest,
+    entries: Manifest,
+    /// What the disk says about each registered document, keyed by identity.
+    ///
+    /// Answering this per row per frame is three blocking syscalls for every
+    /// row on screen, taken on the thread that draws, for an answer that had
+    /// not changed - the loop `eaf5e47` took out of the inspector, at list
+    /// scale. So it is resolved with the list and replaced with the list, and
+    /// [`Found::relist`] is the only way to do either.
+    standing: BTreeMap<Uuid, Standing>,
+}
+
+impl Found {
+    /// An installation that has been read, together with what was found where
+    /// each of its entries says its document is.
+    ///
+    /// A constructor rather than a literal because the standing is derived from
+    /// the other four and from the disk: it is not something a caller can be
+    /// asked for, and a caller who could supply one could supply the wrong one.
+    pub fn new(
+        to: Destination,
+        condition: Condition,
+        running: RunState,
+        entries: Manifest,
+    ) -> Found {
+        Found { standing: standing_of(&to.install, &entries), to, condition, running, entries }
+    }
+
+    /// Everything this app has registered.
+    pub fn entries(&self) -> &Manifest {
+        &self.entries
+    }
+
+    /// Take a new list, and answer the disk about it again.
+    ///
+    /// The one way to replace the list, because a list and what the disk says
+    /// about it are one answer: a registration places documents and a removal
+    /// can delete them, so a caller that set the entries alone would leave
+    /// every row describing the file that used to be there.
+    pub fn relist(&mut self, entries: Manifest) {
+        self.standing = standing_of(&self.to.install, &entries);
+        self.entries = entries;
+    }
+
+    /// What was found where this entry says its document is.
+    ///
+    /// Every registered identity is in the map, because it was built from this
+    /// list - so an identity that is not registered is the caller asking about
+    /// a row that is not there.
+    pub fn standing(&self, uuid: Uuid) -> &Standing {
+        self.standing
+            .get(&uuid)
+            .unwrap_or_else(|| panic!("{uuid} is not registered, so nothing was looked at for it"))
+    }
+}
+
+fn standing_of(install: &Installation, entries: &Manifest) -> BTreeMap<Uuid, Standing> {
+    entries
+        .entries()
+        .iter()
+        .map(|entry| (entry.uuid, Standing::of(install, entry)))
+        .collect()
 }
 
 impl Session {
@@ -120,12 +182,8 @@ impl Session {
             Err(e) => return Session::Unreadable { root, why: e.to_string() },
         };
 
-        Session::Found(Box::new(Found {
-            running: running_state(&to.install),
-            condition,
-            to,
-            entries,
-        }))
+        let running = running_state(&to.install);
+        Session::Found(Box::new(Found::new(to, condition, running, entries)))
     }
 }
 
@@ -239,17 +297,17 @@ mod tests {
 
     fn found(guard: GuardState, helper: Helper, entries: &str) -> Found {
         let temp = std::path::Path::new("target/render-fixtures/badge");
-        Found {
-            to: Destination {
+        Found::new(
+            Destination {
                 install: orng_tools::testing::install(&temp.join("Bitwig Studio.app")),
                 library: orng_tools::UserLibrary::at(&temp.join("Library")),
                 home: orng_tools::OrngHome::at(temp),
                 placement: Settings::default().placement,
             },
-            condition: condition(guard, helper),
-            running: RunState::Clear,
-            entries: Manifest::parse(entries).expect("the sample list parses"),
-        }
+            condition(guard, helper),
+            RunState::Clear,
+            Manifest::parse(entries).expect("the sample list parses"),
+        )
     }
 
     const NONE: &str = "#orng-registry 2\n";

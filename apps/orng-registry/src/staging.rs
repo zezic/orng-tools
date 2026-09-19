@@ -255,7 +255,10 @@ fn objection(
 
     match placement::would_replace(to, registration) {
         Ok(None) => None,
-        Ok(Some(path)) => Some(format!("{} already holds a different document", path.display())),
+        Ok(Some(path)) => {
+            let path = crate::widget::drawn_path(&path);
+            Some(format!("{path} already holds a different document"))
+        }
         // Whatever stopped the target being read will stop it being written.
         Err(e) => Some(e.to_string()),
     }

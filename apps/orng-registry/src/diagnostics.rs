@@ -27,7 +27,7 @@ use std::path::Path;
 use orng_tools::{Backup, GuardState, Kind};
 
 use crate::session::{Found, Session};
-use crate::widget::SEPARATOR;
+use crate::widget::{SEPARATOR, drawn_path};
 
 /// What Settings says about this machine, resolved when it opened.
 ///
@@ -111,8 +111,8 @@ fn of_installation(found: &Found) -> Diagnostics {
     // line above and repeating it would push the size off a narrow report.
     let inside = jar.strip_prefix(found.to.install.root()).unwrap_or(&jar);
     let archive = match size_of(&jar) {
-        Some(bytes) => format!("{}  {}", inside.display(), megabytes(bytes)),
-        None => format!("{}  not read", inside.display()),
+        Some(bytes) => format!("{}  {}", drawn_path(inside), megabytes(bytes)),
+        None => format!("{}  not read", drawn_path(inside)),
     };
 
     // A backup is named for the build it came from, so a build that does not
@@ -277,8 +277,8 @@ const BESIDE_A_LABEL: &str = "  ";
 /// else's business.
 fn shortened(path: &Path, home: Option<&Path>) -> String {
     match home.and_then(|home| path.strip_prefix(home).ok()) {
-        Some(rest) => format!("~/{}", rest.display()),
-        None => path.display().to_string(),
+        Some(rest) => format!("~/{}", drawn_path(rest)),
+        None => drawn_path(path),
     }
 }
 

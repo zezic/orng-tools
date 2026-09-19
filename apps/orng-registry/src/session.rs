@@ -73,7 +73,7 @@ impl Session {
                 // Settings is the way back.
                 Err(e) => {
                     return Session::Unreadable {
-                        root: root.display().to_string(),
+                        root: crate::widget::drawn_path(root),
                         why: e.to_string(),
                     };
                 }
@@ -88,7 +88,7 @@ impl Session {
 
     /// Read a specific installation, for when the user has just pointed at one.
     pub fn at(install: Installation, settings: &Settings) -> Session {
-        let root = install.root().display().to_string();
+        let root = crate::widget::drawn_path(install.root());
 
         // The condition is read before anything else is offered, because every
         // action the interface can present depends on which one this is.

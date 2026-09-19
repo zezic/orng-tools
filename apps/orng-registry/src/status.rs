@@ -141,8 +141,12 @@ impl Action {
     pub fn label(self, status: Status, document: TheDocument) -> String {
         let separator = crate::widget::SEPARATOR;
         match self {
+            // The bundle's own `title` attributes, and none of them carries the
+            // ellipsis the *inspector* writes on the same two actions: a
+            // trailing "..." says the press opens something, and it is the
+            // panel's labelled line that does, not this.
             Action::Assign => "Assign new UUID".to_owned(),
-            Action::Locate => "Locate file...".to_owned(),
+            Action::Locate => "Locate file".to_owned(),
             Action::Undo => "Undo removal".to_owned(),
             Action::Reveal => "Reveal file".to_owned(),
             // Nothing has been written for a staged row, so there is no entry
@@ -188,6 +192,22 @@ mod tests {
         status.actions().collect()
     }
 
+    /// The ten the design has, so a test can walk them all. Here rather than on
+    /// [`Status`] because nothing that draws needs the list - each surface is
+    /// handed the one status its row is in.
+    const EVERY: [Status; 10] = [
+        Status::Staged,
+        Status::Registered,
+        Status::PendingRestart,
+        Status::MissingFile,
+        Status::Changed,
+        Status::UpdateAvailable,
+        Status::Conflict,
+        Status::Rejected,
+        Status::PendingRemoval,
+        Status::Factory,
+    ];
+
     /// The design's table, transcribed from `EntryRow.dc.html:121-130`. Written
     /// out state by state rather than as the rules above re-stated, so that a
     /// rule edited to fit one state has to be answered for in every other.
@@ -204,6 +224,56 @@ mod tests {
         assert_eq!(offered(Status::PendingRemoval), [Undo, Reveal]);
         assert_eq!(offered(Status::Rejected), []);
         assert_eq!(offered(Status::Factory), []);
+    }
+
+    /// The ten words, against the keys of the bundle's own `STATUS` map -
+    /// `EntryRow.dc.html:68-79`. Copy from an external document, and the kind
+    /// of copy that is read as a state rather than as a sentence: `Missing
+    /// file` is the design's wording and `File missing` is not.
+    #[test]
+    fn the_words_are_the_designs_ten() {
+        let said: Vec<&str> = EVERY.iter().map(|status| status.word()).collect();
+        assert_eq!(
+            said,
+            [
+                "Staged",
+                "Registered",
+                "Pending restart",
+                "Missing file",
+                "Changed",
+                "Update available",
+                "Conflict",
+                "Rejected",
+                "Pending removal",
+                "Factory",
+            ]
+        );
+    }
+
+    /// What each control says it does, against the `title` attributes on
+    /// `EntryRow.dc.html:46-58`.
+    ///
+    /// Worth pinning because the inspector writes two of these with a trailing
+    /// ellipsis and the row does not, and the difference is a claim: "..." says
+    /// the press opens something, and none of these does.
+    #[test]
+    fn each_control_says_what_the_bundle_says_it_does() {
+        let said = |action: Action| action.label(Status::Registered, TheDocument::Kept);
+        assert_eq!(said(Action::Assign), "Assign new UUID");
+        assert_eq!(said(Action::Locate), "Locate file");
+        assert_eq!(said(Action::Undo), "Undo removal");
+        assert_eq!(said(Action::Reveal), "Reveal file");
+    }
+
+    /// The design's table never puts more than two controls on a row, which is
+    /// why the 84 it reserves - and the narrow row's 76 - is never close to
+    /// full at 22 apiece.
+    #[test]
+    fn no_state_offers_more_than_two_controls() {
+        for status in EVERY {
+            let offered = offered(status);
+            assert!(offered.len() <= 2, "{status:?} offers {offered:?}");
+        }
     }
 
     /// The defect the bundle's README names as the one worth checking: the one

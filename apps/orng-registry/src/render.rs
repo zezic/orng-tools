@@ -1063,6 +1063,13 @@ fn removing_a_registered_entry_queues_it_and_the_press_counts_it() {
         harness.query_by_label("DISPERSER").is_some(),
         "the row went away before anything was applied"
     );
+    // And the press landed on the control and stopped there. The whole row is
+    // the control that opens the inspector, so every one of these sits on top
+    // of something that would otherwise answer the same click.
+    assert!(
+        harness.query_by_label(crate::widget::icon::DISMISS).is_none(),
+        "pressing a row's own control also opened the inspector"
+    );
     // A queued removal is work, and the primary action has to say so: counting
     // only the additions leaves it disabled beside a list of struck-through
     // rows, claiming there is nothing to apply.

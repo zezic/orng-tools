@@ -279,7 +279,7 @@ at least that many. Columns after them are the application's business:
 | 1 to 4 | What the injected class registers |
 | 5, 6 | Description and search keywords, applied by the app when it writes the bundles |
 | 7 | The digest of the document as it was placed, which is what `Changed` is read against |
-| 8, 9 | Version and source (7.6), which only the app reads |
+| 8, 9, 10 | Version, the catalog commit the item was reviewed in, and source (7.6), which only the app reads |
 
 That asymmetry is why the list can grow: an installation prepared before a column was added
 keeps working against a longer list, so a format change costs a parser change here and not
@@ -287,9 +287,18 @@ a re-preparation. A marker line states the format, and a reader that does not kn
 number refuses the file rather than reading it under a guessed layout. Source is the last
 column and never empty, because the column that goes missing is the empty one an editor
 stripping trailing whitespace would eat - which is also why the digest sits before the
-provenance pair rather than after it: it is empty for every row registered by a build that
+provenance group rather than after it: it is empty for every row registered by a build that
 did not record one, and nothing can fill it in afterwards, because hashing whatever is on
-disk now would write the present down as the past.
+disk now would write the present down as the past. The review commit sits between the
+version and the source for the same reason: it is empty for every local file, and for any
+catalog item whose index could not name the change that published it.
+
+**The review commit is recorded at install and never looked up.** The catalog goes on
+publishing, so an item installed today and superseded next month has nowhere left for the
+question to be asked - the index that described this copy is gone. What the catalog's detail
+panel draws is a different fact, about the item as the catalog currently publishes it; what
+the inspector draws is about this machine's copy of it, which is why one is read off the
+index and the other off the entry list.
 
 ### 5.3 Obfuscated names are never persisted
 
@@ -618,9 +627,10 @@ Built and tested against a real installation:
   changes the design was promised: the per-item merging commit in the index (7.5), and
   version and source in the entry list (5.2, 7.6). The entry list's format marker is now
   checked on read rather than only written, and a list written before the catalog existed
-  still loads, as local content. The list has since gained one more column, the digest of
-  the document as placed, and a list written before that one loads too - saying nothing
-  about its documents, which is the truth about it.
+  still loads, as local content. The list has since gained two more columns - the digest of
+  the document as placed, and the catalog commit an item was reviewed in - and a list
+  written before either of them loads too, saying nothing about its documents or about
+  which change published them, which is the truth about it.
 
 - Index signing, both halves: the lint signs with a key it will only take from the
   environment and verifies against a public one, and the library offers the single call the
@@ -672,7 +682,7 @@ is what makes recovering from one a second press rather than a repair.
 
 The application, as far as: reading what the machine has, listing what is registered,
 registering documents the user drops on it, preparing an installation, and reading the
-catalog. It draws in the design's palette and typefaces, and every state it can be in
+catalog and installing from it. It draws in the design's palette and typefaces, and every state it can be in
 renders headlessly into `apps/orng-registry/tests/snapshots` so a change to the interface
 can be looked at rather than reasoned about.
 
@@ -750,6 +760,53 @@ are worked out rather than read: compatibility, from the build beside the item's
 minimum, and whether another published item has taken this one's place - which is a fact
 about the whole index and is drawn as the design's notice, with the control that walks
 the panel over to the replacement.
+
+**Installing from the catalog**, which is what the panel and the row's own control finally
+do. A document is fetched over plain HTTPS at the commit the index names itself built
+from - never at a branch, because a branch moves and bytes fetched from one are bytes the
+verified index never described. What arrives is held against the row three ways, all of
+them against a signed index and none of them needing a socket: the length it states, the
+digest it states, and whether it reads as the document it claims to be. Anything else is
+refused before it reaches the library, and the refusal is **two states and not one**. A
+download that did not arrive is ordinary and is offered again. A file that is not the one
+the catalog describes is a trust event - the review is the only thing standing between a
+stranger's DSP and somebody's projects, and the digest is how that review reaches this
+machine - so it is held on the row, said out loud in a banner that promises nothing was
+written, and offered `Copy details` and deliberately never `Retry`. Asking again gets the
+same bytes.
+
+What is then registered is derived from the **document** and not from the index row - the
+same derivation a drop uses, because the description and the search keywords Bitwig will
+show live in the document's own identity and the index only copied them out of there. What
+the index adds is the two things the document cannot know: which publication this is, and
+which change published it.
+
+**Installing is entries work and asks nothing.** An item is 20 to 30 kilobytes and a new
+identity cannot affect a project that already exists, so there is no backup, no
+confirmation, and no requirement that Bitwig be closed - it takes effect at the next
+launch, like every other entry change. Preparing the installation stays the other press,
+and the action bar goes on offering it where it is needed.
+
+**A catalog row's state is a fact about this machine**, resolved in one pass against the
+list and the index before the list is drawn: nothing in a signed index knows what is
+registered here, and nothing registered here knows what has been published since. A failed
+attempt outranks everything, because it is the only one of the seven states that is about a
+press the user just made. After that the question is whether the item is here at all - an
+installed item this Bitwig is too old for is still installed, and telling somebody they
+need a newer Bitwig for something already in their browser is telling them nothing they can
+act on. `Replacement available` therefore belongs to an item that is installed; for one
+nobody has, a replacement existing changes nothing, because the offer is to whoever already
+owns the old one.
+
+**`Update available` states the fact and offers no press, and that is deliberate.** The
+design confirms an update through a modal that names the item and both versions, because
+Bitwig resolves a device by identity and replacing the file changes every project that
+already uses it. Nothing in the bundle draws that modal. A press that overwrote a device
+under every open project rather than asking is not a smaller version of the design, so the
+row wears the word in the accent and stops there - the same shape the progress dialog's
+missing `Cancel` takes. The guarantee is kept by the types rather than by intent: the only
+press that writes a document is offered by `Available`, which means the identity is not
+registered here.
 
 The inspector, which a row opens and which slides over the right of the list: what the
 entry is called, what Bitwig's browser says under it, the words that find it, its

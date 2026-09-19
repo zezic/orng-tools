@@ -228,12 +228,44 @@ next reader will see `\u{b7}` and wonder.
 - **Cancel, in the progress dialog.** Nothing can cancel a preparation yet. The
   dialog is drawn without the control rather than with a dead one - which is the
   shape the bundle itself draws from the Activate step onwards.
-- **A catalog row's status and `Install`.** The columns are reserved at the
-  design's widths and left empty, because the design reserves them too: it hides
-  those controls off hover rather than removing them. *The entry row's own
-  actions were the other half of this item and are now drawn* -
-  `EntryRow.dc.html:44-60`, all five of them, gated by the table in
-  `status.rs`. What is still missing from that group is below.
+- ~~**A catalog row's status and `Install`.**~~ *Drawn.* All seven states and the
+  control each offers, transcribed from `CatalogRow.dc.html:68-76` into a second
+  table in `status.rs` beside the entry list's ten. **The claim in the earlier
+  version of this item was wrong and is worth recording**: it said the controls
+  are hidden off hover "because the design reserves them too". They are not.
+  `CatalogRow.dc.html:98` gates the control on there *being* one and never on
+  hover - only its opacity moves - and that is right: an entry row's controls act
+  on something you already have, and a catalog row's control is how you decide.
+  The entry row's own actions were the other half of this item and are also
+  drawn, `EntryRow.dc.html:44-60`, all five of them. What is still missing from
+  that group is below.
+- **The update modal, and so `Update` on a catalog row.** The README is explicit
+  that updating confirms where installing does not, and says what the modal has
+  to carry: the item and the target version in its title, `installed 2.0.3 ->
+  catalog 2.1.0` in mono beneath the lead, and the one sentence that matters -
+  projects already using the device will use the new version. **Nothing in the
+  bundle draws it.** There is no `.dc.html` for it, and the full-window mockup
+  does not show it.
+
+  So the row states `Update available` in the accent, as the design colours it,
+  and offers no press. That is the same shape the progress dialog's missing
+  `Cancel` takes, and here the case for it is stronger: Bitwig resolves a device
+  by identity, so an unconfirmed update would replace the file under every open
+  project - which is the one thing the design put a dialog in front of. Doing it
+  without the dialog is not a smaller version of the design.
+
+  Kept honest in the code rather than by intent: `Offer` has no `Update` variant
+  at all, and the only press that writes a document is offered by `Available`,
+  which by definition means the identity is not registered here. **For the
+  designer:** the modal.
+
+- **The catalog's own toolbar** - `CatalogToolbar.dc.html`. The Catalog view
+  draws its list with no toolbar above it, so there is no wide-scope search, no
+  kind facets and no `All / Installed / Updatable`. Not a question for the
+  designer; just unbuilt. The search field is 320 there against the local view's
+  216 and narrows through the same rule, and the three-state segmented control
+  wants `Published`'s table, which now exists.
+
 - **The entry row's overflow** - `EntryRow.dc.html:60`, the
   `ph-dots-three-vertical` control the design draws on every row in every state.
   Nothing in the bundle says what its menu holds: not the row section of the
@@ -243,27 +275,29 @@ next reader will see `\u{b7}` and wonder.
   is in it? The five conditional actions are all already on the row, and the
   narrow grid drops the identity column rather than any control, so it is not
   obviously the overflow for a squeezed row either.
-- **The catalog detail's footer** - `Remove` and the primary control,
-  `CatalogDetail.dc.html:89-98`. Both are behind `sc-if` in the bundle, so a panel
-  without the bar is a shape it already draws. Installing from the catalog is not
-  built, so the primary slot has nothing to put in it. Removal is built now, and
-  what the footer's `Remove` would do to a *catalog* row - an installed item is
-  a registered entry, so it is the same queued removal - is the part that waits
-  on installing.
-- **`Reviewed in <commit>` in the inspector** - `Inspector.dc.html:90-92`, under
-  Source and behind `fromCatalog`. Not drawn, and not because of the layout: the
-  entry list does not record which commit published an item. `Provenance::Catalog`
-  carries the version and nothing else, and `entries.tsv` spells it as two columns,
-  a version and the word `catalog` - so there is no revision to name and no URL to
-  put behind it. Nothing in the running application produces a catalog provenance
-  at all yet; every one in the tree is a test fixture. Recording the revision means
-  widening a persisted format, and the first thing that would write one is
-  installing from the catalog, which is where that decision belongs. *What that
-  costs is now known rather than guessed*: the list widened once more for the
-  digest `Changed` is read against, and the whole of it was one column, one
-  parser arm and a format number. The catalog
-  detail *does* draw its own `Reviewed in`, off the index's `merged_in` - a
-  different fact, about the item rather than about this machine's copy of it.
+- ~~**The catalog detail's footer**~~ - *Drawn.* `Remove` at one end and the
+  primary at the other, `CatalogDetail.dc.html:89-98`, 30 and 32 tall against the
+  bar's 11 of padding. Both are still behind their own condition, as the bundle
+  has them: `Remove` on exactly the three states that mean the item is registered
+  here, and the primary on the four that offer a press. A superseded item draws
+  no primary, because the notice above it already carries `See <replacement>` and
+  two controls for one press is a panel disagreeing with itself. The `Remove` is
+  the Local row's queued removal and not a second kind of one - an installed
+  catalog item *is* a registered entry.
+- ~~**`Reviewed in <commit>` in the inspector**~~ - *Drawn.*
+  `Inspector.dc.html:90-92`, under Source and behind the same condition. The user
+  was asked and chose to record it: `entries.tsv` is format 4, a tenth column
+  between the version and the source, and `Provenance::Catalog` carries the
+  revision beside the version. The cost was what the digest column measured - one
+  column, one parser arm and a format number.
+
+  **Recorded at install and never looked up**, which is the part worth keeping.
+  The catalog goes on publishing, so an item installed today and superseded next
+  month has nowhere left for the question to be asked. The catalog detail's own
+  `Reviewed in` is a different fact, read off the index's `merged_in`: one is
+  about the item as it is published now, the other about this machine's copy of
+  it. A row registered before format 4 names no review and cannot be made to -
+  the same shape as the digest, and for the same reason.
 - **`Licences` on the About screen** - `AboutScreen.dc.html:64`, the second of the
   pair beside `Copy diagnostics`. Nothing in this build carries the text it would
   show. The plural is the point: the crate's own licence is one line in its

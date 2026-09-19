@@ -398,6 +398,119 @@ pub mod metric {
     pub const PANEL_SHADOW_REACH: i8 = -18;
     pub const PANEL_SHADOW_BLUR: u8 = 40;
 
+    /// A full-window surface behind the overflow: Settings, Restore, About.
+    ///
+    /// Each is `width:100%; height:100%` on the page colour with a header of its
+    /// own, so it replaces the install bar and the action bar as well as the
+    /// page. The header is two pixels taller than the install bar it stands in
+    /// for, which is the design's own number and not a rounding: it carries a
+    /// 24-tall control with ten above and below.
+    pub const SCREEN_HEADER: f32 = 44.0;
+    /// Between the header's own items: the back control, the rule, the icon and
+    /// the title. Wider than a toolbar's eight and tighter than a bar's twelve.
+    pub const SCREEN_HEADER_GAP: f32 = 9.0;
+    /// The rule between what you came from and where you are.
+    pub const SCREEN_RULE: f32 = 16.0;
+    /// The back control: a 16-pixel arrow, the view you came from, and padding
+    /// that is not symmetric - the design pulls the left side in to six so the
+    /// arrow sits where the window's own edge padding puts everything else.
+    pub const BACK: f32 = 24.0;
+    pub const BACK_PAD_LEFT: f32 = 6.0;
+    pub const BACK_PAD_RIGHT: f32 = 9.0;
+    /// From the arrow to the word.
+    pub const ALONG_A_BACK: f32 = 6.0;
+
+    /// Inside a screen: from the window's edge to the column of groups, and the
+    /// air above and below it. The design's own asymmetric trio, and the bottom
+    /// is deeper than the top so a scrolled-to-the-end column does not end
+    /// against the sill.
+    pub const SCREEN_PAD_X: f32 = 12.0;
+    pub const SCREEN_PAD_TOP: f32 = 16.0;
+    pub const SCREEN_PAD_BOTTOM: f32 = 20.0;
+    /// How wide the column of groups ever gets. A `max-width`, so a wider window
+    /// leaves the settings where they are rather than stretching a path field
+    /// across it.
+    pub const SCREEN_COLUMN: f32 = 620.0;
+    /// Between two groups of settings. A third value for `rule`, beside the
+    /// inspector's 14 and the catalog detail's 13.
+    pub const BETWEEN_SETTINGS_GROUPS: f32 = 15.0;
+    /// Between a group's heading and the box under it.
+    pub const UNDER_A_GROUP_HEADING: f32 = 7.0;
+    /// A group's box: the panel colour, the field radius, and padding the design
+    /// varies by what is in it - eleven around rows of controls, five around a
+    /// list of choices that have a wash of their own.
+    pub const GROUP_PAD_X: f32 = 12.0;
+    pub const GROUP_PAD_Y: f32 = 11.0;
+    pub const CHOICES_PAD: f32 = 5.0;
+    /// Between two rows inside a group, and between two choices - which touch,
+    /// because a choice is a band of colour and two bands need only a seam.
+    pub const BETWEEN_GROUP_ROWS: f32 = 9.0;
+    pub const BETWEEN_CHOICES: f32 = 1.0;
+
+    /// The label column of a path row, which is fixed so the three paths line up
+    /// down the group rather than each starting after its own word.
+    pub const PATH_LABEL_COLUMN: f32 = 128.0;
+    /// Between the cells of one.
+    pub const ALONG_A_PATH_ROW: f32 = 8.0;
+    /// The box a path is written in. Shorter than a field in the inspector,
+    /// because it is a value to read rather than a box to type in.
+    pub const PATH_FIELD: f32 = 23.0;
+    pub const PATH_FIELD_PAD_X: f32 = 8.0;
+    /// A control inside a group: `Browse`, `Restore...`, `Copy report`. Two
+    /// pixels shorter than a bar's, around the same 16-pixel icon.
+    pub const GROUP_CONTROL: f32 = 24.0;
+    pub const GROUP_CONTROL_PAD_X: f32 = 8.0;
+    /// The one that carries a wider label, which the design pads by nine.
+    pub const WIDE_CONTROL_PAD_X: f32 = 9.0;
+    /// From a group control's icon to its label.
+    pub const ALONG_A_GROUP_CONTROL: f32 = 5.0;
+    /// The control that puts a path back to what was auto-detected: an icon and
+    /// nothing else, and the one box in the design that is not square.
+    pub const RESET: [f32; 2] = [26.0, 25.0];
+
+    /// One choice in a list of them: a radio mark, a line, and a sentence under
+    /// it. Padding the design states across the box, which is why the height is
+    /// what the content comes to rather than a number.
+    pub const CHOICE_PAD_X: f32 = 9.0;
+    pub const CHOICE_PAD_Y: f32 = 8.0;
+    /// From the mark to the words. The mark is nudged one down, so that a
+    /// 16-pixel glyph sits on the line of the 11.5 text beside it rather than
+    /// above it.
+    pub const ALONG_A_CHOICE: f32 = 8.0;
+    pub const CHOICE_MARK_DROP: f32 = 1.0;
+    /// Between a choice's line and the sentence explaining it.
+    pub const UNDER_A_CHOICE: f32 = 2.0;
+    /// The row a checkbox makes, which is a choice without the list around it:
+    /// the group's own padding, and the same gap from mark to words that a list
+    /// of choices uses plus the one the box would have added.
+    pub const ALONG_A_CHECK: f32 = 9.0;
+
+    /// The appearance switch: three segments in a well of the page colour, which
+    /// is what says they are one control rather than three buttons.
+    pub const SEGMENTS: f32 = 28.0;
+    pub const SEGMENTS_PAD: f32 = 2.0;
+    pub const SEGMENT: f32 = 24.0;
+    pub const SEGMENT_PAD_X: f32 = 10.0;
+    pub const BETWEEN_SEGMENTS: f32 = 2.0;
+    /// From a segment's icon to its word.
+    pub const ALONG_A_SEGMENT: f32 = 5.0;
+    /// The row it sits in, which is shallower than a group of rows: the switch
+    /// carries its own height and needs no air of its own.
+    pub const SWITCH_PAD_Y: f32 = 9.0;
+
+    /// The diagnostics report: a block of monospaced lines meant to be copied
+    /// whole. How far apart they sit is leading rather than a margin, and is in
+    /// [`font::REPORT_LEADING`](super::font::REPORT_LEADING).
+    pub const REPORT_PAD_X: f32 = 9.0;
+    pub const REPORT_PAD_Y: f32 = 8.0;
+    /// Between the sentence saying what the report is for and the report.
+    pub const ABOVE_A_REPORT: f32 = 8.0;
+
+    /// The row at the foot of Settings that leads to About: one line, so it is
+    /// shallower than a group and has no heading over it.
+    pub const SCREEN_LINK: f32 = 34.0;
+    pub const ALONG_A_SCREEN_LINK: f32 = 8.0;
+
     /// The mark beside a banner's headline.
     pub const DOT: f32 = 6.0;
     /// The search field, measured across the whole box - the glyph, the gap and
@@ -493,6 +606,28 @@ pub mod font {
     /// How tightly the design sets its monospaced runs. Every Iosevka run in
     /// the bundle carries this, at every size, without exception - 41 of them.
     const MONO_EM: f32 = -0.05;
+
+    /// How much taller than its size the design sets a sentence that wraps: it
+    /// writes `line-height:1.45` on every explanatory line inside a group, and
+    /// on nothing else.
+    ///
+    /// Leading rather than a margin, and therefore here rather than in `metric`.
+    /// A gap between two labels is something a layout puts in; this is inside one
+    /// run of text and only the run can carry it.
+    const EXPLAINED_LEADING: f32 = 1.45;
+
+    /// And the diagnostics block, set looser still - `line-height:1.65` - so that
+    /// a column of monospaced lines reads across as well as down.
+    pub const REPORT_LEADING: f32 = 1.65;
+
+    /// A sentence that explains the line above it, set on the design's leading.
+    ///
+    /// Beside [`run`] rather than a flag on it, because leading is not a property
+    /// of the face: the design sets `NOTE` on 1.45 where it explains something
+    /// and on nothing at all where the same size is one line in a row.
+    pub fn explained(text: impl Into<String>, size: f32) -> egui::RichText {
+        run(text, plain(size)).line_height(Some(size * EXPLAINED_LEADING))
+    }
 
     /// The tracking the design states for a run in this face at this size, in
     /// points.

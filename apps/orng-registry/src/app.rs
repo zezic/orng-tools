@@ -22,15 +22,17 @@ use std::path::PathBuf;
 
 use eframe::egui::{self, Align, Layout, vec2};
 use orng_tools::{
-    Installation, Kind, Placement, Provenance, Registration, RunState, Step, Update, Uuid,
-    placement,
+    Installation, Kind, Placement, Provenance, Registration, RunState, Step, Strategy, Update,
+    Uuid, placement,
 };
 
 use crate::catalog::Fetching;
+use crate::diagnostics::Diagnostics;
 use crate::session::{Badge, Found, Session};
+use crate::settings::{Appearance, Settings};
 use crate::staging::{self, Reading, Staged};
 use crate::theme::{self, Palette, font, metric};
-use crate::widget::{self, Tone, icon};
+use crate::widget::{self, Emphasis, Padding, Tone, icon};
 use crate::work::{Applying, Errand, Stage, Work};
 
 /// Which top-level view is showing. Two, as the design has it.
@@ -40,6 +42,76 @@ pub enum View {
     Local,
     /// What ORNG Catalog publishes.
     Catalog,
+}
+
+impl View {
+    /// What to call it on the control that goes back to it.
+    fn label(self) -> &'static str {
+        match self {
+            View::Local => "Local",
+            View::Catalog => "Catalog",
+        }
+    }
+}
+
+/// Which surface the window is showing.
+///
+/// The surfaces behind the overflow are not panels over the list: each is
+/// `width:100%; height:100%` on the page colour with a header of its own, so each
+/// replaces the install bar and the action bar as well as the page.
+/// [`App::browse`] is the seam they swap in at.
+///
+/// **Two variants, because there are two surfaces.** `Restore` and `About` are
+/// drawn by the bundle and by nothing here, and a variant for a screen that
+/// nothing draws would be a distinction this type claimed and the code did not
+/// have: every match on it would need an arm that could only route back to
+/// browsing. The overflow's other two items stay inert until they have somewhere
+/// to land.
+#[derive(Debug)]
+enum Screen {
+    Browsing,
+    /// Settings, holding everything it says about the machine.
+    ///
+    /// Resolved when the screen opens rather than per frame. The report asks the
+    /// disk about two file sizes, three description bundles, a directory listing
+    /// and a link, and this screen is redrawn on every mouse move across it -
+    /// which is the fault `eaf5e47` took out of the inspector, larger. Re-read
+    /// whenever this application changes one of the answers, and not otherwise:
+    /// see [`App::settle_diagnostics`].
+    Settings(Diagnostics),
+}
+
+/// What Settings was pressed for, if it was pressed.
+///
+/// One value carried out of the drawing rather than each control acting where it
+/// sits, because every one of these writes to something the screen is drawn from -
+/// a path, a placement, the palette - and the screen is still being drawn while
+/// the press is being noticed.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Chose {
+    Nothing,
+    /// Out of the screen, back to the view it was opened from.
+    Back,
+    /// Point at one of the two paths by hand.
+    Locate(Which),
+    /// Give one of them back to discovery, which is `Reset to auto-detected`.
+    Rediscover(Which),
+    Placement(Strategy),
+    /// Whether removing an entry takes the document with it.
+    Keep(bool),
+    Appearance(Appearance),
+    CopyReport,
+}
+
+/// Which of the two paths a press is about.
+///
+/// The two rows offer the same pair of controls and differ only in what they are
+/// pointing at, so the alternative was four variants above that all did the same
+/// two things.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Which {
+    Install,
+    Library,
 }
 
 /// What the list toolbar is showing of the list.
@@ -78,8 +150,17 @@ impl Filter {
 
 pub struct App {
     session: Session,
+    /// What the user chose, which outlives the run where the session does not.
+    /// The one thing here written to disk, and written only when it changes.
+    settings: Settings,
     view: View,
+    /// Which surface is showing. The two views are what this changes the middle
+    /// of; a screen replaces all of it.
+    screen: Screen,
     palette: Palette,
+    /// Which of the two palettes is in force, as against which was asked for:
+    /// [`Appearance::System`] is a question rather than a palette, and the desktop
+    /// can answer it differently while the window is open.
     dark: bool,
     filter: Filter,
     /// Documents dropped and not yet written. The pending work.
@@ -106,11 +187,34 @@ pub struct App {
     /// that reaches for one before being asked is a window that hangs on a
     /// train.
     catalog: Option<Fetching>,
+    /// Where the preferences are written, and `None` where they cannot be.
+    ///
+    /// Held rather than taken off the session, because it is the one path here
+    /// that does not depend on there being an installation: the appearance can be
+    /// changed on a machine with no Bitwig Studio on it at all.
+    ///
+    /// **`None` under the tests.** A render fixture must not write to whoever ran
+    /// it - and cannot read them either, because [`App::with`] takes the defaults
+    /// and only [`App::new`] loads a file.
+    home: Option<orng_tools::OrngHome>,
 }
 
 impl App {
     pub fn new(cc: &eframe::CreationContext<'_>) -> Self {
-        App::with(&cc.egui_ctx, Session::read())
+        // The preferences first, because the session is read at whichever
+        // installation they point to. Both are read once here; nothing reads
+        // either again unless something has happened to change it.
+        let home = orng_tools::OrngHome::discover()
+            .inspect_err(|why| {
+                // A machine this application cannot store anything on. It still
+                // runs: the preferences are the defaults for this run, and
+                // everything that matters is read off the disk anyway.
+                eprintln!("no home directory, so no preferences: {why}");
+            })
+            .ok();
+        let settings = home.as_ref().map(Settings::load).unwrap_or_default();
+        let session = Session::read(&settings);
+        App::with(&cc.egui_ctx, session).having(settings, home)
     }
 
     /// The window over a session that is already known.
@@ -123,7 +227,9 @@ impl App {
         theme::apply(ctx, palette);
         App {
             session,
+            settings: Settings::default(),
             view: View::Local,
+            screen: Screen::Browsing,
             palette,
             dark: true,
             filter: Filter::default(),
@@ -134,11 +240,48 @@ impl App {
             inspecting: None,
             detailing: None,
             catalog: None,
+            home: None,
         }
+    }
+
+    /// The same window, carrying the preferences that were read off the disk and
+    /// the place to write them back to.
+    ///
+    /// Separate from [`App::with`] so that the tests, which build a session
+    /// themselves, get the defaults and no home at all. A render fixture that
+    /// drew from `~/.orng/settings.toml` would be a picture of whoever ran it, and
+    /// one that wrote to it would be worse than that.
+    fn having(mut self, settings: Settings, home: Option<orng_tools::OrngHome>) -> Self {
+        self.settings = settings;
+        self.home = home;
+        self
     }
 
     pub fn show_view(&mut self, view: View) {
         self.view = view;
+    }
+
+    /// Open Settings without going through the menu. Tests only.
+    #[cfg(test)]
+    pub fn show_settings(&mut self) {
+        self.screen = Screen::Settings(Diagnostics::of(&self.session));
+    }
+
+    /// Put a preference on screen without pressing anything. Tests only.
+    #[cfg(test)]
+    pub fn set_settings(&mut self, settings: Settings) {
+        self.settings = settings;
+    }
+
+    /// Where a document would go, read off the destination every write is handed
+    /// rather than off the preference that was chosen - which is the whole of what
+    /// there is to check. Tests only.
+    #[cfg(test)]
+    pub fn placement(&self) -> Option<Strategy> {
+        match &self.session {
+            Session::Found(found) => Some(found.to.placement),
+            _ => None,
+        }
     }
 
     /// Put work on screen without having started any. Tests only.
@@ -181,9 +324,35 @@ impl App {
         self.detailing = Some(uuid);
     }
 
-    /// Switch palettes. The toolbar and the render tests share this, so neither
-    /// can change themes in a way the other does not.
-    pub fn set_theme(&mut self, dark: bool, ctx: &egui::Context) {
+    /// Choose an appearance. Settings and the render tests share this, so neither
+    /// can change palettes in a way the other does not.
+    pub fn set_appearance(&mut self, appearance: Appearance, ctx: &egui::Context) {
+        self.settings.appearance = appearance;
+        self.settle_palette(ctx);
+    }
+
+    /// Bring the palette into line with the appearance that was chosen.
+    ///
+    /// Every frame, and not only when the switch is pressed, because
+    /// [`Appearance::System`] is a question and not a palette: the desktop can
+    /// answer it differently while the window stands open. **That is not
+    /// polling.** egui carries the system theme in its own state and repaints
+    /// when the platform tells it the theme changed, so this reads a value that
+    /// is already in hand and nothing here goes looking.
+    ///
+    /// The applying is guarded on the answer having changed, because
+    /// [`theme::apply`] rebuilds every style egui keeps.
+    fn settle_palette(&mut self, ctx: &egui::Context) {
+        let dark = match self.settings.appearance {
+            Appearance::Light => false,
+            Appearance::Dark => true,
+            // A platform that does not say is dark. That is what this
+            // application opens in and what every mockup in the bundle is drawn
+            // in, so it is the answer least likely to surprise.
+            Appearance::System => {
+                ctx.system_theme().is_none_or(|theme| theme == egui::Theme::Dark)
+            }
+        };
         if self.dark != dark {
             self.dark = dark;
             self.palette = if dark { Palette::DARK } else { Palette::LIGHT };
@@ -196,17 +365,24 @@ impl App {
     /// Separate from [`eframe::App::update`] so that it can be driven without a
     /// window, which is how it gets looked at.
     ///
-    /// Two things only, because everything else belongs to a surface: what the
-    /// workers have said since the last frame, and the surface itself. The
-    /// progress dialog is over all of them.
+    /// Three things only, because everything else belongs to a surface: which
+    /// palette is in force, what the workers have said since the last frame, and
+    /// the surface itself. The progress dialog is over all of them.
     pub fn draw(&mut self, ui: &mut egui::Ui) {
+        self.settle_palette(ui.ctx());
         self.pump();
         self.take_drop(ui.ctx());
 
-        self.browse(ui);
+        match &self.screen {
+            Screen::Browsing => self.browse(ui),
+            Screen::Settings(_) => self.settings(ui),
+        }
 
-        // Last, and over everything: while a preparation runs the window is
-        // held still, and the list behind it is what the work is being done to.
+        // Last, and over everything - including a screen. Work can only be
+        // started from the action bar, but it can still be running when the
+        // overflow opens one, and a dialog that held the window still everywhere
+        // except the one surface with no way back to the list would be worse than
+        // one drawn over a screen the design never drew it over.
         if let Some(applying) = self.applying.as_ref().filter(|a| a.steps.is_some()) {
             progress(ui, self.palette, applying);
         }
@@ -261,6 +437,267 @@ impl App {
         // After the page it falls on, for the reason written on it.
         if let Some(aside) = inspector {
             aside.shadow(ui, self.palette);
+        }
+    }
+
+    /// The Settings screen: every preference, and what this machine is.
+    ///
+    /// A full-window surface and not a panel, so it claims the window's whole
+    /// `Ui` and draws a header of its own where the install bar would be. The
+    /// view it was opened from is on the way back, which is what the design
+    /// labels that control with.
+    ///
+    /// Every press is collected and acted on afterwards, because each of them
+    /// changes something this screen is drawn from - a path, a placement, the
+    /// palette - and the screen is still being drawn while they arrive.
+    fn settings(&mut self, ui: &mut egui::Ui) {
+        let palette = self.palette;
+        let from = self.view.label();
+        // Three fields, borrowed separately: the screen holds what was resolved,
+        // the preferences are what the controls state, and neither is reached
+        // through a method - which is what lets the one that is written to be
+        // borrowed beside the one that is read.
+        let Screen::Settings(facts) = &self.screen else { return };
+        let chosen = &self.settings;
+
+        let mut chose = Chose::Nothing;
+        egui::Panel::top("screen")
+            .exact_size(metric::SCREEN_HEADER)
+            .frame(widget::screen(palette))
+            .show(ui, |ui| {
+                if widget::screen_header(ui, palette, from, icon::SETTINGS, "Settings").clicked() {
+                    chose = Chose::Back;
+                }
+            });
+
+        egui::CentralPanel::default().frame(widget::screen(palette)).show(ui, |ui| {
+            widget::screen_body(ui, |ui| {
+                widget::label_above(ui, palette, "Paths", metric::UNDER_A_GROUP_HEADING);
+                widget::group_frame(palette, Padding::Rows).show(ui, |ui| {
+                    ui.set_width(ui.available_width());
+                    ui.spacing_mut().item_spacing.y = metric::BETWEEN_GROUP_ROWS;
+
+                    widget::path_row(ui, palette, "Bitwig install", &facts.install, |ui| {
+                        if widget::reset_control(ui, palette).clicked() {
+                            chose = Chose::Rediscover(Which::Install);
+                        }
+                        if widget::group_control(ui, palette, icon::BROWSE, BROWSE, Emphasis::Quiet)
+                            .clicked()
+                        {
+                            chose = Chose::Locate(Which::Install);
+                        }
+                    });
+                    widget::path_row(ui, palette, "User library", &facts.library, |ui| {
+                        if widget::reset_control(ui, palette).clicked() {
+                            chose = Chose::Rediscover(Which::Library);
+                        }
+                        if widget::group_control(ui, palette, icon::BROWSE, BROWSE, Emphasis::Quiet)
+                            .clicked()
+                        {
+                            chose = Chose::Locate(Which::Library);
+                        }
+                    });
+                    widget::path_row(ui, palette, "Backups", &facts.backups, |ui| {
+                        // Where backups live is not a preference - the class in
+                        // the installation joins `user.home` with a fixed name
+                        // to find the entry list beside them - so there is
+                        // nothing to reset and nothing to browse to. The slot
+                        // is held anyway, so that this row's control lines up
+                        // with the two above it.
+                        widget::reset_slot(ui);
+                        if facts.backup {
+                            // Inert: the Restore screen is drawn by the bundle
+                            // and by nothing here yet.
+                            let _ = widget::group_control(
+                                ui,
+                                palette,
+                                icon::RESTORE,
+                                "Restore...",
+                                Emphasis::Quiet,
+                            );
+                        } else {
+                            ui.label(
+                                font::run("No backup yet", font::plain(font::CHIP))
+                                    .color(palette.ink_3),
+                            );
+                        }
+                    });
+                });
+
+                ui.add_space(metric::BETWEEN_SETTINGS_GROUPS);
+                widget::label_above(
+                    ui,
+                    palette,
+                    "Document placement",
+                    metric::UNDER_A_GROUP_HEADING,
+                );
+                widget::group_frame(palette, Padding::Choices).show(ui, |ui| {
+                    ui.set_width(ui.available_width());
+                    ui.spacing_mut().item_spacing.y = metric::BETWEEN_CHOICES;
+                    for (strategy, title, note) in PLACEMENTS {
+                        let chosen = chosen.placement == strategy;
+                        if widget::choice(ui, palette, chosen, title, note).clicked() {
+                            chose = Chose::Placement(strategy);
+                        }
+                    }
+                });
+
+                ui.add_space(metric::BETWEEN_SETTINGS_GROUPS);
+                widget::label_above(ui, palette, "Removing entries", metric::UNDER_A_GROUP_HEADING);
+                let on = chosen.delete_file;
+                let pressed = widget::group_frame(palette, Padding::Rows)
+                    .show(ui, |ui| {
+                        ui.set_width(ui.available_width());
+                        widget::switched(
+                            ui,
+                            palette,
+                            on,
+                            "Also delete the document file",
+                            if on { DELETES_THE_FILE } else { KEEPS_THE_FILE },
+                        )
+                    })
+                    .inner;
+                if pressed.clicked() {
+                    chose = Chose::Keep(!on);
+                }
+
+                ui.add_space(metric::BETWEEN_SETTINGS_GROUPS);
+                widget::label_above(ui, palette, "Appearance", metric::UNDER_A_GROUP_HEADING);
+                widget::group_frame(palette, Padding::Switch).show(ui, |ui| {
+                    ui.set_width(ui.available_width());
+                    let options = Appearance::ALL.map(|a| (a, appearance_icon(a), a.label()));
+                    if let Some(picked) =
+                        widget::segmented(ui, palette, chosen.appearance, &options)
+                    {
+                        chose = Chose::Appearance(picked);
+                    }
+                });
+
+                ui.add_space(metric::BETWEEN_SETTINGS_GROUPS);
+                widget::label_above(ui, palette, "Diagnostics", metric::UNDER_A_GROUP_HEADING);
+                widget::group_frame(palette, Padding::Rows).show(ui, |ui| {
+                    ui.set_width(ui.available_width());
+                    ui.horizontal(|ui| {
+                        // The control first, from the right, so the sentence
+                        // beside it wraps in what is left rather than pushing it
+                        // off the group.
+                        ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                            if widget::group_control(
+                                ui,
+                                palette,
+                                icon::COPY_REPORT,
+                                "Copy report",
+                                Emphasis::Loud,
+                            )
+                            .clicked()
+                            {
+                                chose = Chose::CopyReport;
+                            }
+                            ui.with_layout(Layout::left_to_right(Align::Center), |ui| {
+                                ui.label(
+                                    font::explained(
+                                        "Send this when a Bitwig build is not recognised.",
+                                        font::NOTE,
+                                    )
+                                    .color(palette.ink_3),
+                                );
+                            });
+                        });
+                    });
+                    ui.add_space(metric::ABOVE_A_REPORT);
+                    widget::report(ui, palette, &facts.report);
+                });
+
+                ui.add_space(metric::BETWEEN_SETTINGS_GROUPS);
+                // Inert, like `Restore...` above: the About screen is drawn by
+                // the bundle and by nothing here yet. Drawn all the same, because
+                // the version it states is the one thing on this screen a bug
+                // report always wants and the row is where the design puts it.
+                let _ = widget::screen_link(
+                    ui,
+                    palette,
+                    icon::ABOUT,
+                    "About ORNG Registry",
+                    env!("CARGO_PKG_VERSION"),
+                );
+            });
+        });
+
+        self.chose(chose, ui);
+    }
+
+    /// Do whatever Settings was pressed for.
+    ///
+    /// Apart from the drawing, because every one of these writes to something the
+    /// screen was just drawn from.
+    fn chose(&mut self, chose: Chose, ui: &egui::Ui) {
+        match chose {
+            Chose::Nothing => {}
+            Chose::Back => self.screen = Screen::Browsing,
+            Chose::Locate(which) => self.locate(which),
+            Chose::Rediscover(which) => {
+                match which {
+                    Which::Install => self.settings.install = None,
+                    Which::Library => self.settings.library = None,
+                }
+                self.remember();
+                self.reread();
+            }
+            Chose::Placement(strategy) => {
+                self.settings.placement = strategy;
+                self.remember();
+                // **Not a re-read.** Where a document goes is a preference, not
+                // something read off the machine, and reading the machine again
+                // means opening the archive and resolving its anchors - seconds,
+                // for an answer already in hand. The one place it has to reach is
+                // the destination every write is handed.
+                if let Session::Found(found) = &mut self.session {
+                    found.to.placement = strategy;
+                }
+                self.settle_diagnostics();
+            }
+            Chose::Keep(delete) => {
+                self.settings.delete_file = delete;
+                self.remember();
+            }
+            Chose::Appearance(appearance) => {
+                self.set_appearance(appearance, ui.ctx());
+                self.remember();
+            }
+            Chose::CopyReport => {
+                if let Screen::Settings(facts) = &self.screen {
+                    ui.ctx().copy_text(facts.report.clone());
+                }
+            }
+        }
+    }
+
+    /// Write the preferences down, now that one of them has changed.
+    ///
+    /// On the change rather than on quitting. Each is one line of TOML, and the
+    /// alternative is a window that loses whatever was chosen when it is killed.
+    fn remember(&self) {
+        if let Some(home) = &self.home {
+            self.settings.save(home);
+        }
+    }
+
+    /// Read the machine again, because where to look has changed.
+    fn reread(&mut self) {
+        self.session = Session::read(&self.settings);
+        self.settle_diagnostics();
+    }
+
+    /// Answer Settings' questions about the machine again.
+    ///
+    /// Called where this application has changed one of the answers - a path, a
+    /// placement, a run that reported - and nowhere else. The screen holds what
+    /// was resolved rather than asking per frame, so something has to say when it
+    /// has gone stale, and the honest list of those somethings is short. The same
+    /// trade [`Inspection::placement`] makes, written down there.
+    fn settle_diagnostics(&mut self) {
+        if matches!(self.screen, Screen::Settings(_)) {
+            self.screen = Screen::Settings(Diagnostics::of(&self.session));
         }
     }
 
@@ -503,7 +940,7 @@ impl App {
             },
             // The condition is about the machine, not about this window, so the
             // only honest way to answer "has it changed" is to look again.
-            About::Condition => self.session = Session::read(),
+            About::Condition => self.reread(),
         }
     }
 }
@@ -571,7 +1008,7 @@ impl App {
                     // A preparation changes what is true of the installation:
                     // the archive, the guard, the links. Nothing short of
                     // reading it again answers that.
-                    self.session = Session::read();
+                    self.session = Session::read(&self.settings);
                     self.outcome = Some(Outcome::Prepared { entries: in_effect });
                 } else {
                     if let Session::Found(found) = &mut self.session {
@@ -590,10 +1027,12 @@ impl App {
                 self.outcome = Some(Outcome::Failed { what: errand, why });
             }
         }
-        // After the session, because it answers against the list that is now
+        // After the session, because both answer against the list that is now
         // in hand. A failed run is asked too: what stopped half way through it
-        // may still have moved the document.
+        // may still have moved the document, and may still have written the
+        // backup that Settings is standing there saying does not exist.
         self.settle_placement();
+        self.settle_diagnostics();
     }
 
     /// Resolve the open panel's placement again.
@@ -878,6 +1317,10 @@ impl App {
         // otherwise add its own between every pair on top of them, which is six
         // pixels the bundle does not have and which compounds along the row.
         ui.spacing_mut().item_spacing.x = 0.0;
+        // Taken out of the menu and acted on after the bar, because opening a
+        // screen replaces the bar the menu is hanging off - and because the menu's
+        // closure is being run inside a borrow of everything else here.
+        let mut opening = false;
         ui.horizontal_centered(|ui| {
             for (view, label) in [(View::Local, "Local"), (View::Catalog, "Catalog")] {
                 if widget::view_tab(ui, palette, label, self.view == view).clicked() {
@@ -891,8 +1334,13 @@ impl App {
             // way to them rather than pushing them off the edge of the window.
             ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                 widget::overflow(ui, palette, |ui| {
+                    if widget::menu_item(ui, palette, widget::icon::SETTINGS, "Settings").clicked()
+                    {
+                        opening = true;
+                    }
+                    // Still nowhere for these to land: the Restore and About
+                    // screens are drawn by the bundle and by nothing here.
                     let items = [
-                        (widget::icon::SETTINGS, "Settings"),
                         (widget::icon::RESTORE, "Restore backup..."),
                         (widget::icon::CHANGE_INSTALL, "Open backups folder"),
                     ];
@@ -914,7 +1362,7 @@ impl App {
                 )
                 .clicked()
                 {
-                    self.locate(ui);
+                    self.locate(Which::Install);
                 }
                 ui.add_space(metric::GAP);
 
@@ -923,6 +1371,9 @@ impl App {
                 });
             });
         });
+        if opening {
+            self.screen = Screen::Settings(Diagnostics::of(&self.session));
+        }
     }
 
     /// Let the user choose documents, which drag and drop must never be the
@@ -936,23 +1387,31 @@ impl App {
         self.read(staging::documents_in(&chosen), ui.ctx());
     }
 
-    /// Let the user point at an installation themselves.
-    fn locate(&mut self, ui: &egui::Ui) {
-        let Some(root) =
-            rfd::FileDialog::new().set_title("Locate Bitwig Studio").pick_folder()
-        else {
+    /// Let the user point at an installation, or at their library, themselves.
+    ///
+    /// **The choice is written down**, which is what Settings changed about this:
+    /// before there was anywhere to keep it, the next launch went back to
+    /// discovery and the user pointed at the same folder again.
+    ///
+    /// A folder the user insisted on is then read as the one that counts.
+    /// Refusing it says why against that folder rather than falling back to the
+    /// one already loaded, which would look like the picker did nothing -
+    /// [`Session::read`] is where that happens, and `Reset to auto-detected` is
+    /// the way back out of it.
+    fn locate(&mut self, which: Which) {
+        let title = match which {
+            Which::Install => "Locate Bitwig Studio",
+            Which::Library => "Locate the Bitwig user library",
+        };
+        let Some(root) = rfd::FileDialog::new().set_title(title).pick_folder() else {
             return;
         };
-        // A folder the user insisted on. Refusing it has to say why against
-        // that folder rather than fall back to the one already loaded, which
-        // would look like the picker did nothing.
-        self.session = match orng_tools::Installation::at(&root) {
-            Ok(install) => Session::at(install),
-            Err(e) => {
-                Session::Unreadable { root: root.display().to_string(), why: e.to_string() }
-            }
-        };
-        let _ = ui;
+        match which {
+            Which::Install => self.settings.install = Some(root),
+            Which::Library => self.settings.library = Some(root),
+        }
+        self.remember();
+        self.reread();
     }
 
     /// What this installation is: its name, its build, its path, its state.
@@ -1155,7 +1614,7 @@ impl App {
                     minor: false,
                 };
                 match widget::empty_state(ui, self.palette, &empty) {
-                    widget::Pressed::Action => self.locate(ui),
+                    widget::Pressed::Action => self.locate(Which::Install),
                     widget::Pressed::Alt => ui.ctx().copy_text(body.clone()),
                     widget::Pressed::Nothing => {}
                 }
@@ -1185,7 +1644,7 @@ impl App {
                 };
                 match widget::empty_state(ui, self.palette, &empty) {
                     widget::Pressed::Action => ui.ctx().copy_text(format!("{root}\n{why}")),
-                    widget::Pressed::Alt => self.locate(ui),
+                    widget::Pressed::Alt => self.locate(Which::Install),
                     widget::Pressed::Nothing => {}
                 }
             }
@@ -1595,6 +2054,52 @@ fn badge(ui: &mut egui::Ui, palette: Palette, label: &str) {
 /// The one press that modifies Bitwig Studio itself, named the same wherever it
 /// is offered and wherever it is refused.
 const PREPARE: &str = "Prepare installation";
+
+/// Point at a directory. Named once, because Settings offers it twice and the two
+/// rows must not come to call the same control different things.
+const BROWSE: &str = "Browse";
+
+/// The two placements, as the design words them: what each does, and what a
+/// Bitwig update then costs.
+///
+/// The consequence is the whole of the choice, so it is in the copy rather than
+/// left to be discovered after the next release - which is the one moment the
+/// difference between these two is visible at all.
+const PLACEMENTS: [(Strategy, &str, &str); 2] = [
+    (
+        Strategy::Link,
+        "Place documents in the user library and link them",
+        "Documents survive a Bitwig update. Only the installation has to be prepared again.",
+    ),
+    (
+        Strategy::Copy,
+        "Copy documents into the installation",
+        "A Bitwig update removes the copies. Everything has to be registered again.",
+    ),
+];
+
+/// What the delete-file default means, in the design's own words.
+///
+/// Louder when it is on, because what it turns on is irreversible from here and
+/// the file is the user's own work rather than anything this application made.
+const DELETES_THE_FILE: &str =
+    "On, removing an entry also deletes your document from the library. That file is your own \
+     work, and deleting it cannot be undone from here.";
+const KEEPS_THE_FILE: &str =
+    "Off, removing an entry unregisters it and leaves your document in the library.";
+
+/// The glyph on each segment of the appearance switch.
+///
+/// Here rather than on [`Appearance`] itself: the design's choice of a desktop, a
+/// sun and a moon is the design's, and the preferences file has no business
+/// knowing what an icon is.
+fn appearance_icon(appearance: Appearance) -> &'static str {
+    match appearance {
+        Appearance::System => icon::FOLLOW_SYSTEM,
+        Appearance::Light => icon::LIGHT,
+        Appearance::Dark => icon::DARK,
+    }
+}
 
 /// Roughly how wide a character of the badge is, for leaving room before it has
 /// been laid out. An estimate, and only ever used to decide how much of the

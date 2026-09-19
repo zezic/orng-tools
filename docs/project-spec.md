@@ -705,9 +705,41 @@ failure is said either way. The panel takes 272 of the window's 820, so the list
 it draws to a grid of its own and the toolbar beside it drops its labels and shrinks its
 field - all three as the design has them.
 
+The Settings screen, which the overflow opens. **A full-window surface and not a panel**:
+`width:100%; height:100%` on the page colour with a 44-pixel header of its own, so it
+replaces the install bar and the action bar as well as the page. It carries the six groups
+the bundle draws - the two paths and the backups directory, the placement strategy, the
+delete-file default, the appearance switch and the diagnostics report - and the row at its
+foot that leads to About. It is also the first surface that *writes a preference*, which
+is new: everything before it read the machine and remembered nothing.
+
+**Preferences live in `~/.orng/settings.toml`, beside the entry list and for the same
+reason** - a Bitwig update must not be able to touch them. Five of them: the installation
+root, the user library, the placement strategy, the delete-file default and the
+appearance. The first two are the awkward pair, because an installation can be moved or
+replaced and a remembered root is a claim that may have stopped being true; what is stored
+is that the user said where to look, and a stored root that no longer resolves falls back
+to discovery. The file is read once on opening and written only when something changes,
+and a file that does not parse is reported rather than replaced. The format is TOML rather
+than the entry list's tab-separated form because nothing outside this binary reads it: the
+entry list is a wire format shared with the class injected into the installation, and this
+is not.
+
+The appearance switch is what makes the light palette reachable at all - until Settings
+existed it was drawn only by the render tests. `System` is a third value rather than the
+absence of a choice: it follows the desktop, and it has to keep following it while the
+window stands open.
+
+The diagnostics report is the design's shape with this project's own facts in it, and
+`design-review.md` round 2 records why those differ: three of the paths the bundle draws
+are wrong, and the block exists to be pasted into a bug report by somebody who will be
+believed. One line the bundle draws is missing - `factory`, the count of Bitwig's own
+content - because reading it means parsing a class out of the archive and belongs on the
+worker the factory toggle needs.
+
 Every measurement above was read out of the bundle rather than judged by eye, and the
-row grids, the toolbar's flexible field and the inspector's own chain of gaps are checked
-against its numbers in a test. `docs/interface-notes.md` has the method, including how to
+row grids, the toolbar's flexible field, the inspector's own chain of gaps and the
+Settings screen's column of groups are checked against its numbers in a test. `docs/interface-notes.md` has the method, including how to
 make the bundle report its own geometry - and section 4 there, which is the other half:
 the claims a picture structurally cannot hold, and what to ask instead.
 
@@ -737,11 +769,10 @@ Not built yet:
   out of the archive, which takes about a second, so it needs a worker of its own; a toggle
   that did nothing would be worse than no toggle.
 - The plan confirmation the Prepare install mode is supposed to show before it runs.
-- Everything else the design draws: Settings, About, Restore, the update
-  modal. The overflow control lists them; none of them opens anything yet. Two things live
-  in Settings in the bundle and are therefore unreachable until it exists: the tamper guard
-  and the backup date, under Diagnostics, and the appearance switch - so light and dark are
-  currently reachable only from the render tests.
+- The About and Restore screens, and the update modal. The overflow lists the first two and
+  neither opens anything; Settings offers `Restore...` beside the backups path and a row
+  leading to About, and both are drawn inert for the same reason. Settings itself is built,
+  so the tamper guard, the backup date and the appearance switch are reachable now.
 - The design draws its small icons in Phosphor's `duotone`, which is two overlapping glyphs
   in two colours and has no single-colour font to be drawn from. Light is used throughout
   instead; whether that matters is a question for the designer.

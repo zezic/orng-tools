@@ -2741,6 +2741,37 @@ const EITHER_SIDE_OF_A_SEPARATOR: f32 = 10.0;
 /// font does not have is drawn as a box in the one place a user is reading.
 pub const SEPARATOR: &str = "\u{b7}";
 
+/// A path as the window draws it: the design's separators rather than the
+/// platform's.
+///
+/// `Path::display` prints back whichever separator the platform uses, so any
+/// path that was `join`ed reads `~/.orng\entries.tsv` on Windows. That is the
+/// fault `render::fixture` already records one layer out - `join` put a
+/// backslash into the install bar's own path and seventeen snapshots failed on
+/// Windows and nowhere else, by the pixels two glyphs cost. The three Settings
+/// snapshots failed the same way for the same reason: that screen is the only
+/// one drawing paths this application builds rather than paths a fixture spells
+/// out, and it draws seven of them.
+///
+/// The drawn form is already not the platform's. `diagnostics::shortened` writes
+/// `~/`, which is not how Windows spells a home directory at all, and the bundle
+/// draws forward slashes in every path it draws. One spelling is also what makes
+/// two diagnostics reports comparable, which is the whole reason that block
+/// exists.
+///
+/// Substituted only where the platform's separator *is* the backslash, so that a
+/// Unix file whose *name* contains one still draws its own name.
+pub fn drawn_path(path: &std::path::Path) -> String {
+    let text = path.display().to_string();
+    if cfg!(windows) { with_drawn_separators(&text) } else { text }
+}
+
+/// The substitution apart from the platform, so that what it does can be
+/// asserted on any machine rather than only on the one it is for.
+fn with_drawn_separators(text: &str) -> String {
+    text.replace('\\', "/")
+}
+
 /// The four corner marks the design puts around a full-region empty state.
 fn corner_marks(ui: &Ui, palette: Palette, region: Rect) {
     let stroke = Stroke::new(metric::HAIRLINE, palette.line);
@@ -3134,6 +3165,36 @@ const REFUSED_NUMBER: &str = "--";
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The substitution itself, which is the half of [`drawn_path`] that can be
+    /// asserted on a machine whose separator is already the right one.
+    ///
+    /// Written as the failure was seen: `~/.orng\entries.tsv` is what the
+    /// Settings report drew on Windows where every other machine drew
+    /// `~/.orng/entries.tsv`, and those two glyphs are the 43 to 48 pixels the
+    /// three Settings snapshots differed by.
+    #[test]
+    fn a_drawn_path_spells_its_separators_the_way_the_design_does() {
+        assert_eq!(with_drawn_separators(r"~/.orng\entries.tsv"), "~/.orng/entries.tsv");
+        assert_eq!(
+            with_drawn_separators(r"~/.orng\backups\6.1-94a98411"),
+            "~/.orng/backups/6.1-94a98411"
+        );
+        // Already right is left alone rather than doubled.
+        assert_eq!(with_drawn_separators("~/.orng/entries.tsv"), "~/.orng/entries.tsv");
+    }
+
+    /// And the whole of it, against a path built the way the application builds
+    /// every path it draws: by `join`, which is what puts the platform's
+    /// separator in. Cannot fail on the machine this was written on - it is kept
+    /// for the machine it can, the same way
+    /// `render::the_drawn_installation_path_is_not_a_function_of_the_platform`
+    /// is.
+    #[test]
+    fn a_joined_path_draws_the_same_on_every_platform() {
+        let joined = std::path::Path::new(".orng").join("backups").join("6.1-94a98411");
+        assert_eq!(drawn_path(&joined), ".orng/backups/6.1-94a98411");
+    }
 
     /// A row the width of the window the design is drawn at.
     fn a_row(height: f32) -> Rect {

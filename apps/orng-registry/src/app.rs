@@ -1441,7 +1441,7 @@ impl App {
         ui.allocate_ui_with_layout(
             vec2(room, ui.available_height()),
             Layout::left_to_right(Align::Center),
-            |ui| path(ui, palette, &found.to.install.root().display().to_string()),
+            |ui| path(ui, palette, &widget::drawn_path(found.to.install.root())),
         );
         if let Some(label) = label {
             ui.add_space(metric::GAP);

@@ -24,7 +24,7 @@ use eframe::egui::{self, Align, Layout, vec2};
 use orng_catalog::Index;
 use orng_tools::{
     Content, Document, Kind, Placement, Provenance, Registration, RunState, Step, Strategy,
-    TheDocument, Update, Uuid, placement,
+    TheDocument, Update, Uuid,
 };
 
 use crate::about::About;
@@ -1131,8 +1131,7 @@ impl App {
         // holds.
         let document = self.deleting();
         let Session::Found(found) = &self.session else { return None };
-        let open = self.inspecting.as_mut()?;
-        let uuid = open.uuid;
+        let uuid = self.inspecting.as_ref()?.uuid;
         let Some(entry) = found.entries().get(uuid) else {
             // Applied, removed, or gone from a list that was read again. There
             // is nothing left to inspect, so the panel closes rather than
@@ -1148,9 +1147,13 @@ impl App {
             }
         };
         let identity = uuid.to_string();
+        // Before the panel is borrowed to type into, for the reason `document`
+        // is: this asks the same `self` the words are held in.
+        let status = self.status_of(found, entry);
         // Split apart so the fields can be borrowed separately: the panel
         // states the placement and types into the words in one call.
-        let Inspection { words, placement, .. } = open;
+        let Inspection { words, placement, .. } =
+            self.inspecting.as_mut().expect("the panel was open a moment ago");
         let item = widget::Inspected {
             kind: entry.kind,
             name: &entry.name,
@@ -1159,6 +1162,7 @@ impl App {
             source: &source,
             source_icon,
             placement,
+            status,
             document,
         };
 
@@ -1175,19 +1179,14 @@ impl App {
             }
             widget::Inspecting::Edited => self.write_words(ui.ctx()),
             widget::Inspecting::CopiedUuid => ui.ctx().copy_text(uuid.to_string()),
-            // Read back off the panel rather than held across the draw: the
-            // placement belongs to the panel now, and reaching for it again
-            // here is what lets the arms above put the panel away.
-            widget::Inspecting::Reveal => {
-                if let Some(open) = &self.inspecting {
-                    reveal(open.placement.path());
-                }
-            }
-            // Queued, exactly as the row's own trash queues it, and the panel
-            // stays open on it: the entry is still registered and still drawn,
-            // struck through, until the apply that takes it away.
-            widget::Inspecting::Remove => {
-                self.removing.insert(uuid);
+            // Through the same call the row's own controls go through, rather
+            // than a second implementation of each: what the panel offers is
+            // the row's list with words on it, so what it does must be the
+            // row's press. A removal queued here leaves the row struck through
+            // and the panel standing open on it, because that is what queueing
+            // does wherever it is pressed from.
+            widget::Inspecting::Acted(action) => {
+                self.act(Acting::Registered(uuid), action, ui.ctx());
             }
             widget::Inspecting::Nothing => {}
         }
@@ -2482,13 +2481,13 @@ impl App {
             (Acting::Registered(uuid), Action::Undo) => {
                 self.removing.remove(&uuid);
             }
-            // Resolved on the press rather than held, which is the rule every
-            // screen here follows: asking the disk where a document is, once
-            // per row per frame, is the fault this application has already
-            // taken out of the inspector.
+            // Where the session found it, which is where the row that offered
+            // this control said it was. Asking the disk again on the press
+            // would be a second answer to a question already answered, and one
+            // the row was not drawn from.
             (Acting::Registered(uuid), Action::Reveal) => {
-                if let Some(entry) = found.entries().get(uuid) {
-                    reveal(placement::inspect(&found.to.install, entry).path());
+                if found.entries().get(uuid).is_some() {
+                    reveal(found.standing(uuid).placement().path());
                 }
             }
             (Acting::Registered(uuid), Action::Locate) => self.relocate(uuid, ctx),

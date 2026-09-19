@@ -1053,6 +1053,48 @@ fn a_document_that_went_missing_and_one_that_was_rewritten_say_so_separately() {
     );
 }
 
+/// The inspector offers the remedy for a missing file, and does not offer to
+/// reveal one.
+///
+/// The bundle's README names this as the defect worth checking, because it is
+/// the one it made during design: the panel offered `Reveal file` on the one
+/// entry whose file cannot be found, and omitted the action that fixes it. It
+/// was unreachable until this application could compute `Missing file`, and
+/// this is the test that it stayed fixed once it was reachable.
+///
+/// Named through the glyph as well as the words, for the reason
+/// `the_inspector` gives: a row's control and the panel's item wear the same
+/// words, and only the panel's carries both on one node.
+#[test]
+fn the_inspector_on_a_missing_file_offers_to_locate_it_and_not_to_reveal_it() {
+    let session = damaged(&fixture("inspector-missing"));
+    let mut session = Some(session);
+    let mut harness = Harness::builder().with_size(SIZE).build_eframe(move |cc| {
+        App::with(&cc.egui_ctx, session.take().expect("built once"))
+    });
+    harness.run();
+
+    // `SHAPER` is the entry whose document was deleted from under it.
+    harness.get_by_label("SHAPER").click();
+    harness.run();
+    assert!(
+        harness.query_by_label(crate::widget::icon::DISMISS).is_some(),
+        "clicking the row did not open the inspector"
+    );
+
+    let locate = format!("{}Locate file...", crate::widget::icon::LOCATE);
+    let reveal = format!("{}Reveal file", crate::widget::icon::REVEAL);
+    assert!(harness.query_by_label(&locate).is_some(), "the panel offered no remedy");
+    assert!(
+        harness.query_by_label(&reveal).is_none(),
+        "the panel offered to reveal a file that cannot be found"
+    );
+    // And the removal is still there, which is the other half of the design's
+    // row for this state: every entry can be got rid of, broken or not.
+    let remove = format!("{}Remove entry", crate::widget::icon::REMOVE);
+    assert!(harness.query_by_label(&remove).is_some(), "a broken entry could not be removed");
+}
+
 /// An entry the catalog has moved on from says so, and one it has not does not.
 ///
 /// Both halves matter. A window that has never fetched the catalog knows

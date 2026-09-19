@@ -1029,18 +1029,35 @@ pub fn row_actions(
 ///
 /// Two of the five are coloured apart from the rest, and both times because of
 /// what the press does rather than what it looks like.
+/// The mark a control wears, which is the design's own and is the same glyph on
+/// the row and in the inspector - `EntryRow.dc.html:46-58` and
+/// `Inspector.dc.html:148-156` name the same five.
+///
+/// One map and two callers, because a second one would be free to drift and the
+/// drift would be silent: a control with the wrong glyph still works.
+pub fn action_glyph(action: Action) -> &'static str {
+    match action {
+        Action::Assign => icon::ASSIGN,
+        Action::Locate => icon::LOCATE,
+        Action::Undo => icon::UNDO,
+        Action::Reveal => icon::REVEAL,
+        Action::Remove => icon::REMOVE,
+    }
+}
+
 fn row_action(ui: &mut Ui, palette: Palette, action: Action, label: &str) -> Response {
-    let (glyph, ink, lit, fill) = match action {
+    let glyph = action_glyph(action);
+    let (ink, lit, fill) = match action {
         // The remedy on a broken row, and the only one the design gives the
         // accent rather than the quiet grey the others wear. It keeps its
         // colour under the pointer; only the ground behind it arrives.
-        Action::Locate => (icon::LOCATE, palette.accent, palette.accent, palette.accent_soft),
+        Action::Locate => (palette.accent, palette.accent, palette.accent_soft),
         // The one press on a row that can destroy the user's own work, so it
         // turns red under the pointer instead of merely lighting up.
-        Action::Remove => (icon::REMOVE, palette.ink_2, palette.err, palette.err_bg),
-        Action::Assign => (icon::ASSIGN, palette.ink_2, palette.ink, palette.btn_hover),
-        Action::Undo => (icon::UNDO, palette.ink_2, palette.ink, palette.btn_hover),
-        Action::Reveal => (icon::REVEAL, palette.ink_2, palette.ink, palette.btn_hover),
+        Action::Remove => (palette.ink_2, palette.err, palette.err_bg),
+        Action::Assign | Action::Undo | Action::Reveal => {
+            (palette.ink_2, palette.ink, palette.btn_hover)
+        }
     };
     let (rect, response) =
         ui.allocate_exact_size(vec2(metric::ROW_ACTION, metric::ROW_ACTION), Sense::click());
@@ -1269,6 +1286,9 @@ pub struct Inspected<'a> {
     pub source_icon: &'a str,
     /// Where the document actually is, which is a different question.
     pub placement: &'a Placement,
+    /// Which of the design's ten states this entry is in, which is what decides
+    /// the panel's action list - see [`crate::status`].
+    pub status: Status,
     /// What removing this entry would do to its document, which is a setting
     /// and not a property of the entry. Carried here because the panel's
     /// removal control has to name it, exactly as the row's does.
@@ -1281,11 +1301,11 @@ pub enum Inspecting {
     Nothing,
     Closed,
     CopiedUuid,
-    Reveal,
-    /// The entry was queued for removal. The same press the row's own trash
-    /// makes, which is why the panel does not close on it: the row is still
-    /// there, struck through, until the apply that takes it away.
-    Remove,
+    /// One of the entry's own controls, which are the row's controls with
+    /// words on them. The same press and the same consequence: queueing a
+    /// removal from here leaves the row there, struck through, until the apply
+    /// that takes it away, exactly as the row's own trash does.
+    Acted(Action),
     /// A field was finished with: it lost focus, or a keyword was added or
     /// taken away. Whatever is in [`Words`] is what the entry should now say.
     Edited,
@@ -1341,18 +1361,26 @@ pub fn inspector(
         }
 
         rule(ui, palette, metric::BETWEEN_GROUPS);
-        if panel_action(ui, palette, icon::REVEAL, "Reveal file", Weight::Ordinary).clicked() {
-            pressed = Inspecting::Reveal;
-        }
-        // The one action in this list the bundle draws unconditionally, and the
-        // only one whose tooltip is not its label: what it does to the document
-        // is the user's setting and not a property of the control, so the
-        // control says which way it is set.
-        let removal =
-            panel_action(ui, palette, icon::REMOVE, "Remove entry", Weight::Destructive)
-                .on_hover_text(crate::status::removal_consequence(item.document));
-        if removal.clicked() {
-            pressed = Inspecting::Remove;
+        // The design's own line: "the panel's status rules are the row's status
+        // rules, not a second set". So this list is [`Status::actions`], in the
+        // order the row lays them out, and the defect the README names -
+        // offering `Reveal file` on the one entry whose file cannot be found -
+        // is unreachable rather than avoided.
+        for action in item.status.actions() {
+            let control =
+                panel_action(ui, palette, action_glyph(action), action.in_the_panel(), weight_of(action));
+            // The one control here whose tooltip is not its label: what
+            // removing does to the document is the user's setting and not a
+            // property of the control, so the control says which way it is set.
+            let control = match action {
+                Action::Remove => {
+                    control.on_hover_text(crate::status::removal_consequence(item.document))
+                }
+                _ => control,
+            };
+            if control.clicked() {
+                pressed = Inspecting::Acted(action);
+            }
         }
     });
     pressed
@@ -1730,14 +1758,30 @@ fn placement_chip(ui: &mut Ui, palette: Palette, placement: &Placement) {
 
 /// How loud one of the inspector's actions is.
 ///
-/// The design colours exactly one of the four apart, and for the same reason
-/// the row's trash is coloured apart: it is the press that can destroy the
-/// user's own work. Red before the pointer arrives rather than under it - the
-/// panel has room to write the words, so it does not wait to warn.
+/// Two are coloured apart from the rest, and both for what the press means
+/// rather than for what it looks like. Coloured before the pointer arrives
+/// rather than under it: the panel has room to write the words, so it does not
+/// wait to warn.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Weight {
     Ordinary,
+    /// The remedy on a broken entry, which the design draws in `--accent-text`
+    /// so that the one action worth taking is the one the eye finds.
+    Remedy,
     Destructive,
+}
+
+/// How loud each control is in the panel - `Inspector.dc.html:148-156`.
+///
+/// The same two the row singles out, and they have to agree: a locate drawn
+/// quiet in one place and accent in the other says the remedy matters on one
+/// surface and not the other.
+fn weight_of(action: Action) -> Weight {
+    match action {
+        Action::Locate => Weight::Remedy,
+        Action::Remove => Weight::Destructive,
+        Action::Assign | Action::Undo | Action::Reveal => Weight::Ordinary,
+    }
 }
 
 /// One line of the inspector's action list.
@@ -1757,6 +1801,7 @@ fn panel_action(
 ) -> Response {
     let (ink, wash) = match weight {
         Weight::Ordinary => (palette.ink_2, palette.btn_hover),
+        Weight::Remedy => (palette.accent_text, palette.accent_soft),
         Weight::Destructive => (palette.err, palette.err_bg),
     };
     let (rect, response) = ui.allocate_exact_size(

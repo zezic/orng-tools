@@ -165,6 +165,29 @@ impl Action {
             },
         }
     }
+
+    /// What the inspector writes beside the icon.
+    ///
+    /// The panel has room for words where the row has only a tooltip, so these
+    /// are the labels and not the explanations - `Inspector.dc.html:148-156`.
+    ///
+    /// **Two of them carry a trailing ellipsis and the row's do not**, and the
+    /// difference is a claim rather than a flourish: "..." says the press opens
+    /// something, and on this surface those two do. Locating opens a file
+    /// picker and assigning opens the question of which identity to mint.
+    pub fn in_the_panel(self) -> &'static str {
+        match self {
+            Action::Assign => "Assign new UUID...",
+            Action::Locate => "Locate file...",
+            Action::Undo => "Undo removal",
+            Action::Reveal => "Reveal file",
+            // Not "Remove", because the panel is already about one entry and
+            // the word alone would read as removing what is being looked at
+            // rather than the registration. What becomes of the document is on
+            // the tooltip, which is [`removal_consequence`].
+            Action::Remove => "Remove entry",
+        }
+    }
 }
 
 /// What the inspector's `Remove entry` says it will do.
@@ -263,6 +286,29 @@ mod tests {
         assert_eq!(said(Action::Locate), "Locate file");
         assert_eq!(said(Action::Undo), "Undo removal");
         assert_eq!(said(Action::Reveal), "Reveal file");
+    }
+
+    /// The panel's words, against `Inspector.dc.html:148-156`, and against the
+    /// row's for the one thing the two must not agree about.
+    ///
+    /// A trailing "..." says the press opens something. The panel's locate and
+    /// assign do - a file picker and the question of which identity to mint -
+    /// and the row's carry no ellipsis because a tooltip is not a press. Three
+    /// of the five are the same string on both surfaces, and that is fine;
+    /// getting the other two the wrong way round is the claim that matters.
+    #[test]
+    fn the_panels_words_carry_the_ellipsis_the_rows_do_not() {
+        use Action::*;
+        assert_eq!(Assign.in_the_panel(), "Assign new UUID...");
+        assert_eq!(Locate.in_the_panel(), "Locate file...");
+        assert_eq!(Undo.in_the_panel(), "Undo removal");
+        assert_eq!(Reveal.in_the_panel(), "Reveal file");
+        assert_eq!(Remove.in_the_panel(), "Remove entry");
+        for action in [Assign, Locate] {
+            let on_a_row = action.label(Status::MissingFile, TheDocument::Kept);
+            assert!(!on_a_row.ends_with("..."), "the row wrote {on_a_row:?}");
+            assert_eq!(action.in_the_panel().trim_end_matches('.'), on_a_row);
+        }
     }
 
     /// The design's table never puts more than two controls on a row, which is

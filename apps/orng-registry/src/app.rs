@@ -21,7 +21,10 @@ use std::collections::BTreeSet;
 use std::path::PathBuf;
 
 use eframe::egui::{self, Align, Layout, vec2};
-use orng_tools::{Kind, Provenance, Registration, RunState, Step, Update, Uuid, placement};
+use orng_tools::{
+    Installation, Kind, Placement, Provenance, Registration, RunState, Step, Update, Uuid,
+    placement,
+};
 
 use crate::catalog::Fetching;
 use crate::session::{Badge, Found, Session};
@@ -169,7 +172,7 @@ impl App {
             panic!("there is no list to inspect a row of")
         };
         let entry = found.entries.get(uuid).expect("the row to inspect is registered");
-        self.inspecting = Some(Inspection::of(entry));
+        self.inspecting = Some(Inspection::of(entry, &found.to.install));
     }
 
     /// The same for the catalog's detail panel. Tests only.
@@ -271,8 +274,10 @@ impl App {
                 (format!("ORNG Catalog {} {version}", widget::SEPARATOR), widget::icon::CATALOG)
             }
         };
-        let placement = placement::inspect(&found.to.install, entry);
         let identity = uuid.to_string();
+        // Split apart so the fields can be borrowed separately: the panel
+        // states the placement and types into the words in one call.
+        let Inspection { words, placement, .. } = open;
         let item = widget::Inspected {
             kind: entry.kind,
             name: &entry.name,
@@ -280,12 +285,11 @@ impl App {
             path: entry.library_path.as_str(),
             source: &source,
             source_icon,
-            placement: &placement,
+            placement,
         };
 
-        let (panel, pressed) = widget::aside(ui, palette, "inspector", |ui| {
-            widget::inspector(ui, palette, &item, &mut open.words)
-        });
+        let (panel, pressed) =
+            widget::aside(ui, palette, "inspector", |ui| widget::inspector(ui, palette, &item, words));
 
         match pressed {
             // The panel closing is the last chance a field has to be finished
@@ -297,7 +301,14 @@ impl App {
             }
             widget::Inspecting::Edited => self.write_words(ui.ctx()),
             widget::Inspecting::CopiedUuid => ui.ctx().copy_text(uuid.to_string()),
-            widget::Inspecting::Reveal => reveal(placement.path()),
+            // Read back off the panel rather than held across the draw: the
+            // placement belongs to the panel now, and reaching for it again
+            // here is what lets the arms above put the panel away.
+            widget::Inspecting::Reveal => {
+                if let Some(open) = &self.inspecting {
+                    reveal(open.placement.path());
+                }
+            }
             widget::Inspecting::Nothing => {}
         }
         Some(panel)
@@ -564,6 +575,23 @@ impl App {
                 self.outcome = Some(Outcome::Failed { what: Stopped::of(prepared, errand), why });
             }
         }
+        // After the session, because it answers against the list that is now
+        // in hand. A failed run is asked too: what stopped half way through it
+        // may still have moved the document.
+        self.settle_placement();
+    }
+
+    /// Resolve the open panel's placement again.
+    ///
+    /// Called when a run has reported, because this application writing is the
+    /// one thing that moves a document out from under a panel that is standing
+    /// open: a preparation relinks the library, and a registration places the
+    /// documents it registers.
+    fn settle_placement(&mut self) {
+        let Session::Found(found) = &self.session else { return };
+        let Some(open) = self.inspecting.as_mut() else { return };
+        let Some(entry) = found.entries.get(open.uuid) else { return };
+        open.placement = placement::inspect(&found.to.install, entry);
     }
 
     /// Whatever has been dropped on the window this frame.
@@ -696,14 +724,32 @@ struct Inspection {
     /// is not, and the panel closes when it is not.
     uuid: Uuid,
     words: widget::Words,
+    /// Where the document actually is, as against where the registry says it
+    /// is - which is a question about the disk rather than about the entry.
+    ///
+    /// Resolved when the panel opens and again whenever this application
+    /// writes, rather than every time the panel is drawn. Answering it costs a
+    /// `stat` and an `lstat`, and `inspect` runs on every repaint: with the
+    /// panel open that was two blocking syscalls per mouse move and per
+    /// keystroke, on the thread that draws. Invisible against a local disk and
+    /// not against a network or external volume, where a library on a
+    /// spun-down mount answers in tens of milliseconds.
+    ///
+    /// The trade is that a document moved by something *other* than this
+    /// application, while the panel stands open, is not noticed until the panel
+    /// is opened again. Nothing else in the window watches the disk either, so
+    /// this is the same freshness the rest of the session has.
+    placement: Placement,
 }
 
 impl Inspection {
-    /// Open on an entry, with its words as the entry currently states them.
-    fn of(entry: &Registration) -> Inspection {
+    /// Open on an entry: its words as the entry states them, and where its
+    /// document resolves right now.
+    fn of(entry: &Registration, install: &Installation) -> Inspection {
         Inspection {
             uuid: entry.uuid,
             words: widget::Words::of(&entry.description, &entry.keywords),
+            placement: placement::inspect(install, entry),
         }
     }
 }
@@ -1268,7 +1314,7 @@ impl App {
                     // panel answerable from the list it is about. The words
                     // are taken here, where the entry to take them off is in
                     // hand, so opening a panel is one statement.
-                    opened = Some((!selected).then(|| Inspection::of(entry)));
+                    opened = Some((!selected).then(|| Inspection::of(entry, &found.to.install)));
                 }
             }
         });

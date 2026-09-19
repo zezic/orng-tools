@@ -499,8 +499,8 @@ pub mod metric {
     pub const SWITCH_PAD_Y: f32 = 9.0;
 
     /// The diagnostics report: a block of monospaced lines meant to be copied
-    /// whole. How far apart they sit is leading rather than a margin, and is in
-    /// [`font::REPORT_LEADING`](super::font::REPORT_LEADING).
+    /// whole. How far apart they sit is leading rather than a margin, and is
+    /// [`Leading::Reporting`](super::font::Leading::Reporting).
     pub const REPORT_PAD_X: f32 = 9.0;
     pub const REPORT_PAD_Y: f32 = 8.0;
     /// Between the sentence saying what the report is for and the report.
@@ -607,26 +607,63 @@ pub mod font {
     /// the bundle carries this, at every size, without exception - 41 of them.
     const MONO_EM: f32 = -0.05;
 
-    /// How much taller than its size the design sets a sentence that wraps: it
-    /// writes `line-height:1.45` on every explanatory line inside a group, and
-    /// on nothing else.
+    /// How much taller than its size the design sets a run that wraps.
     ///
     /// Leading rather than a margin, and therefore here rather than in `metric`.
     /// A gap between two labels is something a layout puts in; this is inside one
     /// run of text and only the run can carry it.
-    const EXPLAINED_LEADING: f32 = 1.45;
+    ///
+    /// **Not derivable from the size, which is why this is not [`tracking`].**
+    /// The bundle writes six different `line-height` values, and the same size
+    /// takes different ones: 11.5px is set on 1.55 in the catalog detail's
+    /// description and on nothing at all where it is one line in a row. So the
+    /// call site names what the run *is* and this names the number - the same
+    /// division `metric` makes everywhere else.
+    ///
+    /// Only the roles this window draws are here. A seventh value in the bundle
+    /// that nothing draws yet is not a variant until something draws it.
+    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+    pub enum Leading {
+        /// A sentence explaining the line above it, inside a group.
+        Explaining,
+        /// The sentence inside a notice - the catalog detail's superseded block.
+        Noticing,
+        /// A paragraph of the author's own prose, which is the longest wrapping
+        /// run the window has and the one where the leading compounds most.
+        Describing,
+        /// The diagnostics block, looser still, so that a column of monospaced
+        /// lines reads across as well as down.
+        Reporting,
+    }
 
-    /// And the diagnostics block, set looser still - `line-height:1.65` - so that
-    /// a column of monospaced lines reads across as well as down.
-    pub const REPORT_LEADING: f32 = 1.65;
+    impl Leading {
+        /// The bundle's own number, one per role.
+        const fn ratio(self) -> f32 {
+            match self {
+                // `Inspector.dc.html`, `SettingsScreen.dc.html`.
+                Leading::Explaining => 1.45,
+                // `CatalogDetail.dc.html:33`.
+                Leading::Noticing => 1.5,
+                // `CatalogDetail.dc.html:46`.
+                Leading::Describing => 1.55,
+                // `SettingsScreen.dc.html`, the report block.
+                Leading::Reporting => 1.65,
+            }
+        }
 
-    /// A sentence that explains the line above it, set on the design's leading.
+        /// The line box for a run of this size, in points.
+        pub const fn over(self, size: f32) -> f32 {
+            size * self.ratio()
+        }
+    }
+
+    /// A run that wraps, set on the design's leading for what it is.
     ///
     /// Beside [`run`] rather than a flag on it, because leading is not a property
-    /// of the face: the design sets `NOTE` on 1.45 where it explains something
-    /// and on nothing at all where the same size is one line in a row.
-    pub fn explained(text: impl Into<String>, size: f32) -> egui::RichText {
-        run(text, plain(size)).line_height(Some(size * EXPLAINED_LEADING))
+    /// of the face - see [`Leading`]. A run that does not wrap wants none of
+    /// this and calls `run`.
+    pub fn wrapping(text: impl Into<String>, size: f32, leading: Leading) -> egui::RichText {
+        run(text, plain(size)).line_height(Some(leading.over(size)))
     }
 
     /// The tracking the design states for a run in this face at this size, in
@@ -922,5 +959,34 @@ mod tests {
             let on = p.accent_ink.r() as i32 + p.accent_ink.g() as i32 + p.accent_ink.b() as i32;
             assert!((accent - on).abs() > 200, "{name}: accent-ink does not read on accent");
         }
+    }
+
+    /// Each leading is the bundle's own ratio, and the line boxes it makes at
+    /// the sizes drawn on it are the bundle's own pixels.
+    ///
+    /// Each side is written as the bundle writes it - the size and the ratio,
+    /// multiplied - rather than as the decimal they come to. `11.5 * 1.55` is
+    /// 17.824999 in `f32` and not 17.825, and a test that had to know that would
+    /// be testing the arithmetic rather than the design.
+    #[test]
+    fn every_leading_is_the_one_the_bundle_states() {
+        use font::Leading;
+        assert_eq!(Leading::Explaining.over(font::NOTE), 10.5 * 1.45);
+        assert_eq!(Leading::Noticing.over(font::NOTE), 10.5 * 1.5, "CatalogDetail.dc.html:33");
+        assert_eq!(
+            Leading::Describing.over(font::CONTROL),
+            11.5 * 1.55,
+            "CatalogDetail.dc.html:46"
+        );
+        assert_eq!(Leading::Reporting.over(font::MONO_TIGHT), 10.0 * 1.65);
+
+        // The two the design deliberately sets apart. A description is the
+        // author's own prose and the design gives it more air than the sentence
+        // inside a notice, so collapsing the two onto one number would be a
+        // quiet loss rather than a visible one.
+        assert!(
+            Leading::Describing.over(font::CONTROL) > Leading::Noticing.over(font::CONTROL),
+            "a description is set looser than a notice"
+        );
     }
 }

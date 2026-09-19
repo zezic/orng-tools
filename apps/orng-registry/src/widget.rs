@@ -2008,11 +2008,16 @@ pub fn group_frame(palette: Palette, pad: Padding) -> Frame {
 /// exactly the order the install bar puts its own path in, and for the same
 /// reason: a path is the longest thing on the line and the least urgent, so it is
 /// the thing that gives way.
+/// `path` is `None` where there is no path to state - a machine with no
+/// installation found, or one whose build could not be read. The row is drawn
+/// anyway, and says [`NO_PATH`]: a row that vanished would make the Paths group
+/// a different height depending on what went wrong, and the bundle has no mockup
+/// of either state to say otherwise. See `design-review.md` round 3 item 5.
 pub fn path_row(
     ui: &mut Ui,
     palette: Palette,
     label: &str,
-    path: &str,
+    path: Option<&str>,
     controls: impl FnOnce(&mut Ui),
 ) {
     ui.horizontal(|ui| {
@@ -2038,18 +2043,21 @@ pub fn path_row(
         ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
             controls(ui);
             ui.with_layout(Layout::left_to_right(Align::Center), |ui| {
-                path_field(ui, palette, path);
+                path_field(ui, palette, path.unwrap_or(NO_PATH));
             });
         });
     });
 }
+
+/// What a path row says where there is nothing to say.
+const NO_PATH: &str = "-";
 
 /// A path, in a box, as a value to read rather than a box to type in.
 ///
 /// Not [`one_line_field`]: that one is the inspector's, 27 tall and set in the
 /// proportional face because a display name is words. A path is monospaced and
 /// the design draws its box four pixels shorter.
-pub fn path_field(ui: &mut Ui, palette: Palette, path: &str) {
+fn path_field(ui: &mut Ui, palette: Palette, path: &str) {
     field_frame(palette, Margin::symmetric(metric::PATH_FIELD_PAD_X as i8, 0)).show(ui, |ui| {
         ui.set_width(ui.available_width());
         ui.set_height(metric::PATH_FIELD);

@@ -41,26 +41,21 @@ use crate::widget::SEPARATOR;
 pub struct Diagnostics {
     /// The report, laid out as one column of labels and one of values.
     pub report: String,
-    /// The installation, as the Paths group states it.
-    pub install: String,
+    /// The installation, as the Paths group states it. `None` where there is no
+    /// path to state, which is what the two states with no installation behind
+    /// them mean; the row still draws, because the group would otherwise be a
+    /// different height depending on what went wrong.
+    pub install: Option<String>,
     /// Where the user keeps their own content.
-    pub library: String,
+    pub library: Option<String>,
     /// Where the backup of this build belongs, whether or not it is there. The
     /// design draws the path either way, because where the copy *would* be is
     /// the thing somebody asking has to know.
-    pub backups: String,
+    pub backups: Option<String>,
     /// Whether it is there, which decides between offering to restore it and
     /// saying there is none yet.
     pub backup: bool,
 }
-
-/// What a path row says where there is nothing to say.
-///
-/// Settings is reachable from the install bar in every state, including the two
-/// with no installation behind them - which the bundle has no mockup of, because
-/// it draws one machine. A row that vanished would make the group a different
-/// height depending on what went wrong, so the row stays and says nothing.
-const NOTHING: &str = "-";
 
 impl Diagnostics {
     /// Read everything the screen states.
@@ -76,9 +71,9 @@ impl Diagnostics {
                     ("version", "-  (not read)".to_owned()),
                     ("anchors", format!("NOT RESOLVED  {SEPARATOR}  {why}")),
                 ]),
-                install: root.clone(),
-                library: NOTHING.to_owned(),
-                backups: NOTHING.to_owned(),
+                install: Some(root.clone()),
+                library: None,
+                backups: None,
                 backup: false,
             },
             Session::NoInstallation { searched } => Diagnostics {
@@ -86,9 +81,9 @@ impl Diagnostics {
                     ("install", "none selected".to_owned()),
                     ("searched", searched.clone()),
                 ]),
-                install: NOTHING.to_owned(),
-                library: NOTHING.to_owned(),
-                backups: NOTHING.to_owned(),
+                install: None,
+                library: None,
+                backups: None,
                 backup: false,
             },
         }
@@ -162,9 +157,9 @@ fn of_installation(found: &Found) -> Diagnostics {
     ]);
     Diagnostics {
         report,
-        install,
-        library: short(found.to.library.root()),
-        backups,
+        install: Some(install),
+        library: Some(short(found.to.library.root())),
+        backups: Some(backups),
         backup: backup.is_some_and(|backup| backup.exists()),
     }
 }

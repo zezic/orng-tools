@@ -89,23 +89,9 @@ pub struct App {
     /// What the last press came to. Stated as a banner until the user puts it
     /// away, because nothing else will stop being true and take it off screen.
     outcome: Option<Outcome>,
-    /// The entry the inspector is open on, if it is open.
-    ///
-    /// The identity and not the entry itself, nor its place in the list. The
-    /// session is re-read whenever anything is done to the machine, so a
-    /// borrowed row would be stale by the next frame and a position would point
-    /// at whatever had moved into it. An identity either is still registered or
-    /// is not, and the panel closes when it is not.
-    inspecting: Option<Uuid>,
-    /// What is in the inspector's two editable fields, and which entry it
-    /// belongs to.
-    ///
-    /// Beside the session rather than in it. The session is read from the
-    /// machine and re-read whenever the machine changes, and a half-typed
-    /// description is neither: writing into the entry as the user typed would
-    /// mean the list on screen disagreed with the list on disk, and re-reading
-    /// would throw away what was being written.
-    editing: Option<Editing>,
+    /// The inspector, if it is open: which entry, and what is in its two
+    /// editable fields.
+    inspecting: Option<Inspection>,
     /// The catalog item the detail panel is open on. The inspector's opposite
     /// number, and held apart from it: they are one region of the window and
     /// one view at a time, but the answer to "which row did I open" belongs to
@@ -143,7 +129,6 @@ impl App {
             applying: None,
             outcome: None,
             inspecting: None,
-            editing: None,
             detailing: None,
             catalog: None,
         }
@@ -180,7 +165,11 @@ impl App {
     /// Open the inspector without clicking a row. Tests only.
     #[cfg(test)]
     pub fn set_inspecting(&mut self, uuid: Uuid) {
-        self.inspecting = Some(uuid);
+        let Session::Found(found) = &self.session else {
+            panic!("there is no list to inspect a row of")
+        };
+        let entry = found.entries.get(uuid).expect("the row to inspect is registered");
+        self.inspecting = Some(Inspection::of(entry));
     }
 
     /// The same for the catalog's detail panel. Tests only.
@@ -265,12 +254,13 @@ impl App {
     /// list can be painted once the list is there to catch it.
     fn inspect(&mut self, ui: &mut egui::Ui) -> Option<widget::Aside> {
         let palette = self.palette;
-        let uuid = self.inspecting?;
         let Session::Found(found) = &self.session else { return None };
+        let open = self.inspecting.as_mut()?;
+        let uuid = open.uuid;
         let Some(entry) = found.entries.get(uuid) else {
             // Applied, removed, or gone from a list that was read again. There
             // is nothing left to inspect, so the panel closes rather than
-            // standing empty.
+            // standing empty - and the words it was holding go with it.
             self.inspecting = None;
             return None;
         };
@@ -293,17 +283,9 @@ impl App {
             placement: &placement,
         };
 
-        // The buffer follows the panel. Opening another row must not carry the
-        // last one's words into it, and an entry list that has just been
-        // written must not take back what is being typed into this one.
-        if !matches!(&self.editing, Some(editing) if editing.uuid == uuid) {
-            let words = widget::Words::of(&entry.description, &entry.keywords);
-            self.editing = Some(Editing { uuid, words });
-        }
-        let words = &mut self.editing.as_mut().expect("set just above").words;
-
-        let (panel, pressed) =
-            widget::aside(ui, palette, "inspector", |ui| widget::inspector(ui, palette, &item, words));
+        let (panel, pressed) = widget::aside(ui, palette, "inspector", |ui| {
+            widget::inspector(ui, palette, &item, &mut open.words)
+        });
 
         match pressed {
             // The panel closing is the last chance a field has to be finished
@@ -312,7 +294,6 @@ impl App {
             widget::Inspecting::Closed => {
                 self.write_words(ui.ctx());
                 self.inspecting = None;
-                self.editing = None;
             }
             widget::Inspecting::Edited => self.write_words(ui.ctx()),
             widget::Inspecting::CopiedUuid => ui.ctx().copy_text(uuid.to_string()),
@@ -425,12 +406,12 @@ impl App {
         if self.applying.is_some() {
             return;
         }
-        let Some(editing) = &self.editing else { return };
+        let Some(open) = &self.inspecting else { return };
         let Session::Found(found) = &self.session else { return };
-        let Some(entry) = found.entries.get(editing.uuid) else {
+        let Some(entry) = found.entries.get(open.uuid) else {
             return;
         };
-        let Some(revised) = revised(entry, &editing.words) else { return };
+        let Some(revised) = revised(entry, &open.words) else { return };
 
         let mut update = Update::to(found.entries.clone());
         update.revise(revised);
@@ -693,14 +674,38 @@ impl App {
     }
 }
 
-/// The words in the inspector's fields, and which entry they belong to.
+/// The inspector while it is open: which entry it is about, and the words in
+/// its two editable fields.
 ///
-/// The identity is here so that a panel that has moved to another row cannot
-/// write one entry's words onto another - which is the one way a buffer beside
-/// the data can go wrong, and the only reason it is not a bare pair of strings.
-struct Editing {
+/// One thing rather than an identity and a buffer held side by side. The buffer
+/// exists exactly when the panel does, because it is what the panel types into.
+/// Kept apart, the pair could say that the panel had been shut while a dead
+/// entry's half-typed words were still being held, and the identity had to be
+/// carried twice and checked every frame to get the invariant back.
+///
+/// The words sit beside the session rather than in it. The session is read off
+/// the machine and re-read whenever the machine changes, and a half-typed
+/// description is neither: writing into the entry as the user typed would mean
+/// the list on screen disagreed with the list on disk, and re-reading would
+/// throw away what was being written.
+struct Inspection {
+    /// The identity, and not the entry itself nor its place in the list. The
+    /// session is re-read whenever anything is done to the machine, so a
+    /// borrowed row would be stale by the next frame and a position would point
+    /// at whatever had moved into it. An identity either is still registered or
+    /// is not, and the panel closes when it is not.
     uuid: Uuid,
     words: widget::Words,
+}
+
+impl Inspection {
+    /// Open on an entry, with its words as the entry currently states them.
+    fn of(entry: &Registration) -> Inspection {
+        Inspection {
+            uuid: entry.uuid,
+            words: widget::Words::of(&entry.description, &entry.keywords),
+        }
+    }
 }
 
 /// A condition the window has to state, and what can be done about it.
@@ -1239,7 +1244,7 @@ impl App {
         }
 
         let palette = self.palette;
-        let open = self.inspecting;
+        let open = self.inspecting.as_ref().map(|open| open.uuid);
         let width = self.width();
         // What the list was clicked on, taken after it has been drawn: opening
         // the panel changes how wide every row is, and changing that half way
@@ -1260,8 +1265,10 @@ impl App {
                 let selected = open == Some(entry.uuid);
                 if row(ui, palette, width, selected, entry).clicked() {
                     // The same row again closes it, which is what makes the
-                    // panel answerable from the list it is about.
-                    opened = Some(if selected { None } else { Some(entry.uuid) });
+                    // panel answerable from the list it is about. The words
+                    // are taken here, where the entry to take them off is in
+                    // hand, so opening a panel is one statement.
+                    opened = Some((!selected).then(|| Inspection::of(entry)));
                 }
             }
         });

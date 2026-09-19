@@ -1246,7 +1246,7 @@ fn panel_body(ui: &mut Ui, contents: impl FnOnce(&mut Ui)) {
 /// Settings' path boxes are monospaced and four pixels shorter, and its
 /// explanatory sentences are 10.5 on the design's own leading where a footnote is
 /// 10 on none. Both were measured rather than assumed, and both got their own
-/// shape: [`path_field`] and [`font::explained`].
+/// shape: `path_field` and [`font::wrapping`].
 pub fn label_above(ui: &mut Ui, palette: Palette, label: &str, gap: f32) {
     ui.label(font::run(label, font::emphasis(ui.ctx(), font::NOTE)).color(palette.ink_2));
     ui.add_space(gap);
@@ -1662,7 +1662,10 @@ pub fn detail(ui: &mut Ui, palette: Palette, item: &Detailed<'_>) -> Detailing {
         });
 
         ui.add_space(metric::BETWEEN_DETAIL_GROUPS);
-        ui.label(font::run(item.description, font::plain(font::CONTROL)).color(palette.ink_2));
+        ui.label(
+            font::wrapping(item.description, font::CONTROL, font::Leading::Describing)
+                .color(palette.ink_2),
+        );
 
         ui.add_space(metric::BETWEEN_DETAIL_GROUPS);
         // Whether this installation can load it at all, which is the one thing
@@ -1775,13 +1778,14 @@ fn superseded(ui: &mut Ui, palette: Palette, replacement: &str) -> bool {
             );
             ui.add_space(metric::IN_A_NOTICE);
             ui.label(
-                font::run(
+                font::wrapping(
                     format!(
                         "{replacement} replaces this one. It has its own identity, so \
                          installing it leaves your projects alone and both can be installed \
                          at once."
                     ),
-                    font::plain(font::NOTE),
+                    font::NOTE,
+                    font::Leading::Noticing,
                 )
                 .color(palette.ink_2_warm),
             );
@@ -2240,7 +2244,10 @@ fn marked_row(ui: &mut Ui, palette: Palette, marked: &Marked<'_>) -> Response {
                         font::run(marked.title, font::plain(font::CONTROL)).color(palette.ink),
                     );
                     ui.add_space(metric::UNDER_A_CHOICE);
-                    ui.label(font::explained(marked.note, font::NOTE).color(marked.note_ink));
+                    ui.label(
+                        font::wrapping(marked.note, font::NOTE, font::Leading::Explaining)
+                            .color(marked.note_ink),
+                    );
                 });
             });
         })
@@ -2315,7 +2322,7 @@ pub fn report(ui: &mut Ui, palette: Palette, text: &str) {
                 egui::Label::new(
                     font::run(text, font::mono(font::MONO_TIGHT))
                         .color(palette.ink_2)
-                        .line_height(Some(font::MONO_TIGHT * font::REPORT_LEADING)),
+                        .line_height(Some(font::Leading::Reporting.over(font::MONO_TIGHT))),
                 )
                 .wrap_mode(egui::TextWrapMode::Extend),
             );

@@ -231,6 +231,17 @@ next reader will see `\u{b7}` and wonder.
   that list the bundle draws unconditionally. It waits on the same removal work as
   the footer above. The two actions beside it are conditional in the bundle, so the
   group is drawn without this one rather than with it dead.
+- **`Reviewed in <commit>` in the inspector** - `Inspector.dc.html:90-92`, under
+  Source and behind `fromCatalog`. Not drawn, and not because of the layout: the
+  entry list does not record which commit published an item. `Provenance::Catalog`
+  carries the version and nothing else, and `entries.tsv` spells it as two columns,
+  a version and the word `catalog` - so there is no revision to name and no URL to
+  put behind it. Nothing in the running application produces a catalog provenance
+  at all yet; every one in the tree is a test fixture. Recording the revision means
+  widening a persisted format, and the first thing that would write one is
+  installing from the catalog, which is where that decision belongs. The catalog
+  detail *does* draw its own `Reviewed in`, off the index's `merged_in` - a
+  different fact, about the item rather than about this machine's copy of it.
 
 ### 4. 13.5px is tracked two ways, and only one of them can be drawn
 

@@ -590,9 +590,10 @@ impl App {
                             }
                             ui.with_layout(Layout::left_to_right(Align::Center), |ui| {
                                 ui.label(
-                                    font::explained(
+                                    font::wrapping(
                                         "Send this when a Bitwig build is not recognised.",
                                         font::NOTE,
+                                        font::Leading::Explaining,
                                     )
                                     .color(palette.ink_3),
                                 );

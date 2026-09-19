@@ -229,8 +229,21 @@ fn taken(backup: &Backup) -> String {
 /// point of drawing rather than the point of reading - is how the same backup
 /// comes to be dated differently on two machines.
 fn day(at: std::time::SystemTime, zone: &jiff::tz::TimeZone) -> String {
+    when(at, zone, "%d %b %Y")
+}
+
+/// An instant written out in a given zone, however the reader of it wants it.
+///
+/// Here rather than beside each caller so that there is one answer to what a
+/// clock nobody can read says. The Restore screen writes the same instant at
+/// more length - see [`crate::restore`] - and the failure is the same failure.
+pub(crate) fn when(
+    at: std::time::SystemTime,
+    zone: &jiff::tz::TimeZone,
+    format: &str,
+) -> String {
     jiff::Timestamp::try_from(at)
-        .map(|stamp| stamp.to_zoned(zone.clone()).strftime("%d %b %Y").to_string())
+        .map(|stamp| stamp.to_zoned(zone.clone()).strftime(format).to_string())
         // A modification time outside the range of a civil calendar is a clock
         // that is wrong, not a backup that is missing.
         .unwrap_or_else(|_| "date not readable".to_owned())
@@ -288,7 +301,7 @@ fn size_of(path: &Path) -> Option<u64> {
 
 /// Everything in one directory, which is what a backup is: an archive and three
 /// description bundles, no deeper.
-fn directory_size(dir: &Path) -> Option<u64> {
+pub(crate) fn directory_size(dir: &Path) -> Option<u64> {
     let mut total = 0;
     for entry in std::fs::read_dir(dir).ok()? {
         let Ok(entry) = entry else { continue };
@@ -306,7 +319,7 @@ fn directory_size(dir: &Path) -> Option<u64> {
 /// Decimal megabytes rather than binary, because this is a number a user compares
 /// against what their file manager tells them and every file manager on all three
 /// platforms now shows decimal.
-fn megabytes(bytes: u64) -> String {
+pub(crate) fn megabytes(bytes: u64) -> String {
     format!("{:.1} MB", bytes as f64 / 1_000_000.0)
 }
 

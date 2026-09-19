@@ -1096,6 +1096,220 @@ fn choosing_a_placement_changes_where_a_document_would_go() {
     );
 }
 
+/// The Restore screen on a machine that has never prepared anything, which is
+/// every machine before its first press of the primary action.
+///
+/// **The only picture of this screen there is**, and deliberately: every row of
+/// the populated state carries a date and a size read off the disk, and a date is
+/// a function of the reader's zone. The state with copies in it is asserted below
+/// instead.
+#[test]
+fn the_restore_screen_with_nothing_kept() {
+    let root = fixture("restore-empty");
+    let session = found(&root, Helper::Absent, GuardState::Armed);
+    let mut session = Some(session);
+    let mut harness = Harness::builder().with_size(SIZE).build_eframe(move |cc| {
+        let mut app = App::with(&cc.egui_ctx, session.take().expect("built once"));
+        app.show_restore();
+        app
+    });
+    look(&mut harness, "restore-empty");
+}
+
+/// And the same screen with two copies on disk.
+///
+/// No picture: the rows say when each copy was taken, and an instant has no day
+/// until a zone is chosen - so a snapshot of this would be a snapshot of the
+/// machine that took it, differing by a day west of Denver. What a picture would
+/// have vouched for is asserted here instead, through the labels a user reads.
+///
+/// The build each copy is of comes back out of its own directory name, which is
+/// the only record there is of it - so a row that could not name its build would
+/// be a row this screen cannot draw.
+#[test]
+fn the_restore_screen_lists_what_is_kept() {
+    let root = fixture("restore-listed");
+    let session = found(&root, Helper::Present, GuardState::Disarmed);
+    let backups = root.join("home/.orng/backups");
+    for build in ["6.1-94a90411", "6.0-a1d34f07"] {
+        let dir = backups.join(build);
+        std::fs::create_dir_all(&dir).expect("a place to keep a backup");
+        std::fs::write(dir.join("bitwig.jar"), b"not an archive, and not read here")
+            .expect("could not write the copy");
+    }
+
+    let mut session = Some(session);
+    let mut harness = Harness::builder().with_size(SIZE).build_eframe(move |cc| {
+        let mut app = App::with(&cc.egui_ctx, session.take().expect("built once"));
+        app.show_restore();
+        app
+    });
+    harness.run();
+
+    assert!(
+        harness.query_by_label_contains("Available backups").is_some(),
+        "the list was not drawn"
+    );
+    // Both copies, each naming the build it came from. Ordered by when they were
+    // written and not by version, so the assertion is on presence and on which
+    // one carries the mark.
+    for build in ["6.1 (94a90411)", "6.0 (a1d34f07)"] {
+        assert!(
+            harness.query_by_label_contains(build).is_some(),
+            "no row names {build} - a backup that cannot say which build it is of"
+        );
+    }
+    assert!(harness.query_by_label("Latest").is_some(), "nothing is marked as the newest");
+    // Where a row's words start, which no picture of this screen will ever
+    // hold: the list's own twelve, the row's twelve, the sixteen-pixel mark and
+    // the design's gap after it. The bundle puts the first character at 50.
+    let words = harness
+        .get_all_by_label_contains("jar + description bundles")
+        .map(|node| node.rect().left())
+        .fold(f32::INFINITY, f32::min);
+    assert!(
+        (words - 50.0).abs() < 1.0,
+        "a row's words start at {words} where the bundle starts them at 50"
+    );
+    assert!(
+        harness.query_by_label_contains("Restoring removes every registration").is_some(),
+        "the warning above the list is not drawn"
+    );
+    // And the foot names the copy the press would put back, which is the one
+    // thing on this screen that changes when a row is chosen.
+    assert!(
+        harness.query_by_label_contains("wholesale. Bitwig Studio must be closed").is_some(),
+        "the foot does not say what pressing would do"
+    );
+}
+
+/// The About screen.
+///
+/// The identity line is supplied rather than read, for the reason `App::show_about`
+/// records: the real one ends in the name of the machine that drew it.
+#[test]
+fn the_about_screen() {
+    let root = fixture("about");
+    let session = found(&root, Helper::Present, GuardState::Disarmed);
+    let mut session = Some(session);
+    let mut harness = Harness::builder().with_size(SIZE).build_eframe(move |cc| {
+        let mut app = App::with(&cc.egui_ctx, session.take().expect("built once"));
+        app.show_about("0.9.2 \u{b7} orng-registry \u{b7} macOS arm64");
+        app
+    });
+    look(&mut harness, "about");
+}
+
+/// The overflow reaches all three screens, and each one comes back.
+///
+/// The class of fault a picture structurally cannot catch, and the one this
+/// application has already had twice. Three screens that only their `show_`
+/// helper could reach would be three pictures vouching for a menu that opens
+/// nothing.
+///
+/// The swap is asserted through the install bar rather than through a rectangle:
+/// a screen replaces that bar, so the build revision beside the installation's
+/// name is on screen while the list is and gone while a screen is.
+#[test]
+fn the_overflow_reaches_every_screen_and_each_one_goes_back() {
+    let root = fixture("screens-opening");
+    let session = found(&root, Helper::Present, GuardState::Disarmed);
+    let mut session = Some(session);
+    let mut harness = Harness::builder().with_size(SIZE).build_eframe(move |cc| {
+        App::with(&cc.egui_ctx, session.take().expect("built once"))
+    });
+    harness.run();
+
+    // The install bar is named by its other view tab, and not by the build
+    // revision beside the installation's name: About states that same revision,
+    // so the revision no longer says which of the two is on screen.
+    let install_bar = "Catalog";
+    // Each item, and a line only that screen draws. Restore is named by the line
+    // at its foot rather than by its empty state: an empty state is drawn twice,
+    // once in the sizing pass that centres it, and a query for a label in it
+    // finds both.
+    let screens = [
+        ("Settings", "Document placement"),
+        ("Restore backup...", "No backup exists for this installation"),
+        ("About ORNG Registry", "Detected installation"),
+    ];
+    for (item, drawn) in screens {
+        assert!(
+            harness.query_by_label(install_bar).is_some(),
+            "{item}: the list is not on screen"
+        );
+        harness.get_by_label(crate::widget::icon::OVERFLOW).click();
+        harness.run();
+        harness.get_by_label_contains(item).click();
+        harness.run();
+
+        assert!(
+            harness.query_by_label_contains(drawn).is_some(),
+            "{item} did not open the screen behind it"
+        );
+        assert!(
+            harness.query_by_label(install_bar).is_none(),
+            "{item} is open and the install bar is still drawn - it is a panel, not a screen"
+        );
+
+        // And the way out is labelled with the view it goes back to.
+        harness.get_by_label_contains("Local").click();
+        harness.run();
+    }
+    assert!(
+        harness.query_by_label(install_bar).is_some(),
+        "the last screen did not go back"
+    );
+}
+
+/// Pressing a row changes which archive would be copied over the installation.
+///
+/// Not a picture: a screen whose rows moved nothing would render identically but
+/// for one glyph. Reached by the build each row names rather than by its date,
+/// which is the one thing a test here must not know.
+///
+/// Which row starts out chosen is *not* asserted. The list is ordered by when
+/// each copy was written, and two directories written in the same instant can be
+/// ordered either way - so what is asserted is that pressing the other one moves
+/// the answer, which is the whole of what the press has to do.
+#[test]
+fn choosing_a_backup_changes_which_one_would_be_put_back() {
+    let root = fixture("restore-choosing");
+    let session = found(&root, Helper::Present, GuardState::Disarmed);
+    let backups = root.join("home/.orng/backups");
+    for build in ["6.1-94a90411", "6.0-a1d34f07"] {
+        let dir = backups.join(build);
+        std::fs::create_dir_all(&dir).expect("a place to keep a backup");
+        std::fs::write(dir.join("bitwig.jar"), b"not an archive").expect("could not write");
+    }
+
+    let mut session = Some(session);
+    let mut harness = Harness::builder().with_size(SIZE).build_eframe(move |cc| {
+        let mut app = App::with(&cc.egui_ctx, session.take().expect("built once"));
+        app.show_restore();
+        app
+    });
+    harness.run();
+
+    // The other row, found by the build it names rather than by its date - the
+    // date is what this test must not know.
+    let builds = ["6.1 (94a90411)", "6.0 (a1d34f07)"];
+    let opened = harness.state().pointed_at().expect("a copy is pointed at").to_owned();
+    let other = builds
+        .into_iter()
+        .find(|build| !opened.contains(build))
+        .expect("the row that is not the one already chosen");
+
+    harness.get_by_label_contains(other).click();
+    harness.run();
+    let now = harness.state().pointed_at().expect("a copy is still pointed at");
+    assert!(
+        now.contains(other),
+        "pressing the other row did not move which archive would be copied over the installation"
+    );
+    assert_ne!(now, opened, "the choice did not move at all");
+}
+
 /// An index that did not verify. Nothing is listed, and the reason is shown.
 #[test]
 fn a_catalog_that_does_not_verify() {

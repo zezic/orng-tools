@@ -38,7 +38,7 @@ pub mod testing;
 
 use std::path::PathBuf;
 
-pub use backup::Backup;
+pub use backup::{Backup, TakenFrom};
 pub use bitwig_document::{BitwigVersion, Document, Identity, Kind, Serialization};
 /// Why a document could not be read, in enough detail for an application to say
 /// so in its own words rather than repeat this crate's.

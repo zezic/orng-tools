@@ -26,13 +26,15 @@ use orng_tools::{
     Uuid, placement,
 };
 
+use crate::about::About;
 use crate::catalog::Fetching;
 use crate::diagnostics::Diagnostics;
+use crate::restore::Backups;
 use crate::session::{Badge, Found, Session};
 use crate::settings::{Appearance, Preferences, Settings};
 use crate::staging::{self, Reading, Staged};
 use crate::theme::{self, Palette, font, metric};
-use crate::widget::{self, Emphasis, Padding, Tone, icon};
+use crate::widget::{self, Emphasis, Fact, Measure, Padding, Tone, icon};
 use crate::work::{Applying, Errand, Stage, Work};
 
 /// Which top-level view is showing. Two, as the design has it.
@@ -61,32 +63,33 @@ impl View {
 /// replaces the install bar and the action bar as well as the page.
 /// [`App::browse`] is the seam they swap in at.
 ///
-/// **Two variants, because there are two surfaces.** `Restore` and `About` are
-/// drawn by the bundle and by nothing here, and a variant for a screen that
-/// nothing draws would be a distinction this type claimed and the code did not
-/// have: every match on it would need an arm that could only route back to
-/// browsing. The overflow's other two items stay inert until they have somewhere
-/// to land.
+/// **Each screen carries what it states**, resolved when it opens rather than
+/// per frame. All three ask the disk to answer themselves - Settings for two
+/// file sizes, three bundles, a listing and a link; Restore for a directory walk
+/// and a time and a size per copy; About for the same report Settings draws -
+/// and a screen is redrawn on every mouse move across it. That is the fault
+/// `eaf5e47` took out of the inspector, three times over. What was read is
+/// re-read where this application has changed one of the answers and nowhere
+/// else: see [`App::settle_screen`].
 #[derive(Debug)]
 enum Screen {
     Browsing,
-    /// Settings, holding everything it says about the machine.
-    ///
-    /// Resolved when the screen opens rather than per frame. The report asks the
-    /// disk about two file sizes, three description bundles, a directory listing
-    /// and a link, and this screen is redrawn on every mouse move across it -
-    /// which is the fault `eaf5e47` took out of the inspector, larger. Re-read
-    /// whenever this application changes one of the answers, and not otherwise:
-    /// see [`App::settle_diagnostics`].
     Settings(Diagnostics),
+    /// Restore, holding the copies it found and which one is pointed at.
+    Restore(Backups),
+    About(About),
 }
 
-/// What Settings was pressed for, if it was pressed.
+/// What Settings, or the overflow menu, was pressed for.
 ///
 /// One value carried out of the drawing rather than each control acting where it
-/// sits, because every one of these writes to something the screen is drawn from -
-/// a path, a placement, the palette - and the screen is still being drawn while
-/// the press is being noticed.
+/// sits, because every one of these writes to something the surface is drawn
+/// from - a path, a placement, the palette, the screen itself - and that surface
+/// is still being drawn while the press is being noticed.
+///
+/// The overflow shares it rather than having one of its own, because what it
+/// offers is what Settings offers: three of its four items are also a control on
+/// that screen, and two enums would be two places to keep them agreeing.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Chose {
     Nothing,
@@ -102,6 +105,42 @@ enum Chose {
     /// `Keep`, where `Keep(true)` meant delete.
     DeleteFile(bool),
     Appearance(Appearance),
+    CopyReport,
+    /// On to a screen: from the overflow, or from one of Settings' own two
+    /// controls that lead to one - `Restore...` beside the backups path, and
+    /// the row at the foot.
+    Settings,
+    Restore,
+    About,
+    /// Show the backups directory in the system's own file manager. The one
+    /// overflow item that is not a screen, which is why it is here rather than
+    /// being a fourth way of saying `Screen`.
+    RevealBackups,
+}
+
+/// What the Restore screen was pressed for.
+///
+/// Collected and acted on after the drawing, for the reason [`Chose`] is: the
+/// screen is drawn from the list it is holding, and two of these replace that
+/// list or the screen itself.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Restoring {
+    Nothing,
+    Back,
+    /// Show the backups directory in the system's own file manager.
+    Reveal,
+    /// Point at one of the copies.
+    Choose(usize),
+    /// Put the chosen one back, which is the one thing this screen is for.
+    Restore,
+}
+
+/// And what the About screen was pressed for. Two things, and an enum anyway:
+/// going back writes the field the screen is being drawn out of.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Asked {
+    Nothing,
+    Back,
     CopyReport,
 }
 
@@ -261,6 +300,40 @@ impl App {
         self.screen = Screen::Settings(Diagnostics::of(&self.session));
     }
 
+    /// The same for Restore. Tests only.
+    #[cfg(test)]
+    pub fn show_restore(&mut self) {
+        self.screen = Screen::Restore(Backups::of(&self.session));
+    }
+
+    /// Which copy the Restore screen is pointed at, named by the build it is of.
+    ///
+    /// Not the index: what the picture of a choice is is one glyph, and what a
+    /// press has to have changed is which archive the primary would copy over
+    /// the installation. Tests only.
+    #[cfg(test)]
+    pub fn pointed_at(&self) -> Option<&str> {
+        match &self.screen {
+            Screen::Restore(backups) => backups.chosen().map(|taken| taken.what.as_str()),
+            _ => None,
+        }
+    }
+
+    /// And for About, with the identity line supplied rather than read.
+    ///
+    /// **Supplied, because the real one names the machine.** It ends in
+    /// `macOS arm64` here and `Windows x86_64` on the runner, which is two runs
+    /// of different width in the one string this screen is built around - so a
+    /// picture of the real line is a picture of whoever took it. The same reason
+    /// `render::fixture` returns a relative path, and the line itself is
+    /// asserted in `about.rs` where it is built. Tests only.
+    #[cfg(test)]
+    pub fn show_about(&mut self, identity: &str) {
+        let mut about = About::of(&self.session);
+        about.identity = identity.to_owned();
+        self.screen = Screen::About(about);
+    }
+
     /// Put a preference on screen without pressing anything. Tests only, and
     /// unwritten, so a fixture cannot reach the preferences of whoever ran it.
     #[cfg(test)]
@@ -371,6 +444,8 @@ impl App {
         match &self.screen {
             Screen::Browsing => self.browse(ui),
             Screen::Settings(_) => self.settings(ui),
+            Screen::Restore(_) => self.restore(ui),
+            Screen::About(_) => self.about(ui),
         }
 
         // Last, and over everything - including a screen. Work can only be
@@ -460,13 +535,17 @@ impl App {
             .exact_size(metric::SCREEN_HEADER)
             .frame(widget::screen(palette))
             .show(ui, |ui| {
-                if widget::screen_header(ui, palette, from, icon::SETTINGS, "Settings").clicked() {
+                // Nothing at the right end: the design puts a control there on
+                // the Restore screen and on neither of the other two.
+                if widget::screen_header(ui, palette, from, icon::SETTINGS, "Settings", |_| {})
+                    .clicked()
+                {
                     chose = Chose::Back;
                 }
             });
 
         egui::CentralPanel::default().frame(widget::screen(palette)).show(ui, |ui| {
-            widget::screen_body(ui, |ui| {
+            widget::screen_body(ui, Measure::Controls, |ui| {
                 widget::label_above(ui, palette, "Paths", metric::UNDER_A_GROUP_HEADING);
                 widget::group_frame(palette, Padding::Rows).show(ui, |ui| {
                     ui.set_width(ui.available_width());
@@ -501,15 +580,17 @@ impl App {
                         // with the two above it.
                         widget::reset_slot(ui);
                         if facts.backup {
-                            // Inert: the Restore screen is drawn by the bundle
-                            // and by nothing here yet.
-                            let _ = widget::group_control(
+                            if widget::group_control(
                                 ui,
                                 palette,
                                 icon::RESTORE,
                                 "Restore...",
                                 Emphasis::Quiet,
-                            );
+                            )
+                            .clicked()
+                            {
+                                chose = Chose::Restore;
+                            }
                         } else {
                             ui.label(
                                 font::run("No backup yet", font::plain(font::CHIP))
@@ -605,17 +686,17 @@ impl App {
                 });
 
                 ui.add_space(metric::BETWEEN_SETTINGS_GROUPS);
-                // Inert, like `Restore...` above: the About screen is drawn by
-                // the bundle and by nothing here yet. Drawn all the same, because
-                // the version it states is the one thing on this screen a bug
-                // report always wants and the row is where the design puts it.
-                let _ = widget::screen_link(
+                if widget::screen_link(
                     ui,
                     palette,
                     icon::ABOUT,
                     "About ORNG Registry",
                     env!("CARGO_PKG_VERSION"),
-                );
+                )
+                .clicked()
+                {
+                    chose = Chose::About;
+                }
             });
         });
 
@@ -648,7 +729,7 @@ impl App {
                 if let Session::Found(found) = &mut self.session {
                     found.to.placement = strategy;
                 }
-                self.settle_diagnostics();
+                self.settle_screen();
             }
             Chose::DeleteFile(delete) => {
                 self.preferences.change(|chosen| chosen.delete_file = delete);
@@ -659,26 +740,334 @@ impl App {
                     ui.ctx().copy_text(facts.report.clone());
                 }
             }
+            Chose::Settings => self.screen = Screen::Settings(Diagnostics::of(&self.session)),
+            Chose::Restore => self.screen = Screen::Restore(Backups::of(&self.session)),
+            Chose::About => self.screen = Screen::About(About::of(&self.session)),
+            Chose::RevealBackups => {
+                if let Session::Found(found) = &self.session {
+                    reveal(&found.to.home.backups());
+                }
+            }
+        }
+    }
+
+    /// The Restore screen: which pristine copies this machine holds, and the one
+    /// press that puts one back.
+    ///
+    /// A full-window surface like Settings, and the only one with a bar at the
+    /// foot: it is the one screen that ends in a decision. The warning above the
+    /// list is outside the scroll on purpose - what it says is about the press at
+    /// the foot, and a warning that could be scrolled away is one the user can
+    /// press without.
+    fn restore(&mut self, ui: &mut egui::Ui) {
+        let palette = self.palette;
+        let from = self.view.label();
+        let Screen::Restore(backups) = &self.screen else { return };
+        // What stops the press, if anything does. Restoring replaces the archive
+        // Bitwig is running out of, so it is held by a running Bitwig for the
+        // same reason preparation is - and the design says so in the line at the
+        // foot. Drawn as the design's own disabled primary rather than as a
+        // surface of its own.
+        let blocked = match &self.session {
+            Session::Found(found) => match &found.running {
+                RunState::Running(processes) => {
+                    Some(format!("Quit Bitwig Studio first. Running: {}.", processes.join(", ")))
+                }
+                _ => None,
+            },
+            _ => Some("There is no installation to restore into.".to_owned()),
+        };
+
+        let mut pressed = Restoring::Nothing;
+        egui::Panel::top("screen")
+            .exact_size(metric::SCREEN_HEADER)
+            .frame(widget::screen(palette))
+            .show(ui, |ui| {
+                let back = widget::screen_header(
+                    ui,
+                    palette,
+                    from,
+                    icon::RESTORE,
+                    "Restore backup",
+                    |ui| {
+                        // Padded one pixel tighter each side than the bundle's
+                        // nine, which is `Emphasis::Quiet`'s eight. The design
+                        // states nine only where the label is long, and a third
+                        // variant for two pixels would be a distinction nobody
+                        // can see.
+                        if widget::group_control(
+                            ui,
+                            palette,
+                            icon::BACKUPS,
+                            OPEN_BACKUPS,
+                            Emphasis::Quiet,
+                        )
+                        .clicked()
+                        {
+                            pressed = Restoring::Reveal;
+                        }
+                    },
+                );
+                if back.clicked() {
+                    pressed = Restoring::Back;
+                }
+            });
+
+        egui::Panel::bottom("foot")
+            .exact_size(metric::SCREEN_FOOT)
+            .frame(widget::bar(palette))
+            .show(ui, |ui| {
+                ui.horizontal_centered(|ui| {
+                    ui.spacing_mut().item_spacing.x = metric::ALONG_A_SCREEN_FOOT;
+                    // From the right, so the sentence takes what the pair of
+                    // controls leaves rather than pushing them off the window.
+                    ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                        let reason = blocked.clone().unwrap_or_default();
+                        if widget::screen_primary(
+                            ui,
+                            palette,
+                            icon::RESTORE,
+                            "Restore this backup",
+                            blocked.is_none() && backups.chosen_day().is_some(),
+                            &reason,
+                        )
+                        .clicked()
+                        {
+                            pressed = Restoring::Restore;
+                        }
+                        if widget::cancel_button(ui, palette, "Cancel").clicked() {
+                            pressed = Restoring::Back;
+                        }
+                        ui.with_layout(Layout::left_to_right(Align::Center), |ui| {
+                            ui.add(
+                                egui::Label::new(
+                                    font::run(foot_note(backups), font::plain(font::CHIP))
+                                        .color(palette.ink_3),
+                                )
+                                .truncate(),
+                            );
+                        });
+                    });
+                });
+            });
+
+        egui::CentralPanel::default().frame(widget::screen(palette)).show(ui, |ui| {
+            if backups.taken().is_empty() {
+                widget::empty_state(ui, palette, &NOTHING_TO_RESTORE);
+                return;
+            }
+            widget::restore_body(
+                ui,
+                |ui| {
+                    widget::notice(
+                        ui,
+                        palette,
+                        &widget::Notice {
+                            tone: Tone::Warn,
+                            glyph: icon::WARNING,
+                            headline: Some(RESTORE_COSTS),
+                            body: RESTORE_KEEPS,
+                            leading: font::Leading::Noticing,
+                        },
+                    );
+                },
+                |ui| {
+                    widget::label_above(
+                        ui,
+                        palette,
+                        "Available backups",
+                        metric::UNDER_A_GROUP_HEADING,
+                    );
+                    widget::backup_list(ui, palette, |ui| {
+                        let of = backups.taken().len();
+                        for (at, taken) in backups.taken().iter().enumerate() {
+                            let row = widget::Taken {
+                                when: &taken.when,
+                                what: &taken.what,
+                                size: &taken.size,
+                                latest: at == 0,
+                                chosen: backups.is_chosen(at),
+                                at,
+                                of,
+                            };
+                            if widget::backup_row(ui, palette, &row).clicked() {
+                                pressed = Restoring::Choose(at);
+                            }
+                        }
+                    });
+                },
+            );
+        });
+
+        self.restoring(pressed, ui.ctx());
+    }
+
+    /// Do whatever the Restore screen was pressed for.
+    fn restoring(&mut self, pressed: Restoring, ctx: &egui::Context) {
+        match pressed {
+            Restoring::Nothing => {}
+            Restoring::Back => self.screen = Screen::Browsing,
+            Restoring::Reveal => {
+                if let Session::Found(found) = &self.session {
+                    reveal(&found.to.home.backups());
+                }
+            }
+            Restoring::Choose(at) => {
+                if let Screen::Restore(backups) = &mut self.screen {
+                    backups.choose(at);
+                }
+            }
+            Restoring::Restore => self.put_back(ctx),
+        }
+    }
+
+    /// Put the chosen copy back over the installation.
+    ///
+    /// **On this thread, and that is a decision rather than an oversight.** What
+    /// it does is copy four files - an archive of about 35 MB and three
+    /// description bundles - where a preparation rewrites the archive and then
+    /// verifies it under Bitwig's own JVM, which is the seconds [`work`] exists
+    /// for. A worker here would buy a frame and cost a second progress
+    /// protocol, and the design draws no progress for it.
+    ///
+    /// Afterwards the machine has changed under every answer this window holds:
+    /// the archive is Bitwig's own again, so the guard is armed and the helper
+    /// is gone, and the entry list is untouched - which is exactly the
+    /// `Needs re-apply` state. So it goes back to the list, which is where that
+    /// is said.
+    fn put_back(&mut self, ctx: &egui::Context) {
+        let Screen::Restore(backups) = &self.screen else { return };
+        let Session::Found(found) = &self.session else { return };
+        let outcome = backups.restore(&found.to.install);
+        self.screen = Screen::Browsing;
+        match outcome {
+            // Nothing was pointed at, so nothing happened. Unreachable from the
+            // window - the press is disabled with no copy chosen - and said
+            // rather than panicked on, because the alternative to saying it is
+            // a window that swallowed a press.
+            None => return,
+            Some(Ok(())) => self.outcome = Some(Outcome::Restored),
+            Some(Err(why)) => {
+                self.outcome = Some(Outcome::NotRestored { why: why.to_string() });
+            }
+        }
+        self.reread();
+        ctx.request_repaint();
+    }
+
+    /// The About screen: which build of this application is running, and what it
+    /// made of the installation it found.
+    fn about(&mut self, ui: &mut egui::Ui) {
+        let palette = self.palette;
+        let from = self.view.label();
+        let Screen::About(about) = &self.screen else { return };
+
+        let mut asked = Asked::Nothing;
+        egui::Panel::top("screen")
+            .exact_size(metric::SCREEN_HEADER)
+            .frame(widget::screen(palette))
+            .show(ui, |ui| {
+                if widget::screen_header(ui, palette, from, icon::ABOUT, "About", |_| {}).clicked()
+                {
+                    asked = Asked::Back;
+                }
+            });
+
+        egui::CentralPanel::default().frame(widget::screen(palette)).show(ui, |ui| {
+            widget::screen_body(ui, Measure::Prose, |ui| {
+                widget::identity(ui, palette, PRODUCT_NAME, &about.identity);
+
+                ui.add_space(metric::BETWEEN_ABOUT_BLOCKS);
+                ui.label(
+                    font::wrapping(WHAT_THIS_IS, font::FIELD_VALUE, font::Leading::Introducing)
+                        .color(palette.ink_2),
+                );
+
+                ui.add_space(metric::BETWEEN_ABOUT_BLOCKS);
+                widget::label_above(
+                    ui,
+                    palette,
+                    "Detected installation",
+                    metric::UNDER_A_GROUP_HEADING,
+                );
+                widget::group_frame(palette, Padding::Rows).show(ui, |ui| {
+                    ui.set_width(ui.available_width());
+                    ui.spacing_mut().item_spacing.y = metric::BETWEEN_ABOUT_FACTS;
+                    widget::fact_row(ui, palette, "Version", &Fact::Read(&about.version));
+                    widget::fact_row(ui, palette, "Build", &Fact::Read(&about.build));
+                    widget::fact_row(
+                        ui,
+                        palette,
+                        "Resolution",
+                        &Fact::Resolution(about.resolved),
+                    );
+                });
+
+                ui.add_space(metric::BETWEEN_ABOUT_BLOCKS);
+                widget::notice(
+                    ui,
+                    palette,
+                    &widget::Notice {
+                        tone: Tone::Neutral,
+                        glyph: icon::LICENCE,
+                        headline: None,
+                        body: NOT_AFFILIATED,
+                        leading: font::Leading::Describing,
+                    },
+                );
+
+                ui.add_space(metric::BETWEEN_ABOUT_BLOCKS);
+                ui.horizontal(|ui| {
+                    ui.spacing_mut().item_spacing.x = metric::BETWEEN_SCREEN_BUTTONS;
+                    // `Licences` is drawn beside this one in the bundle and is
+                    // not drawn here: nothing in this build carries the text it
+                    // would show. Recorded in `design-review.md` round 3 rather
+                    // than left as a gap.
+                    if widget::screen_button(ui, palette, icon::COPY_REPORT, "Copy diagnostics")
+                        .clicked()
+                    {
+                        asked = Asked::CopyReport;
+                    }
+                });
+            });
+        });
+
+        match asked {
+            Asked::Nothing => {}
+            Asked::Back => self.screen = Screen::Browsing,
+            Asked::CopyReport => {
+                if let Screen::About(about) = &self.screen {
+                    ui.ctx().copy_text(about.report.clone());
+                }
+            }
         }
     }
 
     /// Read the machine again, because where to look has changed.
     fn reread(&mut self) {
         self.session = Session::read(self.preferences.chosen());
-        self.settle_diagnostics();
+        self.settle_screen();
     }
 
-    /// Answer Settings' questions about the machine again.
+    /// Answer the open screen's questions about the machine again.
     ///
     /// Called where this application has changed one of the answers - a path, a
-    /// placement, a run that reported - and nowhere else. The screen holds what
-    /// was resolved rather than asking per frame, so something has to say when it
-    /// has gone stale, and the honest list of those somethings is short. The same
-    /// trade [`Inspection::placement`] makes, written down there.
-    fn settle_diagnostics(&mut self) {
-        if matches!(self.screen, Screen::Settings(_)) {
-            self.screen = Screen::Settings(Diagnostics::of(&self.session));
-        }
+    /// placement, a run that reported, a copy put back - and nowhere else. A
+    /// screen holds what was resolved rather than asking per frame, so something
+    /// has to say when it has gone stale, and the honest list of those somethings
+    /// is short. The same trade [`Inspection::placement`] makes, written down
+    /// there.
+    fn settle_screen(&mut self) {
+        self.screen = match &self.screen {
+            Screen::Browsing => return,
+            Screen::Settings(_) => Screen::Settings(Diagnostics::of(&self.session)),
+            // Deliberately *not* carried over: the chosen row is an index into
+            // the list, and the list is what was just re-read. A restore is the
+            // only thing that re-reads while this screen is open, and it closes
+            // the screen.
+            Screen::Restore(_) => Screen::Restore(Backups::of(&self.session)),
+            Screen::About(_) => Screen::About(About::of(&self.session)),
+        };
     }
 
     /// The inspector, if a row has been opened.
@@ -876,7 +1265,7 @@ impl App {
     fn said(&mut self, ui: &mut egui::Ui) {
         /// Which of the two a banner is about, since what answering it means
         /// depends on that and not on which control was pressed.
-        enum About {
+        enum Regarding {
             /// Something that has happened and will not un-happen.
             Outcome,
             /// Something that is true of the machine and may stop being.
@@ -886,10 +1275,10 @@ impl App {
         let (about, banner) = match (&self.outcome, self.blocking()) {
             (Some(outcome), _) => {
                 let (tone, title, body, action) = outcome.banner();
-                (About::Outcome, (tone, title, body, action, true))
+                (Regarding::Outcome, (tone, title, body, action, true))
             }
             (None, Some(blocked)) => (
-                About::Condition,
+                Regarding::Condition,
                 (blocked.tone, blocked.title.to_owned(), blocked.body, blocked.action, false),
             ),
             (None, None) => return,
@@ -909,18 +1298,18 @@ impl App {
         }
 
         match about {
-            About::Outcome => match answered {
-                // The worker's own words, for a bug report.
+            Regarding::Outcome => match answered {
+                // The words of whatever failed, for a bug report.
                 widget::Answered::Action => {
-                    if let Some(Outcome::Failed { why, .. }) = &self.outcome {
-                        ui.ctx().copy_text(why.clone());
+                    if let Some(details) = self.outcome.as_ref().and_then(Outcome::details) {
+                        ui.ctx().copy_text(details.to_owned());
                     }
                 }
                 _ => self.outcome = None,
             },
             // The condition is about the machine, not about this window, so the
             // only honest way to answer "has it changed" is to look again.
-            About::Condition => self.reread(),
+            Regarding::Condition => self.reread(),
         }
     }
 }
@@ -1012,7 +1401,7 @@ impl App {
         // may still have moved the document, and may still have written the
         // backup that Settings is standing there saying does not exist.
         self.settle_placement();
-        self.settle_diagnostics();
+        self.settle_screen();
     }
 
     /// Resolve the open panel's placement again.
@@ -1218,9 +1607,33 @@ enum Outcome {
         /// the screen.
         why: String,
     },
+    /// A pristine copy was put back over the installation.
+    ///
+    /// Its own pair rather than a fourth [`Errand`]: a restore is not something
+    /// the worker runs, and widening the enum that says what a *run* is for
+    /// would put a variant in it that no run can ever be. What is promised here
+    /// is also different in kind - a preparation's transaction promises that
+    /// nothing reached the installation, and this one promises that something
+    /// did.
+    Restored,
+    NotRestored {
+        why: String,
+    },
 }
 
 impl Outcome {
+    /// The words of whatever went wrong, where something did.
+    ///
+    /// What the banner's one control copies. Answered here rather than matched
+    /// at the call site so that a fourth thing that can fail cannot be added
+    /// with a control that copies nothing.
+    fn details(&self) -> Option<&str> {
+        match self {
+            Outcome::Failed { why, .. } | Outcome::NotRestored { why } => Some(why),
+            Outcome::Prepared { .. } | Outcome::Registered { .. } | Outcome::Restored => None,
+        }
+    }
+
     /// The two lines it is stated in, and what can be done about it.
     fn banner(&self) -> (Tone, String, String, Option<&'static str>) {
         match self {
@@ -1273,6 +1686,26 @@ impl Outcome {
                     .to_owned(),
                 Some("Copy details"),
             ),
+            // Not `Ok`: nothing is wrong, and what the user has now is an
+            // installation that no longer recalls anything they registered.
+            // The design's warm tone is what says that.
+            Outcome::Restored => (
+                Tone::Warn,
+                "This installation is back the way Bitwig shipped it.".to_owned(),
+                "Nothing it was carrying is registered any more. Your documents and this \
+                 application's own record are untouched, so applying again puts them back."
+                    .to_owned(),
+                None,
+            ),
+            Outcome::NotRestored { .. } => (
+                Tone::Err,
+                "The backup was not put back.".to_owned(),
+                "The archive is replaced by a rename after the copy is complete, so the \
+                 installation is running either the archive it had or the one from the \
+                 backup - never a half-written one."
+                    .to_owned(),
+                Some("Copy details"),
+            ),
         }
     }
 }
@@ -1300,7 +1733,7 @@ impl App {
         // Taken out of the menu and acted on after the bar, because opening a
         // screen replaces the bar the menu is hanging off - and because the menu's
         // closure is being run inside a borrow of everything else here.
-        let mut opening = false;
+        let mut opening = Chose::Nothing;
         ui.horizontal_centered(|ui| {
             for (view, label) in [(View::Local, "Local"), (View::Catalog, "Catalog")] {
                 if widget::view_tab(ui, palette, label, self.view == view).clicked() {
@@ -1314,22 +1747,21 @@ impl App {
             // way to them rather than pushing them off the edge of the window.
             ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                 widget::overflow(ui, palette, |ui| {
-                    if widget::menu_item(ui, palette, widget::icon::SETTINGS, "Settings").clicked()
-                    {
-                        opening = true;
+                    if widget::menu_item(ui, palette, icon::SETTINGS, "Settings").clicked() {
+                        opening = Chose::Settings;
                     }
-                    // Still nowhere for these to land: the Restore and About
-                    // screens are drawn by the bundle and by nothing here.
-                    let items = [
-                        (widget::icon::RESTORE, "Restore backup..."),
-                        (widget::icon::CHANGE_INSTALL, "Open backups folder"),
-                    ];
-                    for (icon, label) in items {
-                        let _ = widget::menu_item(ui, palette, icon, label);
+                    if widget::menu_item(ui, palette, icon::RESTORE, "Restore backup...").clicked()
+                    {
+                        opening = Chose::Restore;
+                    }
+                    if widget::menu_item(ui, palette, icon::BACKUPS, OPEN_BACKUPS).clicked() {
+                        opening = Chose::RevealBackups;
                     }
                     widget::menu_rule(ui, palette);
-                    let _ =
-                        widget::menu_item(ui, palette, widget::icon::ABOUT, "About ORNG Registry");
+                    if widget::menu_item(ui, palette, icon::ABOUT, "About ORNG Registry").clicked()
+                    {
+                        opening = Chose::About;
+                    }
                 });
                 // The install bar's own gap, which is the wide one: it is a bar
                 // of separate things rather than a toolbar of related ones.
@@ -1351,9 +1783,7 @@ impl App {
                 });
             });
         });
-        if opening {
-            self.screen = Screen::Settings(Diagnostics::of(&self.session));
-        }
+        self.chose(opening, ui);
     }
 
     /// Let the user choose documents, which drag and drop must never be the
@@ -1582,6 +2012,7 @@ impl App {
                 let empty = widget::Empty {
                     icon: widget::icon::NO_INSTALL,
                     inviting: false,
+                    marks: true,
                     title: "No Bitwig Studio installation found",
                     body: &body,
                     extensions: false,
@@ -1606,6 +2037,7 @@ impl App {
                 let empty = widget::Empty {
                     icon: widget::icon::UNREADABLE,
                     inviting: false,
+                    marks: true,
                     title: "This Bitwig installation could not be read",
                     body: "ORNG Registry finds what it needs by structure rather than by \
                            version number, and this installation is arranged in a way it does \
@@ -1677,6 +2109,7 @@ impl App {
             let empty = widget::Empty {
                 icon: widget::icon::DROP,
                 inviting: true,
+                marks: true,
                 title: "Drop a device here to register it",
                 body: "ORNG Registry reads the document's identity and makes this installation \
                        recognise it. Bitwig Studio must be closed the first time, while the \
@@ -1704,6 +2137,7 @@ impl App {
             let empty = widget::Empty {
                 icon: widget::icon::NO_MATCH,
                 inviting: false,
+                marks: false,
                 title: "No entries match",
                 body: "Nothing here matches the current search and kind filters.",
                 extensions: false,
@@ -2067,6 +2501,77 @@ const DELETES_THE_FILE: &str =
 const KEEPS_THE_FILE: &str =
     "Off, removing an entry unregisters it and leaves your document in the library.";
 
+/// Show the backups directory in the system's own file manager. Offered from the
+/// overflow and from the Restore screen's header, and named once for the reason
+/// [`BROWSE`] is.
+const OPEN_BACKUPS: &str = "Open backups folder";
+
+/// What restoring costs, and what it does not, in the design's own words.
+///
+/// Two lines because one would not do: the first is the whole of the loss and
+/// the second is the whole of the reassurance, and a user deciding needs both
+/// before they press.
+const RESTORE_COSTS: &str = "Restoring removes every registration from this installation.";
+const RESTORE_KEEPS: &str =
+    "Projects that use custom devices will not recall them afterwards. Your documents and ORNG \
+     Registry's own record are kept, so the installation can be prepared again.";
+
+/// The Restore screen with nothing on it, which is every machine before its
+/// first preparation.
+///
+/// No corner marks: those say "this region is where something would be", and
+/// this region is inside a screen that already has a header and a bar at the
+/// foot saying the same thing. No action either - what would fill this screen is
+/// a preparation, which is two screens away, and an offer that led there would
+/// be offering to change the installation from the screen for putting it back.
+const NOTHING_TO_RESTORE: widget::Empty<'static> = widget::Empty {
+    icon: icon::NO_BACKUP,
+    inviting: false,
+    marks: false,
+    title: "Nothing to restore yet",
+    body: "A backup is written just before the installation is prepared, and this installation \
+           has not been prepared. There is nothing here until then.",
+    extensions: false,
+    aside: None,
+    action: None,
+    action_is_primary: false,
+    alt: None,
+    foot: Some(
+        "Backups hold the jar and the three description bundles - about 35 MB, not the whole \
+         installation.",
+    ),
+    minor: false,
+};
+
+/// What this application calls itself. The design writes it in full on the About
+/// screen, where `CARGO_PKG_NAME` is the binary beside it.
+const PRODUCT_NAME: &str = "ORNG Registry";
+
+/// What it does, in one paragraph, for somebody who has just been handed it.
+const WHAT_THIS_IS: &str =
+    "Registers custom devices, modulators and Grid modules with a Bitwig Studio installation, so \
+     projects recall them reliably. It finds what it needs by structure rather than by version, \
+     so an unseen Bitwig release either works or fails loudly.";
+
+/// Whose trademark this is, and whose installation is being modified.
+const NOT_AFFILIATED: &str =
+    "Not affiliated with or endorsed by Bitwig GmbH. Bitwig Studio is a trademark of Bitwig \
+     GmbH. This tool modifies a local installation at your own discretion, and writes a backup \
+     before it does.";
+
+/// The line at the foot of the Restore screen, which names the copy the press
+/// would put back.
+///
+/// The design's own sentence and its own split: the day out of the moment, so
+/// the foot says which backup without repeating the time that is already on the
+/// row above it.
+fn foot_note(backups: &Backups) -> String {
+    match backups.chosen_day() {
+        Some(day) => format!("Restores {day} wholesale. Bitwig Studio must be closed."),
+        None => "No backup exists for this installation.".to_owned(),
+    }
+}
+
 /// The glyph on each segment of the appearance switch.
 ///
 /// Here rather than on [`Appearance`] itself: the design's choice of a desktop, a
@@ -2336,6 +2841,7 @@ fn published(
             let empty = widget::Empty {
                 icon: icon::CATALOG,
                 inviting: false,
+                marks: true,
                 title: "Fetching the catalog",
                 body: "Checking its signature before anything in it is believed.",
                 extensions: false,
@@ -2352,6 +2858,7 @@ fn published(
             let empty = widget::Empty {
                 icon: icon::UNREADABLE,
                 inviting: false,
+                marks: true,
                 title: "The catalog could not be read",
                 body: "Nothing is installed from an index that does not verify. The catalog \
                        is one small file over HTTPS, signed by the key this application was \
@@ -2370,6 +2877,7 @@ fn published(
             let empty = widget::Empty {
                 icon: icon::CATALOG,
                 inviting: false,
+                marks: true,
                 title: "The catalog is empty",
                 body: "Nothing is published yet.",
                 extensions: false,

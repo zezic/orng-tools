@@ -19,20 +19,84 @@
 use std::path::{Path, PathBuf};
 use std::time::SystemTime;
 
-use bitwig_document::Kind;
+use bitwig_document::{BitwigVersion, Kind};
 
 use crate::{BuildId, Error, Installation, OrngHome, Result, fs};
+
+/// Which build a backup was taken from, as the backup's own directory name
+/// spells it.
+///
+/// **Not a [`BuildId`].** The name carries eight characters of a forty-character
+/// revision, so a `BuildId` read back out of one would state a revision it does
+/// not have - and a caller comparing that against an installation's would find
+/// two builds that are the same one. This names exactly what the directory
+/// records and no more.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TakenFrom {
+    pub version: BitwigVersion,
+    /// The first eight characters of the revision, which is what the name holds
+    /// and what the interface draws.
+    pub short_revision: String,
+}
+
+impl TakenFrom {
+    fn of(build: &BuildId) -> TakenFrom {
+        TakenFrom {
+            version: build.version.clone(),
+            short_revision: build.short_revision().to_owned(),
+        }
+    }
+
+    /// The directory this build's backup lives under.
+    ///
+    /// The inverse of [`TakenFrom::named`], and asserted to be: the name is the
+    /// only record of which build a listed backup came from, so a pair that
+    /// stopped agreeing would make every backup on disk anonymous.
+    fn name(&self) -> String {
+        format!("{}-{}", self.version, self.short_revision)
+    }
+
+    /// Read one back out of a directory name, or answer that this directory is
+    /// not one this application wrote.
+    fn named(name: &str) -> Option<TakenFrom> {
+        // The revision is the last component, so the split is from the right.
+        let (version, revision) = name.rsplit_once('-')?;
+        let short = revision.len() == SHORT_REVISION
+            && revision.chars().all(|c| c.is_ascii_hexdigit());
+        short
+            .then(|| BitwigVersion::parse(version))
+            .flatten()
+            .map(|version| TakenFrom { version, short_revision: revision.to_owned() })
+    }
+}
+
+/// How much of a revision a backup's name carries, which is [`BuildId`]'s own
+/// short form.
+const SHORT_REVISION: usize = 8;
+
+impl std::fmt::Display for TakenFrom {
+    /// As [`BuildId`] writes one, so that a backup and an installation are
+    /// named the same way wherever the two appear together.
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{} ({})", self.version, self.short_revision)
+    }
+}
 
 /// A pristine copy of one build, on disk.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Backup {
     dir: PathBuf,
+    /// Which build this is the copy of. Not a second record of what the
+    /// directory name already says - it *is* that name, read - and held here so
+    /// that a backup which exists cannot fail to say what it is of.
+    from: TakenFrom,
 }
 
 impl Backup {
     /// Where the backup of `build` belongs, present or not.
     pub fn location(home: &OrngHome, build: &BuildId) -> Self {
-        Backup { dir: home.backups().join(directory_name(build)) }
+        let from = TakenFrom::of(build);
+        Backup { dir: home.backups().join(from.name()), from }
     }
 
     /// Every backup that has been taken, most recent first.
@@ -42,9 +106,15 @@ impl Backup {
     pub fn list(home: &OrngHome) -> Result<Vec<Backup>> {
         let mut found: Vec<(SystemTime, Backup)> = fs::entries(&home.backups())?
             .into_iter()
-            .map(|dir| Backup { dir })
-            // A directory with no archive in it is not a backup: an interrupted
-            // copy, or something the user left here.
+            // A directory not named for a build is not one of ours. Refused
+            // here rather than carried as an unanswerable question, because
+            // every reader of this list states the build beside the date.
+            .filter_map(|dir| {
+                let from = TakenFrom::named(dir.file_name()?.to_str()?)?;
+                Some(Backup { dir, from })
+            })
+            // A directory with no archive in it is not a backup either: an
+            // interrupted copy, or something the user left here.
             .filter_map(|backup| Some((backup.taken_at().ok()?, backup)))
             .collect();
         found.sort_by(|(a, _), (b, _)| b.cmp(a));
@@ -53,6 +123,11 @@ impl Backup {
 
     pub fn directory(&self) -> &Path {
         &self.dir
+    }
+
+    /// Which build this is the pristine copy of.
+    pub fn taken_from(&self) -> &TakenFrom {
+        &self.from
     }
 
     /// The unmodified `bitwig.jar`.
@@ -121,12 +196,6 @@ impl Backup {
     }
 }
 
-/// Named for the build, so that an installation is matched with its own
-/// original and never with the one before the last Bitwig update.
-fn directory_name(build: &BuildId) -> String {
-    format!("{}-{}", build.version, build.short_revision())
-}
-
 /// The description bundles, paired with the name they are kept under. Flattened
 /// because the backup is one directory and the bundles have distinct names.
 fn bundles(install: &Installation) -> impl Iterator<Item = (PathBuf, &'static str)> {
@@ -183,5 +252,40 @@ mod tests {
     fn listing_a_home_that_has_never_been_used_is_empty_not_an_error() {
         let home = OrngHome::at(Path::new("/nonexistent/orng"));
         assert!(Backup::list(&home).unwrap().is_empty());
+    }
+
+    /// The name is the only record of which build a listed backup came from, so
+    /// writing one and reading it back has to be one operation and its inverse.
+    /// Asserted over versions of one, two and three components, because the
+    /// parse splits on a separator the version could have contained.
+    #[test]
+    fn a_backup_says_which_build_it_came_from_by_being_named_for_it() {
+        for version in ["6.1", "6.0.11", "10.0"] {
+            let build = build(version, "ab");
+            let from = TakenFrom::of(&build);
+            assert_eq!(TakenFrom::named(&from.name()), Some(from.clone()), "{version}");
+            assert_eq!(from.to_string(), format!("{version} (abababab)"));
+        }
+    }
+
+    /// And a directory nobody here wrote is not a backup with an unanswerable
+    /// build - it is not a backup. Every reader of the list states the build
+    /// beside the date, so there is nothing for such a row to say.
+    #[test]
+    fn a_directory_not_named_for_a_build_is_not_a_backup() {
+        for name in [
+            // No version.
+            "abababab",
+            // No revision.
+            "6.1",
+            // A revision that is not one.
+            "6.1-zzzzzzzz",
+            // Too short to tell two builds apart.
+            "6.1-abab",
+            // Something the user left in the backups directory.
+            "Screenshot 2026-09-14",
+        ] {
+            assert_eq!(TakenFrom::named(name), None, "{name}");
+        }
     }
 }

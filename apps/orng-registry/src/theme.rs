@@ -431,6 +431,12 @@ pub mod metric {
     /// leaves the settings where they are rather than stretching a path field
     /// across it.
     pub const SCREEN_COLUMN: f32 = 620.0;
+    /// About's column, and the air over it. The design gives it a narrower
+    /// measure and more room above than Settings, because what is in it is prose
+    /// to read rather than rows to work down - see
+    /// [`Measure`](crate::widget::Measure).
+    pub const ABOUT_COLUMN: f32 = 560.0;
+    pub const ABOUT_PAD_TOP: f32 = 20.0;
     /// Between two groups of settings. A third value for `rule`, beside the
     /// inspector's 14 and the catalog detail's 13.
     pub const BETWEEN_SETTINGS_GROUPS: f32 = 15.0;
@@ -473,11 +479,13 @@ pub mod metric {
     /// what the content comes to rather than a number.
     pub const CHOICE_PAD_X: f32 = 9.0;
     pub const CHOICE_PAD_Y: f32 = 8.0;
-    /// From the mark to the words. The mark is nudged one down, so that a
-    /// 16-pixel glyph sits on the line of the 11.5 text beside it rather than
-    /// above it.
+    /// From the mark to the words.
     pub const ALONG_A_CHOICE: f32 = 8.0;
-    pub const CHOICE_MARK_DROP: f32 = 1.0;
+    /// How far a 16-pixel glyph is nudged down to sit on the line of the smaller
+    /// text beside it rather than above it. The design's own `margin-top:1px`,
+    /// written on a choice's radio, a checkbox's mark and both screens' notice
+    /// icons - one statement, so one number.
+    pub const MARK_DROP: f32 = 1.0;
     /// Between a choice's line and the sentence explaining it.
     pub const UNDER_A_CHOICE: f32 = 2.0;
     /// The row a checkbox makes, which is a choice without the list around it:
@@ -510,6 +518,87 @@ pub mod metric {
     /// shallower than a group and has no heading over it.
     pub const SCREEN_LINK: f32 = 34.0;
     pub const ALONG_A_SCREEN_LINK: f32 = 8.0;
+
+    /// A screen's own quiet control: `Copy diagnostics`, `Licences`. The same
+    /// box a bar draws, in the same height with the same gap, rounded by the
+    /// field's four rather than a control's three and set in the secondary ink.
+    /// See [`screen_button`](crate::widget::screen_button).
+    pub const SCREEN_BUTTON_PAD_X: f32 = 10.0;
+    /// Between two of them.
+    pub const BETWEEN_SCREEN_BUTTONS: f32 = 7.0;
+
+    /// A notice on a screen: an icon, and a block of words beside it, on a
+    /// rounded box of its own. Both screens draw one and the box is the same
+    /// box; what differs is the wash and whether there is a headline.
+    pub const SCREEN_NOTICE_PAD_X: f32 = 12.0;
+    pub const SCREEN_NOTICE_PAD_Y: f32 = 10.0;
+    /// From the notice's icon to its words.
+    pub const ALONG_A_SCREEN_NOTICE: f32 = 9.0;
+    /// Between a notice's headline and the sentence under it. Tighter than a
+    /// banner's four: this pair is one statement and a banner's is two.
+    pub const UNDER_A_NOTICE_HEADLINE: f32 = 3.0;
+
+    /// Above the `Available backups` heading, and below the list under it. The
+    /// air around the list is the design's own pair and neither is
+    /// [`SCREEN_PAD_TOP`]: a screen whose body is a list rather than a column of
+    /// groups sits closer to the notice above it.
+    pub const ABOVE_A_BACKUP_LIST: f32 = 13.0;
+    pub const UNDER_A_BACKUP_LIST: f32 = 16.0;
+    /// One backup: a radio mark, the day and time it was taken, what it holds,
+    /// and how big it is. Taller than an entry row, because it carries two
+    /// lines.
+    pub const BACKUP_ROW: f32 = 50.0;
+    pub const BACKUP_ROW_PAD_X: f32 = 12.0;
+    pub const BACKUP_ROW_PAD_Y: f32 = 10.0;
+    /// Between a backup row's cells, and between two rows - which touch, for the
+    /// reason two choices do: each is a band of colour and two bands need only a
+    /// seam.
+    pub const ALONG_A_BACKUP_ROW: f32 = 10.0;
+    pub const BETWEEN_BACKUPS: f32 = 1.0;
+    /// Between the day a backup was taken and the mark saying it is the newest.
+    pub const BESIDE_A_BACKUP_DATE: f32 = 7.0;
+    /// Between that line and the one under it saying what the copy holds.
+    pub const UNDER_A_BACKUP_DATE: f32 = 2.0;
+    /// The `Latest` mark itself, which is a chip and not a badge: the accent
+    /// wash, the accent text, and barely any air.
+    pub const LATEST_PAD_X: f32 = 5.0;
+    pub const LATEST_PAD_Y: f32 = 1.0;
+
+    /// The bar at the foot of the Restore screen: what the choice means, the way
+    /// out, and the one press that does it. Four pixels shallower than the
+    /// action bar, because it carries no summary column.
+    pub const SCREEN_FOOT: f32 = 48.0;
+    pub const ALONG_A_SCREEN_FOOT: f32 = 10.0;
+    /// The way out, beside the primary. Shorter than the primary by two, which
+    /// is the design saying which of the pair is the point.
+    pub const CANCEL: f32 = 29.0;
+    pub const CANCEL_PAD_X: f32 = 12.0;
+    /// A screen's primary action. One shorter than the action bar's 32 and
+    /// padded four wider, and outlined rather than filled where what it does
+    /// cannot be undone.
+    pub const SCREEN_PRIMARY: f32 = 31.0;
+    pub const SCREEN_PRIMARY_PAD_X: f32 = 14.0;
+    /// From its icon to its words. The icon leads here, where the action bar's
+    /// follows: an arrow says only that something will happen, and this one
+    /// names what.
+    pub const ALONG_A_SCREEN_PRIMARY: f32 = 7.0;
+
+    /// The block About opens with: a rounded accent tile with the application's
+    /// mark in it, and its name and build beside it.
+    pub const PRODUCT_MARK: f32 = 52.0;
+    pub const PRODUCT_MARK_RADIUS: u8 = 11;
+    pub const ALONG_AN_IDENTITY: f32 = 13.0;
+    pub const UNDER_A_PRODUCT_NAME: f32 = 3.0;
+    /// Between About's blocks. One value for all four gaps, which is the one
+    /// place a screen in this design does repeat a number.
+    pub const BETWEEN_ABOUT_BLOCKS: f32 = 18.0;
+    /// A fact row on the About screen: a fixed label column so the three values
+    /// start at one x, and the design's gap after it.
+    pub const FACT_LABEL_COLUMN: f32 = 96.0;
+    pub const ALONG_A_FACT_ROW: f32 = 10.0;
+    /// Between two of them. Tighter than a group's nine, because these are lines
+    /// to read down rather than rows to act on.
+    pub const BETWEEN_ABOUT_FACTS: f32 = 6.0;
 
     /// The mark beside a banner's headline.
     pub const DOT: f32 = 6.0;
@@ -561,6 +650,16 @@ pub mod font {
     pub const MONO: f32 = 10.5;
     /// A count or a build revision, which sit beside text rather than in it.
     pub const MONO_TIGHT: f32 = 10.0;
+    /// What About states about this machine: the line under the application's
+    /// name and the values in its fact rows. The design sets these a half point
+    /// larger than a path, because they are the whole of what that screen says
+    /// rather than a value beside a label.
+    pub const MONO_FACT: f32 = 11.0;
+    /// The application's own name, which it writes once and larger than anything
+    /// else in the window.
+    pub const PRODUCT: f32 = 19.0;
+    /// Its mark, inside the tile beside that name.
+    pub const PRODUCT_ICON: f32 = 28.0;
     /// An empty state's headline.
     pub const HEADING: f32 = 16.5;
     /// The headline of a dialog, which is a smaller surface than a screen.
@@ -626,11 +725,19 @@ pub mod font {
     pub enum Leading {
         /// A sentence explaining the line above it, inside a group.
         Explaining,
-        /// The sentence inside a notice - the catalog detail's superseded block.
+        /// The sentence inside a notice - the catalog detail's superseded block,
+        /// the Restore screen's warning.
         Noticing,
-        /// A paragraph of the author's own prose, which is the longest wrapping
-        /// run the window has and the one where the leading compounds most.
+        /// Prose set to be read rather than scanned: an author's own description
+        /// in the catalog detail, and About's line about whose trademark this
+        /// is. The longest wrapping runs the window has, and the ones where the
+        /// leading compounds most.
         Describing,
+        /// The paragraph directly under a headline, saying what the surface it
+        /// heads is for: an empty state's body, and About's opening line. The
+        /// loosest of the prose settings, because it is read first and read
+        /// once.
+        Introducing,
         /// The diagnostics block, looser still, so that a column of monospaced
         /// lines reads across as well as down.
         Reporting,
@@ -642,10 +749,12 @@ pub mod font {
             match self {
                 // `Inspector.dc.html`, `SettingsScreen.dc.html`.
                 Leading::Explaining => 1.45,
-                // `CatalogDetail.dc.html:33`.
+                // `CatalogDetail.dc.html:33`, `RestoreScreen.dc.html:40`.
                 Leading::Noticing => 1.5,
-                // `CatalogDetail.dc.html:46`.
+                // `CatalogDetail.dc.html:46`, `AboutScreen.dc.html:59`.
                 Leading::Describing => 1.55,
+                // `EmptyState.dc.html:34`, `AboutScreen.dc.html:46`.
+                Leading::Introducing => 1.6,
                 // `SettingsScreen.dc.html`, the report block.
                 Leading::Reporting => 1.65,
             }
@@ -675,7 +784,7 @@ pub mod font {
     /// tightly - which is why `run` below takes the font and nothing else.
     ///
     /// The design is not consistent about the proportional face and there is no
-    /// formula to find: it tracks 12 at -0.01em, 12.5 at -0.005, 13.5 at
+    /// formula to find: it tracks 12 at -0.01em, 12.5 at -0.005, 13.5 and 19 at
     /// -0.015, 14 and 16.5 at -0.02, and leaves 11, 11.5 and 13 alone entirely.
     /// So these are transcribed, and a size the design says nothing about is
     /// set with nothing rather than interpolated into.
@@ -695,7 +804,7 @@ pub mod font {
             -0.01
         } else if same(font.size, ROW_NAME) {
             -0.005
-        } else if same(font.size, INSTALL_TITLE) {
+        } else if same(font.size, INSTALL_TITLE) || same(font.size, PRODUCT) {
             -0.015
         } else if same(font.size, DIALOG_TITLE) || same(font.size, HEADING) {
             -0.02
@@ -978,15 +1087,22 @@ mod tests {
             11.5 * 1.55,
             "CatalogDetail.dc.html:46"
         );
+        assert_eq!(
+            Leading::Introducing.over(font::CONTROL),
+            11.5 * 1.6,
+            "EmptyState.dc.html:34"
+        );
         assert_eq!(Leading::Reporting.over(font::MONO_TIGHT), 10.0 * 1.65);
 
-        // The two the design deliberately sets apart. A description is the
-        // author's own prose and the design gives it more air than the sentence
-        // inside a notice, so collapsing the two onto one number would be a
-        // quiet loss rather than a visible one.
+        // The three the design deliberately sets apart, in the order it opens
+        // them out: the sentence inside a notice, an author's own prose, and the
+        // paragraph a surface introduces itself with. Collapsing any pair onto
+        // one number would be a quiet loss rather than a visible one.
         assert!(
-            Leading::Describing.over(font::CONTROL) > Leading::Noticing.over(font::CONTROL),
-            "a description is set looser than a notice"
+            Leading::Introducing.over(font::CONTROL) > Leading::Describing.over(font::CONTROL)
+                && Leading::Describing.over(font::CONTROL)
+                    > Leading::Noticing.over(font::CONTROL),
+            "the three prose settings are not in the order the design opens them out"
         );
     }
 }

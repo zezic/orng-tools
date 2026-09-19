@@ -737,6 +737,24 @@ believed. One line the bundle draws is missing - `factory`, the count of Bitwig'
 content - because reading it means parsing a class out of the archive and belongs on the
 worker the factory toggle needs.
 
+The Restore and About screens, which the overflow opens and which Settings also leads to.
+Both are full-window surfaces of the same shape as Settings, and Restore is the only one
+with a bar at its foot: it is the only screen that ends in a decision. It lists every
+pristine copy `~/.orng/backups` holds, newest first, each naming the build it was taken
+from, when it was taken and how big it is - and the build comes back out of the copy's own
+directory name, which is the only record of it there is, so a directory not named for a
+build is not offered as a backup at all. The press puts that copy back over the
+installation, which leaves the archive as Bitwig shipped it and the entry list untouched:
+the `Needs re-apply` state, said in the banner the window already has. It is refused while
+Bitwig is running, for the reason preparation is.
+
+**Neither screen's dates are drawn from the picture.** A backup's moment is turned into
+words where the disk is read, in this machine's zone, because an instant has no day until
+one is chosen - so the populated Restore screen has no snapshot and is checked through the
+accessibility tree instead. The About screen's identity line names the platform and the
+machine, so its snapshot is taken with that line supplied rather than read, for the same
+reason the render fixtures' paths are relative.
+
 Every measurement above was read out of the bundle rather than judged by eye, and the
 row grids, the toolbar's flexible field, the inspector's own chain of gaps and the
 Settings screen's column of groups are checked against its numbers in a test. `docs/interface-notes.md` has the method, including how to
@@ -769,10 +787,11 @@ Not built yet:
   out of the archive, which takes about a second, so it needs a worker of its own; a toggle
   that did nothing would be worse than no toggle.
 - The plan confirmation the Prepare install mode is supposed to show before it runs.
-- The About and Restore screens, and the update modal. The overflow lists the first two and
-  neither opens anything; Settings offers `Restore...` beside the backups path and a row
-  leading to About, and both are drawn inert for the same reason. Settings itself is built,
-  so the tamper guard, the backup date and the appearance switch are reachable now.
+- The update modal.
+- `Licences` on the About screen. The plural is the point: what it would open is the
+  licences of everything linked into the binary, and nothing generates or bundles them.
+  `Copy diagnostics` is drawn alone rather than beside a control that opens nothing - see
+  `design-review.md` round 3 item 3.
 - The design draws its small icons in Phosphor's `duotone`, which is two overlapping glyphs
   in two colours and has no single-colour font to be drawn from. Light is used throughout
   instead; whether that matters is a question for the designer.

@@ -205,6 +205,38 @@ pub fn small_button(ui: &mut Ui, palette: Palette, icon: &str, label: &str) -> R
         .on_hover_cursor(egui::CursorIcon::PointingHand)
 }
 
+/// A screen's own version of [`small_button`]: `Copy diagnostics`, `Licences`.
+///
+/// The same box the bar draws - 26 tall, padded ten, six from icon to word -
+/// and two things different, both of which a screen does to every control it
+/// carries: rounded by the field's four rather than a control's three, and set
+/// in the secondary ink rather than the primary. Measured off `AboutScreen`
+/// rendered at its own preview size, where the pair comes out 132 and 89 wide
+/// seven apart.
+///
+/// The same relationship [`group_control`] has to this one, one surface further
+/// out: a group's controls are the group's, and a screen's are the screen's.
+pub fn screen_button(ui: &mut Ui, palette: Palette, glyph: &str, label: &str) -> Response {
+    let button = egui::Button::new(with_icon(
+        ui,
+        glyph,
+        label,
+        font::CHIP,
+        palette.ink_2,
+        palette.ink_2,
+    ))
+    .stroke(Stroke::NONE)
+    .corner_radius(CornerRadius::same(metric::FIELD_RADIUS))
+    .min_size(vec2(0.0, metric::CONTROL));
+    ui.scope(|ui| {
+        // Across the box, so the height is `min_size` alone.
+        ui.spacing_mut().button_padding = vec2(metric::SCREEN_BUTTON_PAD_X, 0.0);
+        filled_button(ui, palette.btn, palette.btn_hover, button)
+            .on_hover_cursor(egui::CursorIcon::PointingHand)
+    })
+    .inner
+}
+
 /// The pair of controls an empty state offers, which are not a bar's.
 ///
 /// `small_button` is a bar control: `metric::CONTROL` (26) tall, in
@@ -605,6 +637,20 @@ pub mod icon {
     /// Take the diagnostics report away to put in a bug report. Not `COPY`,
     /// which copies one value: this one copies a page.
     pub const COPY_REPORT: &str = light::CLIPBOARD_TEXT;
+    /// A screen with no backups on it yet. Not [`DROP`]: nothing is being
+    /// invited here, there is simply nothing kept.
+    pub const NO_BACKUP: &str = light::ARCHIVE;
+    /// What restoring costs, beside the sentence saying it.
+    pub const WARNING: &str = light::WARNING;
+    /// This application's own mark, on the About screen. The same glyph as
+    /// [`CATALOG`] and a different idea - that one is what the catalog
+    /// publishes, this one is the thing drawing the window - so it is named
+    /// again rather than borrowed.
+    pub const PRODUCT: &str = light::PACKAGE;
+    /// Show the backups directory in the system's own file manager. A fourth
+    /// idea on the same folder glyph, and the only one that is neither a setting
+    /// nor a single file.
+    pub const BACKUPS: &str = light::FOLDER_OPEN;
     /// The three appearances, in the order the switch draws them.
     pub const FOLLOW_SYSTEM: &str = light::DESKTOP;
     pub const LIGHT: &str = light::SUN;
@@ -1838,13 +1884,19 @@ fn superseded(ui: &mut Ui, palette: Palette, replacement: &str) -> bool {
 /// `from` is the view the screen was opened out of, and it is on the control
 /// rather than beside it: the design labels the way back with where it goes.
 ///
-/// Answers whether that control was pressed.
+/// `trailing` is whatever the screen puts at the right end - the Restore
+/// screen's `Open backups folder`, and nothing on the other two. A slot rather
+/// than a fourth argument saying which control, because what goes there is the
+/// screen's business and its width is not known here.
+///
+/// Answers whether the way back was pressed.
 pub fn screen_header(
     ui: &mut Ui,
     palette: Palette,
     from: &str,
     glyph: &str,
     title: &str,
+    trailing: impl FnOnce(&mut Ui),
 ) -> Response {
     let (rect, _) = ui.allocate_exact_size(
         vec2(ui.available_width(), metric::SCREEN_HEADER),
@@ -1876,6 +1928,9 @@ pub fn screen_header(
     // designer rather than worked around, because keying tracking on the call
     // site would give every other run in the window a way to lose it.
     line.label(font::run(title, font::emphasis(line.ctx(), font::INSTALL_TITLE)).color(palette.ink));
+    // Laid out from the right in what the title left, so a long title gives way
+    // to the control rather than pushing it off the header.
+    line.with_layout(Layout::right_to_left(Align::Center), trailing);
     back
 }
 
@@ -1926,6 +1981,39 @@ fn upright_rule(ui: &mut Ui, palette: Palette) {
     ui.painter().rect_filled(rect, CornerRadius::ZERO, palette.line);
 }
 
+/// How wide a screen's column runs, and how much air the design puts over it.
+///
+/// Two, because the bundle states two and they are not the same: Settings runs
+/// 620 wide under 16, About 560 under 20. That is not a rounding - what is in
+/// them differs. A column of settings is rows to work down, and a narrower
+/// measure would squeeze a path field; About is prose to read, and prose set
+/// 620 wide is prose nobody finishes. The design makes the same distinction
+/// three times inside an empty state, where each block of words gets a narrower
+/// measure than the one above it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Measure {
+    /// Settings: rows of controls.
+    Controls,
+    /// About: prose.
+    Prose,
+}
+
+impl Measure {
+    const fn column(self) -> f32 {
+        match self {
+            Measure::Controls => metric::SCREEN_COLUMN,
+            Measure::Prose => metric::ABOUT_COLUMN,
+        }
+    }
+
+    const fn top(self) -> f32 {
+        match self {
+            Measure::Controls => metric::SCREEN_PAD_TOP,
+            Measure::Prose => metric::ABOUT_PAD_TOP,
+        }
+    }
+}
+
 /// The scrolling body of a screen, with the padding and the column width the
 /// design gives it.
 ///
@@ -1942,17 +2030,17 @@ fn upright_rule(ui: &mut Ui, palette: Palette) {
 /// of them down the window. The same trap [`keyword_box`] pins its way out of, in
 /// the one place that can answer it for a whole screen: every control down here
 /// states its own height, which is what the design does too.
-pub fn screen_body(ui: &mut Ui, contents: impl FnOnce(&mut Ui)) {
+pub fn screen_body(ui: &mut Ui, measure: Measure, contents: impl FnOnce(&mut Ui)) {
     egui::ScrollArea::vertical().auto_shrink([false, false]).show(ui, |ui| {
         Frame::new()
             .inner_margin(Margin {
                 left: metric::SCREEN_PAD_X as i8,
                 right: metric::SCREEN_PAD_X as i8,
-                top: metric::SCREEN_PAD_TOP as i8,
+                top: measure.top() as i8,
                 bottom: metric::SCREEN_PAD_BOTTOM as i8,
             })
             .show(ui, |ui| {
-                ui.set_width(ui.available_width().min(metric::SCREEN_COLUMN));
+                ui.set_width(ui.available_width().min(measure.column()));
                 ui.spacing_mut().item_spacing.y = 0.0;
                 ui.spacing_mut().interact_size.y = 0.0;
                 contents(ui);
@@ -2232,7 +2320,7 @@ fn marked_row(ui: &mut Ui, palette: Palette, marked: &Marked<'_>) -> Response {
                 ui.spacing_mut().item_spacing.x = marked.gap;
                 ui.add_space(0.0);
                 ui.vertical(|ui| {
-                    ui.add_space(metric::CHOICE_MARK_DROP);
+                    ui.add_space(metric::MARK_DROP);
                     ui.label(
                         font::run(marked.glyph, font::icon(ui.ctx(), font::ICON))
                             .color(marked.mark_ink),
@@ -2371,6 +2459,382 @@ pub fn screen_link(
     row.interact(Sense::click()).on_hover_cursor(egui::CursorIcon::PointingHand)
 }
 
+/// A notice on a screen: an icon, and what it is about beside it, on a box of
+/// its own.
+///
+/// One component for both screens' notices, because the bundle draws one box:
+/// the same padding, the same gap from glyph to words, the same radius. What
+/// differs is the tone and whether there is a line that has to be read even if
+/// the rest is not.
+pub struct Notice<'a> {
+    pub tone: Tone,
+    pub glyph: &'a str,
+    /// Absent where the notice is a single paragraph, which is About's.
+    pub headline: Option<&'a str>,
+    pub body: &'a str,
+    /// How the paragraph is set. Not derivable from the tone: the design sets
+    /// the Restore warning on a notice's leading and About's trademark line on
+    /// prose's, and both are 10.5.
+    pub leading: font::Leading,
+}
+
+pub fn notice(ui: &mut Ui, palette: Palette, notice: &Notice<'_>) {
+    Frame::new()
+        .fill(notice.tone.surface(palette))
+        .corner_radius(CornerRadius::same(metric::FIELD_RADIUS))
+        .inner_margin(Margin::symmetric(
+            metric::SCREEN_NOTICE_PAD_X as i8,
+            metric::SCREEN_NOTICE_PAD_Y as i8,
+        ))
+        .show(ui, |ui| {
+            ui.set_width(ui.available_width());
+            ui.horizontal_top(|ui| {
+                ui.spacing_mut().item_spacing.x = metric::ALONG_A_SCREEN_NOTICE;
+                // Nudged down for the reason [`marked_row`] nudges a mark: a
+                // 16-pixel glyph beside a 10.5 line sits above it otherwise.
+                ui.vertical(|ui| {
+                    ui.add_space(metric::MARK_DROP);
+                    ui.label(
+                        font::run(notice.glyph, font::icon(ui.ctx(), font::ICON))
+                            .color(notice.tone.mark(palette)),
+                    );
+                });
+                ui.vertical(|ui| {
+                    ui.spacing_mut().item_spacing.y = 0.0;
+                    if let Some(headline) = notice.headline {
+                        ui.label(
+                            font::run(headline, font::emphasis(ui.ctx(), font::CONTROL))
+                                .color(palette.ink),
+                        );
+                        ui.add_space(metric::UNDER_A_NOTICE_HEADLINE);
+                    }
+                    ui.label(
+                        font::wrapping(notice.body, font::NOTE, notice.leading)
+                            .color(notice.tone.supporting(palette)),
+                    );
+                });
+            });
+        });
+}
+
+/// The Restore screen's body: a warning that stays put, and a list that scrolls
+/// under it.
+///
+/// Not [`screen_body`]. That one is a column of a stated measure under a stated
+/// amount of air, which is what a screen of settings or of prose is; this is a
+/// list that runs the width of the window with a fixed block above it, and the
+/// design gives it its own three paddings. The warning is outside the scroll
+/// because what it says is true of the press at the foot, and a warning that
+/// scrolled away would be a warning the user could press without.
+pub fn restore_body(ui: &mut Ui, warning: impl FnOnce(&mut Ui), list: impl FnOnce(&mut Ui)) {
+    // Before the first allocation, not inside the closures: egui's six pixels
+    // otherwise land between the warning and the list on top of the design's.
+    ui.spacing_mut().item_spacing.y = 0.0;
+    ui.spacing_mut().interact_size.y = 0.0;
+    Frame::new()
+        .inner_margin(Margin {
+            left: metric::PAD as i8,
+            right: metric::PAD as i8,
+            top: metric::PAD as i8,
+            bottom: 0,
+        })
+        .show(ui, warning);
+    egui::ScrollArea::vertical().auto_shrink([false, false]).show(ui, |ui| {
+        Frame::new()
+            .inner_margin(Margin {
+                left: metric::PAD as i8,
+                right: metric::PAD as i8,
+                top: metric::ABOVE_A_BACKUP_LIST as i8,
+                bottom: metric::UNDER_A_BACKUP_LIST as i8,
+            })
+            .show(ui, |ui| {
+                ui.set_width(ui.available_width());
+                ui.spacing_mut().item_spacing.y = 0.0;
+                ui.spacing_mut().interact_size.y = 0.0;
+                list(ui);
+            });
+    });
+}
+
+/// The list of backups: rows on one rounded panel, with a seam of it showing
+/// between them.
+///
+/// The panel is what the rows are written on rather than what each row carries,
+/// which is the design's `background` on the column and a one-pixel `gap`
+/// between its children. A row's own wash goes over that, so the seam is the
+/// panel and not a line drawn on it.
+pub fn backup_list(ui: &mut Ui, palette: Palette, rows: impl FnOnce(&mut Ui)) {
+    Frame::new()
+        .fill(palette.panel)
+        .corner_radius(CornerRadius::same(metric::FIELD_RADIUS))
+        .show(ui, |ui| {
+            ui.set_width(ui.available_width());
+            ui.spacing_mut().item_spacing.y = metric::BETWEEN_BACKUPS;
+            rows(ui);
+        });
+}
+
+/// One backup, as the Restore screen states it.
+pub struct Taken<'a> {
+    /// The day and time the copy was taken, formatted where it was read - see
+    /// [`crate::restore`]. Never formatted here: a timestamp turned into words
+    /// at the point of drawing is turned into the drawing machine's words.
+    pub when: &'a str,
+    /// Which build it is of, and what it holds.
+    pub what: &'a str,
+    pub size: &'a str,
+    /// The newest, which the design marks.
+    pub latest: bool,
+    pub chosen: bool,
+    /// Where in the list it sits. Decides the zebra, and which of its corners
+    /// are rounded - a row's own wash is drawn over the panel, so a square first
+    /// row would fill in the corners the list rounds.
+    pub at: usize,
+    pub of: usize,
+}
+
+/// Draw one, and answer whether it was chosen.
+pub fn backup_row(ui: &mut Ui, palette: Palette, taken: &Taken<'_>) -> Response {
+    let (rect, response) = ui.allocate_exact_size(
+        vec2(ui.available_width(), metric::BACKUP_ROW),
+        Sense::click(),
+    );
+    let wash = if taken.chosen {
+        palette.accent_soft
+    } else if taken.at.is_multiple_of(2) {
+        palette.zebra
+    } else {
+        Color32::TRANSPARENT
+    };
+    ui.painter().rect_filled(rect, ends(taken.at, taken.of), wash);
+
+    let mut line = ui.new_child(
+        egui::UiBuilder::new()
+            .max_rect(rect.shrink2(vec2(metric::BACKUP_ROW_PAD_X, metric::BACKUP_ROW_PAD_Y)))
+            .layout(Layout::left_to_right(Align::Center)),
+    );
+    line.spacing_mut().item_spacing.x = 0.0;
+    let mark = if taken.chosen { icon::CHOSEN } else { icon::UNCHOSEN };
+    let mark_ink = if taken.chosen { palette.accent } else { palette.ink_3 };
+    line.label(font::run(mark, font::icon(line.ctx(), font::ICON)).color(mark_ink));
+    line.add_space(metric::ALONG_A_BACKUP_ROW);
+
+    // The size first, from the right, so the line that can run long is the one
+    // that gives way - the same order the install bar puts its path in.
+    let supporting = if taken.chosen { palette.ink_3_warm } else { palette.ink_3 };
+    line.with_layout(Layout::right_to_left(Align::Center), |ui| {
+        ui.label(font::run(taken.size, font::mono(font::MONO)).color(supporting));
+        ui.add_space(metric::ALONG_A_BACKUP_ROW);
+        ui.with_layout(Layout::left_to_right(Align::Center), |ui| {
+            ui.vertical(|ui| {
+                ui.spacing_mut().item_spacing.y = 0.0;
+                ui.horizontal(|ui| {
+                    ui.spacing_mut().item_spacing.x = metric::BESIDE_A_BACKUP_DATE;
+                    ui.label(
+                        font::run(taken.when, font::plain(font::FIELD_VALUE))
+                            .color(palette.ink),
+                    );
+                    if taken.latest {
+                        latest_mark(ui, palette);
+                    }
+                });
+                ui.add_space(metric::UNDER_A_BACKUP_DATE);
+                ui.add(
+                    egui::Label::new(
+                        font::run(taken.what, font::mono(font::MONO_TIGHT)).color(supporting),
+                    )
+                    .truncate(),
+                );
+            });
+        });
+    });
+    response.on_hover_cursor(egui::CursorIcon::PointingHand)
+}
+
+/// Which corners of a row inside a rounded list are rounded: the outer ones of
+/// the first and the last, and none of the rest.
+fn ends(at: usize, of: usize) -> CornerRadius {
+    let r = metric::FIELD_RADIUS;
+    let first = at == 0;
+    let last = at + 1 == of;
+    CornerRadius {
+        nw: if first { r } else { 0 },
+        ne: if first { r } else { 0 },
+        sw: if last { r } else { 0 },
+        se: if last { r } else { 0 },
+    }
+}
+
+/// The mark on the newest backup.
+fn latest_mark(ui: &mut Ui, palette: Palette) {
+    Frame::new()
+        .fill(palette.accent_soft)
+        .corner_radius(CornerRadius::same(metric::RADIUS))
+        .inner_margin(Margin::symmetric(metric::LATEST_PAD_X as i8, metric::LATEST_PAD_Y as i8))
+        .show(ui, |ui| {
+            ui.label(
+                font::run(LATEST, font::emphasis(ui.ctx(), font::FOOTNOTE))
+                    .color(palette.accent_text),
+            );
+        });
+}
+
+const LATEST: &str = "Latest";
+
+/// The way out of a decision, beside the press that makes it.
+pub fn cancel_button(ui: &mut Ui, palette: Palette, label: &str) -> Response {
+    let button = egui::Button::new(font::run(label, font::plain(font::CONTROL)).color(palette.ink_2))
+        .stroke(Stroke::NONE)
+        .corner_radius(CornerRadius::same(metric::FIELD_RADIUS))
+        .min_size(vec2(0.0, metric::CANCEL));
+    ui.scope(|ui| {
+        ui.spacing_mut().button_padding = vec2(metric::CANCEL_PAD_X, 0.0);
+        filled_button(ui, palette.btn, palette.btn_hover, button)
+            .on_hover_cursor(egui::CursorIcon::PointingHand)
+    })
+    .inner
+}
+
+/// A screen's primary action, where what it does cannot be taken back.
+///
+/// The one control in the window the design outlines in the error colour instead
+/// of filling with the accent. That is not decoration: the accent is what the
+/// window offers, and this is what it will do to an installation that is already
+/// working. The icon leads the words here where the action bar's follows them -
+/// an arrow says only that something will happen, and this glyph names what.
+///
+/// Disabled, it is the design's own disabled primary: the button fill and the
+/// tertiary ink, with the reason on it rather than left to be guessed at.
+pub fn screen_primary(
+    ui: &mut Ui,
+    palette: Palette,
+    glyph: &str,
+    label: &str,
+    enabled: bool,
+    reason: &str,
+) -> Response {
+    let ink = if enabled { palette.err } else { palette.ink_3 };
+    let text = labelled_icon(
+        ui,
+        glyph,
+        label,
+        font::ACTION,
+        ink,
+        ink,
+        metric::ALONG_A_SCREEN_PRIMARY,
+    );
+    let (fill, stroke) = if enabled {
+        (Color32::TRANSPARENT, Stroke::new(metric::HAIRLINE, ink))
+    } else {
+        (palette.btn, Stroke::NONE)
+    };
+    let button = egui::Button::new(text)
+        .fill(fill)
+        .stroke(stroke)
+        .corner_radius(CornerRadius::same(metric::FIELD_RADIUS))
+        .min_size(vec2(0.0, metric::SCREEN_PRIMARY));
+    let response = ui.scope(|ui| {
+        ui.spacing_mut().button_padding = vec2(metric::SCREEN_PRIMARY_PAD_X, 0.0);
+        ui.add_enabled(enabled, button)
+    })
+    .inner;
+    if enabled {
+        response.on_hover_cursor(egui::CursorIcon::PointingHand)
+    } else {
+        response.on_disabled_hover_text(reason)
+    }
+}
+
+/// The block About opens with: this application's mark, its name, and the line
+/// saying which build it is and what it is running on.
+pub fn identity(ui: &mut Ui, palette: Palette, name: &str, build: &str) {
+    ui.horizontal(|ui| {
+        ui.spacing_mut().item_spacing.x = metric::ALONG_AN_IDENTITY;
+        let (tile, _) = ui.allocate_exact_size(
+            vec2(metric::PRODUCT_MARK, metric::PRODUCT_MARK),
+            Sense::hover(),
+        );
+        ui.painter().rect_filled(
+            tile,
+            CornerRadius::same(metric::PRODUCT_MARK_RADIUS),
+            palette.accent,
+        );
+        // Painted rather than laid out: the glyph is centred in both directions
+        // inside a box of a stated size, which is one call here and a nest of
+        // centring layouts otherwise.
+        ui.painter().text(
+            tile.center(),
+            egui::Align2::CENTER_CENTER,
+            icon::PRODUCT,
+            font::icon(ui.ctx(), font::PRODUCT_ICON),
+            palette.accent_ink,
+        );
+        ui.vertical(|ui| {
+            ui.spacing_mut().item_spacing.y = 0.0;
+            ui.label(font::run(name, font::emphasis(ui.ctx(), font::PRODUCT)).color(palette.ink));
+            ui.add_space(metric::UNDER_A_PRODUCT_NAME);
+            ui.label(font::run(build, font::mono(font::MONO_FACT)).color(palette.ink_3));
+        });
+    });
+}
+
+/// What one of About's fact rows states.
+///
+/// An enum rather than a string and a colour, because the two rows differ in
+/// what they *are* and not in how they are drawn: two are values read off the
+/// installation and the third is an answer to a question. The design says so -
+/// it sets the values in the monospaced face and leaves them the primary ink,
+/// and sets the answer in the proportional one and colours it.
+pub enum Fact<'a> {
+    /// Something read off the installation, in the face a number gets: this is
+    /// what somebody copies into a bug report.
+    Read(&'a str),
+    /// Whether this build's anchors were located.
+    Resolution(bool),
+}
+
+/// One line of what About says about the installation it found.
+///
+/// The label column is fixed at the design's 96, so the three values start at
+/// one x rather than each after its own word - the same reason [`path_row`]
+/// fixes its own.
+pub fn fact_row(ui: &mut Ui, palette: Palette, label: &str, fact: &Fact<'_>) {
+    ui.horizontal(|ui| {
+        ui.spacing_mut().item_spacing.x = metric::ALONG_A_FACT_ROW;
+        ui.allocate_ui_with_layout(
+            vec2(metric::FACT_LABEL_COLUMN, ui.available_height()),
+            Layout::left_to_right(Align::Center),
+            |ui| {
+                ui.set_min_width(metric::FACT_LABEL_COLUMN);
+                ui.label(font::run(label, font::plain(font::CHIP)).color(palette.ink_3));
+            },
+        );
+        match fact {
+            Fact::Read(value) => ui.label(
+                font::run(*value, font::mono(font::MONO_FACT)).color(palette.ink),
+            ),
+            Fact::Resolution(resolved) => {
+                let (text, ink) = if *resolved {
+                    (ANCHORS_FOUND, palette.ink)
+                } else {
+                    (ANCHORS_MISSING, palette.err_text)
+                };
+                ui.label(font::run(text, font::plain(font::CHIP)).color(ink))
+            }
+        };
+    });
+}
+
+/// What About says about whether this build could be read. The design's own two
+/// lines, and the only place in the window that states it in words rather than
+/// as a badge.
+const ANCHORS_FOUND: &str = "All anchors located";
+const ANCHORS_MISSING: &str = "Anchors not located";
+
+/// What a value that could not be read says, which both of About's read rows can
+/// need: an installation may be found and still not state its build.
+pub const UNREAD: &str = "-";
+
 /// Text that has to carry a tone as well as a word.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Tone {
@@ -2410,6 +2874,32 @@ impl Tone {
             Tone::Ok => palette.ok_bg,
             Tone::Warn => palette.warn_bg,
             Tone::Err => palette.err_bg,
+        }
+    }
+
+    /// The glyph's own colour, which is not the headline's. The design writes a
+    /// warning's icon in `--warn` and its headline in `--accent-text`: one is a
+    /// shape and reads at full strength, the other is a line of type and would
+    /// glare.
+    fn mark(self, palette: Palette) -> Color32 {
+        match self {
+            Tone::Neutral => palette.ink_3,
+            Tone::Ok => palette.ok,
+            Tone::Warn => palette.warn,
+            Tone::Err => palette.err,
+        }
+    }
+
+    /// The box a notice on a screen is written on.
+    ///
+    /// Neutral is the panel and not [`Tone::wash`]'s tint, which is the design's
+    /// own distinction: a notice with nothing wrong in it is a statement on a
+    /// surface, and tinting it would make it read as a fourth condition beside
+    /// the three that mean something.
+    fn surface(self, palette: Palette) -> Color32 {
+        match self {
+            Tone::Neutral => palette.panel,
+            toned => toned.wash(palette),
         }
     }
 }
@@ -2541,6 +3031,12 @@ pub struct Empty<'a> {
     /// The accent is for the state that is an invitation. Everything else is
     /// quiet, because nothing here is wrong.
     pub inviting: bool,
+    /// The four corner marks. Its own flag rather than something derived from
+    /// [`Empty::minor`], because the bundle makes it a prop of its own and the
+    /// Restore screen is what proves the two apart: full-sized, and drawn
+    /// without them, because it is already inside a surface with a header and a
+    /// bar at the foot saying what region this is.
+    pub marks: bool,
     pub title: &'a str,
     pub body: &'a str,
     /// The three extensions a drop accepts, in monospace under the body.
@@ -2589,7 +3085,7 @@ mod stack {
 
 pub fn empty_state(ui: &mut Ui, palette: Palette, empty: &Empty<'_>) -> Pressed {
     let region = ui.available_rect_before_wrap();
-    if !empty.minor {
+    if empty.marks {
         corner_marks(ui, palette, region);
     }
     // Written to from both passes. The measuring one is a sizing pass, where
@@ -2640,8 +3136,14 @@ fn block(ui: &mut Ui, palette: Palette, empty: &Empty<'_>) -> Pressed {
             Layout::top_down(Align::Center),
             |ui| {
                 ui.spacing_mut().item_spacing.y = 0.0;
+                // On the design's own leading. `EmptyState.dc.html:34` states
+                // `line-height:1.6` here and this was drawn on egui's default,
+                // which is the fault `040128e` took out of the catalog detail's
+                // two paragraphs: wrong per line, so invisible at one and wrong
+                // by a line at five. Every one of these bodies wraps.
                 ui.label(
-                    font::run(empty.body, font::plain(font::CONTROL)).color(palette.ink_2),
+                    font::wrapping(empty.body, font::CONTROL, font::Leading::Introducing)
+                        .color(palette.ink_2),
                 );
                 if empty.extensions {
                     ui.add_space(stack::AFTER_BODY);
@@ -2654,7 +3156,7 @@ fn block(ui: &mut Ui, palette: Palette, empty: &Empty<'_>) -> Pressed {
                         Layout::top_down(Align::Center),
                         |ui| {
                             ui.label(
-                                font::run(aside, font::plain(font::CHIP))
+                                font::wrapping(aside, font::CHIP, font::Leading::Describing)
                                     .color(palette.ink_3),
                             );
                         },
@@ -2704,7 +3206,8 @@ fn block(ui: &mut Ui, palette: Palette, empty: &Empty<'_>) -> Pressed {
                 Layout::top_down(Align::Center),
                 |ui| {
                     ui.label(
-                        font::run(foot, font::plain(font::NOTE)).color(palette.ink_3),
+                        font::wrapping(foot, font::NOTE, font::Leading::Describing)
+                            .color(palette.ink_3),
                     );
                 },
             );
@@ -3507,6 +4010,109 @@ mod tests {
             114.0,
             "the Paths group's drawn height"
         );
+    }
+
+    /// A backup row, against `RestoreScreen.dc.html` rendered at its own preview
+    /// size and asked for every box.
+    ///
+    /// The bundle puts the list at 12 and 796 wide with rows at 158, 209 and
+    /// 260; inside a row, the mark at 24 by 175, the words at 50, and a content
+    /// box of 30. Only the fixed cells are asserted: the size at the right end
+    /// and the line under the day are both text.
+    #[test]
+    fn a_backup_row_is_measured_as_the_bundle_measures_it() {
+        // The pitch, which is the row plus the seam of panel the design leaves
+        // showing between two of them - the same seam a list of choices leaves,
+        // and for the same reason.
+        assert_eq!(metric::BACKUP_ROW + metric::BETWEEN_BACKUPS, 51.0);
+        assert_eq!(metric::BETWEEN_BACKUPS, metric::BETWEEN_CHOICES);
+        // The content box the mark and the two lines are centred in.
+        assert_eq!(metric::BACKUP_ROW - 2.0 * metric::BACKUP_ROW_PAD_Y, 30.0);
+        // A sixteen-pixel mark centred in that box lands at 175 in a row that
+        // starts at 158, which is the seven this comes to.
+        assert_eq!((30.0 - font::ICON) / 2.0 + metric::BACKUP_ROW_PAD_Y, 17.0);
+        // Where the words start, from the window's edge: the list's own twelve,
+        // the row's twelve, the mark, and the design's gap after it.
+        assert_eq!(
+            metric::PAD + metric::BACKUP_ROW_PAD_X + font::ICON + metric::ALONG_A_BACKUP_ROW,
+            50.0
+        );
+        // The two lines fit that box with nothing to spare, which is what makes
+        // the row 50 rather than a number somebody chose: a 12-pixel day, two,
+        // and a 10-pixel line on the mono face.
+        const {
+            assert!(
+                font::FIELD_VALUE + metric::UNDER_A_BACKUP_DATE + font::MONO_TIGHT
+                    <= metric::BACKUP_ROW - 2.0 * metric::BACKUP_ROW_PAD_Y
+            )
+        };
+    }
+
+    /// The bar at the foot of the Restore screen, against the same render: 48
+    /// tall, with `Cancel` at 335 and the primary at 333 inside a bar at 326.
+    ///
+    /// The primary's box is 33 there and 31 here, because the design draws its
+    /// outline *outside* the height it states - so what is asserted is where the
+    /// drawn box lands, hairlines included.
+    #[test]
+    fn the_restore_foot_is_measured_as_the_bundle_measures_it() {
+        assert_eq!((metric::SCREEN_FOOT - metric::CANCEL) / 2.0, 9.5, "326 to 335");
+        let drawn = metric::SCREEN_PRIMARY + 2.0 * metric::HAIRLINE;
+        assert_eq!((metric::SCREEN_FOOT - drawn) / 2.0, 7.5, "326 to 333");
+        // The pair is the design's own hierarchy, twice over: the primary is the
+        // taller of the two, and both are smaller than the action bar's - this
+        // is a screen's decision and not the one thing the window does.
+        const { assert!(metric::CANCEL < metric::SCREEN_PRIMARY) };
+        const { assert!(metric::SCREEN_PRIMARY < metric::ACTION) };
+        const { assert!(metric::SCREEN_FOOT < metric::ACTION_BAR) };
+    }
+
+    /// The About screen, against `AboutScreen.dc.html` rendered at its own
+    /// preview size: a 560 column at 12, blocks 18 apart, and a fact box whose
+    /// three values all start at 130.
+    #[test]
+    fn the_about_screen_is_measured_as_the_bundle_measures_it() {
+        // Where every value starts, from the window's edge: the screen's twelve,
+        // the group's twelve, the fixed label column and the gap after it.
+        assert_eq!(
+            metric::SCREEN_PAD_X
+                + metric::GROUP_PAD_X
+                + metric::FACT_LABEL_COLUMN
+                + metric::ALONG_A_FACT_ROW,
+            130.0
+        );
+        // The column and the air over it are not Settings', and the difference
+        // is the whole of what `Measure` carries: prose gets a narrower measure
+        // and more room above it than rows of controls do.
+        assert_eq!(Measure::Prose.column(), 560.0);
+        assert_eq!(Measure::Controls.column(), metric::SCREEN_COLUMN);
+        const { assert!(Measure::Prose.column() < Measure::Controls.column()) };
+        const { assert!(Measure::Prose.top() > Measure::Controls.top()) };
+        // The mark beside the application's name: a 52-pixel tile with a
+        // 28-pixel glyph in it, so the air around the glyph is twelve a side -
+        // the window's own padding, which is what makes the tile read as a box
+        // and not as an icon that grew.
+        assert_eq!((metric::PRODUCT_MARK - font::PRODUCT_ICON) / 2.0, metric::PAD);
+        // Facts sit closer together than a group's rows do: these are lines to
+        // read down, and those are rows to act on.
+        const { assert!(metric::BETWEEN_ABOUT_FACTS < metric::BETWEEN_GROUP_ROWS) };
+    }
+
+    /// Both screens' notices are one box, and it is not the catalog detail's.
+    ///
+    /// `RestoreScreen.dc.html:36` and `AboutScreen.dc.html:57` state the same
+    /// `padding:10px 12px`, the same `gap:9px` and the same radius, so one
+    /// component draws both. `CatalogDetail`'s superseded block states `11px`
+    /// and `6px` and is a different thing, which is the pair a reader collapses.
+    #[test]
+    fn a_screens_notice_is_not_a_panels_notice() {
+        assert_eq!(metric::SCREEN_NOTICE_PAD_X, 12.0);
+        assert_eq!(metric::SCREEN_NOTICE_PAD_Y, 10.0);
+        assert_ne!(metric::SCREEN_NOTICE_PAD_X, metric::NOTICE_PAD_X);
+        assert_ne!(metric::ALONG_A_SCREEN_NOTICE, metric::IN_A_NOTICE);
+        // And the glyph is nudged by the same one pixel a choice's mark is,
+        // which is the design writing `margin-top:1px` in both places.
+        assert_eq!(metric::MARK_DROP, 1.0);
     }
 
     /// The four group boxes down the screen, against where the bundle puts each

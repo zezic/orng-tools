@@ -242,6 +242,15 @@ next reader will see `\u{b7}` and wonder.
   installing from the catalog, which is where that decision belongs. The catalog
   detail *does* draw its own `Reviewed in`, off the index's `merged_in` - a
   different fact, about the item rather than about this machine's copy of it.
+- **`Licences` on the About screen** - `AboutScreen.dc.html:64`, the second of the
+  pair beside `Copy diagnostics`. Nothing in this build carries the text it would
+  show. The plural is the point: the crate's own licence is one line in its
+  manifest, and what a `Licences` control opens is the licences of everything
+  linked into the binary - which nothing generates and nothing bundles. `Copy
+  diagnostics` is drawn alone rather than beside a control that opens an empty
+  sheet. Worth asking the designer whether the pair is meant to be a pair; if it
+  is, the work is a build step that collects the dependency licences, not a
+  layout.
 
 ### 4. 13.5px is tracked two ways, and only one of them can be drawn
 

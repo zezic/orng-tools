@@ -20,7 +20,7 @@ use orng_tools::{
 use crate::app::{App, View};
 use crate::session::{Found, Session};
 use crate::settings::{Appearance, Settings};
-use crate::catalog::Fetching;
+use crate::catalog::{Fetching, Install};
 use crate::staging::{self, Staged};
 use crate::theme::metric;
 use crate::work::{Applying, Stage, State};
@@ -77,19 +77,26 @@ fn the_drawn_installation_path_is_not_a_function_of_the_platform() {
     );
 }
 
+/// Written as the wire format rather than built through the API, so the sample
+/// is also a readable example of what is on disk.
+///
+/// `VOLSHAPER`'s two catalog columns are the real published index's own - the
+/// version it publishes and the commit it names as having published it - so the
+/// inspector's Source block is drawn from a pair that actually goes together and
+/// the link under it leads somewhere that exists.
+const ROWS: &str = "#orng-registry 4\n\
+    80c0dc4c-d142-53a7-85ee-b91427819b66\tDEVICE\tDISPERSER\t\
+    devices/My Devices/DISPERSER.bwdevice\tAllpass phase-rotator\tdisperser allpass\t\t\t\tlocal\n\
+    8b330d22-73fa-4ba5-a42f-2f2300cbd8bf\tDEVICE\tVOLSHAPER\t\
+    devices/My Devices/VOLSHAPER.bwdevice\tBeat-synced volume LFO\tvolshaper\t\t1.0.0\t\
+    175add8af8422d4b749467c187952dd6204fcadb\tcatalog\n\
+    1f2e3d4c-5b6a-4798-8899-aabbccddeeff\tMODULATOR\tSHAPER\t\
+    modulators/My Modulators/SHAPER.bwmodulator\tCurve modulator\tshaper\t\t\t\tlocal\n\
+    2a3b4c5d-6e7f-4801-9192-b3c4d5e6f708\tMODULE\tGATE IN\t\
+    modules/My Modules/GATE IN.bwmodule\tGrid gate input\tgate in\t\t\t\tlocal\n";
+
 fn entries() -> Manifest {
-    // Written as the wire format rather than built through the API, so the
-    // sample is also a readable example of what is on disk.
-    let rows = "#orng-registry 2\n\
-        80c0dc4c-d142-53a7-85ee-b91427819b66\tDEVICE\tDISPERSER\t\
-        devices/My Devices/DISPERSER.bwdevice\tAllpass phase-rotator\tdisperser allpass\t\tlocal\n\
-        8b330d22-73fa-4ba5-a42f-2f2300cbd8bf\tDEVICE\tVOLSHAPER\t\
-        devices/My Devices/VOLSHAPER.bwdevice\tBeat-synced volume LFO\tvolshaper\t1.0.0\tcatalog\n\
-        1f2e3d4c-5b6a-4798-8899-aabbccddeeff\tMODULATOR\tSHAPER\t\
-        modulators/My Modulators/SHAPER.bwmodulator\tCurve modulator\tshaper\t\tlocal\n\
-        2a3b4c5d-6e7f-4801-9192-b3c4d5e6f708\tMODULE\tGATE IN\t\
-        modules/My Modules/GATE IN.bwmodule\tGrid gate input\tgate in\t\tlocal\n";
-    Manifest::parse(rows).expect("the sample entry list does not parse")
+    Manifest::parse(ROWS).expect("the sample entry list does not parse")
 }
 
 /// Make the entry list above true: link the library folders and put a document
@@ -721,20 +728,42 @@ fn the_catalog_view() {
 fn a_catalog_item_in_detail() {
     let index = orng_catalog::Index::parse(include_str!("../tests/published-index.json"))
         .expect("the sample index does not parse");
-    shot_detail("catalog-detail", index, VOLSHAPER);
+    shot_detail("catalog-detail", index, VOLSHAPER, entries());
 }
 
-/// An item another one has replaced, on an installation too old to load it.
+/// An item another one has replaced, and the item that replaces it.
 ///
 /// Synthetic, and it has to be: the published catalog contains neither state,
 /// and both are things the design writes copy for. The notice is the design's
 /// own words - a new identity is what lets both be installed at once, which is
 /// the whole reason the catalog publishes the old one at all.
+///
+/// **Registered, and that is what makes the state reachable.** The design's own
+/// sample shows the replaced item installed, and it has to be: a published item
+/// nobody has is simply `Available`, however many things replace it, because the
+/// offer is to whoever already owns the old one. The row in the list behind the
+/// panel shows the other half - the replacement, not installed, offering
+/// `Install`.
 #[test]
 fn a_catalog_item_that_was_superseded() {
     let index = orng_catalog::Index::parse(SUPERSEDED).expect("the sample index does not parse");
-    shot_detail("catalog-detail-superseded", index, "c0ffee00-1111-4222-8333-444455556666");
+    shot_detail("catalog-detail-superseded", index, BREATH_FOLLOWER, superseded_entries());
 }
+
+/// The sample list with the superseded item registered in it, at the version
+/// the sample index publishes - so the row reads `Replacement available` and
+/// not `Update available`, which is the quieter of the two on purpose.
+fn superseded_entries() -> Manifest {
+    let row = format!(
+        "{BREATH_FOLLOWER}\tMODULATOR\tBREATH FOLLOWER\t\
+         modulators/My Modulators/BREATH FOLLOWER.bwmodulator\t\
+         Envelope follower with a breath curve\tbreath follower duck envelope\t\t1.2.0\t\
+         8c41d0b9a3e5f7126d4b80ca35fe91d7b2064e83\tcatalog\n"
+    );
+    Manifest::parse(&format!("{ROWS}{row}")).expect("the sample entry list does not parse")
+}
+
+const BREATH_FOLLOWER: &str = "c0ffee00-1111-4222-8333-444455556666";
 
 /// Two items, the second replacing the first, and the first needing a Bitwig
 /// newer than the fixture's 6.1.
@@ -794,7 +823,8 @@ const SUPERSEDED: &str = r#"{
 #[test]
 fn a_catalog_row_opens_the_detail_and_the_notice_walks_to_the_replacement() {
     let root = fixture("detail-opening");
-    let session = found(&root, Helper::Present, GuardState::Disarmed);
+    let session =
+        found_with(&root, Helper::Present, GuardState::Disarmed, superseded_entries());
     let mut session = Some(session);
     let mut harness = Harness::builder().with_size(SIZE).build_eframe(move |cc| {
         let mut app = App::with(&cc.egui_ctx, session.take().expect("built once"));
@@ -832,9 +862,9 @@ fn a_catalog_row_opens_the_detail_and_the_notice_walks_to_the_replacement() {
     );
 }
 
-fn shot_detail(name: &str, index: orng_catalog::Index, open: &str) {
+fn shot_detail(name: &str, index: orng_catalog::Index, open: &str, entries: Manifest) {
     let root = fixture(name);
-    let session = found(&root, Helper::Present, GuardState::Disarmed);
+    let session = found_with(&root, Helper::Present, GuardState::Disarmed, entries);
     let mut session = Some(session);
     let mut index = Some(index);
     let open = open.parse().expect("a sample identity");
@@ -1136,6 +1166,415 @@ fn an_entry_says_when_the_catalog_has_a_newer_revision_of_it() {
         harness.query_all_by_label("Update available").count(),
         1,
         "the update was claimed for entries with nothing upstream"
+    );
+}
+
+/// Draw until neither worker is still out there.
+///
+/// The one place a test waits rather than asserting, and it has to: a fetch and
+/// a write are both detached threads that answer through a channel the window
+/// reads when it draws, so `Harness::run` returns as soon as the frame it drew
+/// asked for nothing more - which is before the answer exists. **Looked for a
+/// handle to wait on and there is none, deliberately**: the window must not
+/// block on a worker, which is the whole reason they are detached.
+///
+/// The frame that takes an answer is also the frame that draws it, so when this
+/// returns the tree already carries the result.
+fn settle(harness: &mut Harness<'static, App>) {
+    // Generous, because a real write reaches the disk: three documents, three
+    // description bundles and the entry list. Whatever this is, it is a bound on
+    // how long the test hangs before saying so, and not an interval the answer
+    // waits for - the loop draws first and checks after.
+    const GIVE_UP_AFTER: usize = 200;
+    const BETWEEN_LOOKS: std::time::Duration = std::time::Duration::from_millis(10);
+    for _ in 0..GIVE_UP_AFTER {
+        harness.run();
+        if !harness.state().is_working() {
+            return;
+        }
+        std::thread::sleep(BETWEEN_LOOKS);
+    }
+    panic!("the window was still working after {GIVE_UP_AFTER} looks");
+}
+
+/// The same machine as [`found_with`], with the *copy* strategy in force.
+///
+/// What a test that actually writes needs, and for the reason [`placed`] already
+/// copies: a fixture's paths are relative on purpose, and a symbolic link
+/// resolves against its own folder rather than against the working directory -
+/// so a document linked into one of these lands somewhere that does not exist,
+/// and the row that was just registered reads `Missing file`. The strategy is a
+/// preference either way and the design allows both, so this is the fixture
+/// being possible rather than the test being lenient.
+fn copying(root: &std::path::Path, entries: Manifest) -> Session {
+    let to = Destination { placement: Strategy::Copy, ..destination(root) };
+    let entries = placed(&to, entries);
+    Session::Found(Box::new(Found::new(
+        to,
+        Condition { build: build(), helper: Helper::Present, guard: GuardState::Disarmed },
+        RunState::Clear,
+        entries,
+    )))
+}
+
+/// The catalog's list, on the sample index with both replacement items, against
+/// whatever this machine is said to have registered.
+///
+/// The list is the constant and the machine is the variable, because that is
+/// where a published item's state comes from: the index says the same thing to
+/// everybody, and every one of the seven words is what one machine makes of it.
+fn catalog_listing(name: &str, entries: Manifest) -> Harness<'static, App> {
+    let root = fixture(name);
+    let session = copying(&root, entries);
+    let mut session = Some(session);
+    let mut harness = Harness::builder().with_size(SIZE).build_eframe(move |cc| {
+        let mut app = App::with(&cc.egui_ctx, session.take().expect("built once"));
+        let index = orng_catalog::Index::parse(SUPERSEDED).expect("the sample index parses");
+        app.set_catalog(Fetching::frozen(Ok(index)));
+        app.show_view(View::Catalog);
+        app
+    });
+    harness.run();
+    harness
+}
+
+/// A published item's state is a fact about this machine, and every one of the
+/// four this fixture can reach is read off it rather than declared.
+///
+/// Asserted through the tree and not against a picture, because what is being
+/// claimed is which word went on which row: the two rows here are the same kind
+/// by the same author, and a picture of them with the words swapped looks
+/// exactly as right.
+#[test]
+fn a_published_item_says_what_this_machine_has_to_say_about_it() {
+    let harness = catalog_listing("catalog-states", superseded_entries());
+
+    // Registered, and something in the index replaces it. The quieter of the
+    // two installed-and-there-is-more states, and it must not read as an
+    // update: an update keeps the identity and this does not.
+    assert!(harness.query_by_label("Replacement available").is_some());
+    assert!(
+        harness.query_by_label("Update available").is_none(),
+        "a replacement was reported as an update to the same device"
+    );
+    // The replacement itself, which nobody has.
+    assert!(harness.query_by_label("Available").is_some());
+    assert!(harness.query_by_label("Install").is_some(), "an available item offered no install");
+    // And the one this Bitwig is too old for is not among them, because it is
+    // installed: telling somebody they need a newer Bitwig for something
+    // already in their browser is telling them nothing they can act on.
+    assert!(
+        harness.query_by_label("Needs Bitwig 6.4").is_none(),
+        "a registered item was reported as one this installation cannot load"
+    );
+
+    // The same index against a machine with neither item. The older one now
+    // states the version it needs, and the replacement's existence says nothing
+    // at all: the offer is to whoever already has the old one.
+    let neither = catalog_listing("catalog-states-empty", entries());
+    assert!(
+        neither.query_by_label("Needs Bitwig 6.4").is_some(),
+        "an item this 6.1 installation cannot load did not say so"
+    );
+    assert!(
+        neither.query_by_label("Replacement available").is_none(),
+        "an item nobody has was offered a replacement for it"
+    );
+}
+
+/// A catalog row's control, measured against the bundle's own numbers.
+///
+/// `CatalogRow.dc.html:105-107`: `height:24px; padding:0 10px`, right-aligned in
+/// the 92 the grid reserves. Measured through the tree rather than written
+/// against `metric::CATALOG_ACTION`, which is what let a 22-pixel control pass
+/// while the constant said 24.
+///
+/// **And drawn with the pointer nowhere**, which is the design's difference from
+/// an entry row: the bundle gates this control on there being one and never on
+/// hover. A list read to decide something must not hide the deciding.
+#[test]
+fn a_catalog_rows_control_is_the_bundles_size_and_is_not_hidden_off_hover() {
+    let harness = catalog_listing("catalog-action-size", superseded_entries());
+
+    let install = harness.get_by_label("Install").rect();
+    assert_eq!(install.height(), 24.0, "the control is not the design's height");
+    // Right-aligned against the row's own twelve of padding, which is where the
+    // reserved column ends - `a_catalog_row_is_divided_as_the_bundle_divides_it`
+    // puts that edge at 808. Two rows in a 560-tall window need no scrollbar.
+    assert_eq!(install.right(), 808.0);
+    assert!(install.width() > 2.0 * 10.0, "there is no room for the padding, let alone the word");
+    // Centred down the row rather than sitting on its top edge, and clear of
+    // the status beside it - both read off the word in its own column, which is
+    // the one thing on this row that is certainly on this row.
+    let word = harness.get_by_label("Available").rect();
+    assert_eq!(install.center().y, word.center().y);
+    assert!(word.right() < install.left(), "the status and the control overlap");
+}
+
+/// The detail panel's foot, measured against `CatalogDetail.dc.html:89-98`.
+///
+/// `padding:11px 12px`, a 30-tall `Remove` at the left end and a 32-tall primary
+/// at the right. Two heights, and the taller one is the accent-filled press -
+/// which is the design saying which of the two the panel is for.
+/// Both halves of the bar, each in the state that draws it, against opposite
+/// ends of the panel.
+///
+/// Two panels and not one, because no state draws both: the primary belongs to
+/// an item this machine does not have and the removal to one it does. Which is
+/// itself worth pinning - a bar with both controls would mean a state that
+/// offered to install something already installed.
+#[test]
+fn the_detail_panels_foot_is_the_bundles_bar() {
+    // The panel is 272 wide at the right of an 820 window, and the bar is padded
+    // twelve inside it.
+    const PANEL_LEFT: f32 = 820.0 - 272.0;
+
+    let available = detail_on("catalog-foot-available", entries(), BREATH_FOLLOWER_II);
+    // **The row's control and the panel's primary wear the same word**, which is
+    // the design's own doing: the panel offers what the row offers, with room
+    // for the word either way. So they are told apart by which side of the panel
+    // they are on rather than by their label.
+    let primary = available
+        .query_all_by_label("Install")
+        .map(|node| node.rect())
+        .find(|rect| rect.left() > PANEL_LEFT)
+        .expect("the panel offered nothing to install");
+    assert_eq!(primary.height(), 32.0, "the primary is not the design's height");
+    assert_eq!(primary.right(), 820.0 - 12.0);
+    assert!(
+        available.query_all_by_label("Remove").count() == 0,
+        "the panel offered to remove an item this machine does not have"
+    );
+
+    let installed = detail_on("catalog-foot-installed", superseded_entries(), BREATH_FOLLOWER);
+    let remove = installed.get_by_label("Remove").rect();
+    assert_eq!(remove.height(), 30.0, "the removal is not the design's height");
+    assert_eq!(remove.left(), PANEL_LEFT + 12.0);
+    // The two are the same height of bar apart from each other: the shorter
+    // control is centred in it rather than sitting on its floor, so the taller
+    // one's centre is where the shorter one's is.
+    assert_eq!(remove.center().y, primary.center().y);
+}
+
+/// The catalog list with the detail open on one item, against a given machine.
+fn detail_on(name: &str, entries: Manifest, open: &str) -> Harness<'static, App> {
+    let root = fixture(name);
+    let session = copying(&root, entries);
+    let mut session = Some(session);
+    let open = open.parse().expect("a sample identity");
+    let mut harness = Harness::builder().with_size(SIZE).build_eframe(move |cc| {
+        let mut app = App::with(&cc.egui_ctx, session.take().expect("built once"));
+        let index = orng_catalog::Index::parse(SUPERSEDED).expect("the sample index parses");
+        app.set_catalog(Fetching::frozen(Ok(index)));
+        app.show_view(View::Catalog);
+        app.set_detailing(open);
+        app
+    });
+    harness.run();
+    harness
+}
+
+const BREATH_FOLLOWER_II: &str = "d0d0caf0-2222-4333-8444-555566667777";
+
+/// The item the index describes, fetched and registered.
+///
+/// The fetch is handed in already answered rather than run, because the network
+/// is not what is being checked: what is, is everything between the bytes
+/// arriving and the entry existing - the registration built from the document
+/// and the row, the version and the review recorded off the index, and the row
+/// in the other list saying Bitwig has not read it yet.
+#[test]
+fn installing_registers_the_item_at_the_version_and_review_the_index_names() {
+    let mut harness = catalog_listing("installing", superseded_entries());
+    let replacement: orng_tools::Uuid =
+        "d0d0caf0-2222-4333-8444-555566667777".parse().expect("a sample identity");
+
+    let index = orng_catalog::Index::parse(SUPERSEDED).expect("the sample index parses");
+    let item = index
+        .items
+        .iter()
+        .find(|item| item.uuid == replacement)
+        .expect("the sample index carries it")
+        .clone();
+    let document = orng_tools::testing::document(
+        item.kind.into(),
+        item.uuid,
+        "BREATH FOLLOWER II",
+    );
+    harness.state_mut().set_installing(Install::finished(item, Ok(document)));
+    settle(&mut harness);
+
+    // The banner names the item, because the press was about one row.
+    assert!(
+        harness.query_all_by_label_contains("BREATH FOLLOWER II is registered").next().is_some(),
+        "installing said nothing, or said it about the wrong item"
+    );
+    // And the row it was pressed on now reads as something this machine has.
+    assert_eq!(
+        harness.query_all_by_label("Available").count(),
+        0,
+        "the item is registered and its row still offers to install it"
+    );
+
+    // What was written, off the list rather than off the screen: the two facts
+    // only the index could supply.
+    let entries = harness.state().registered().expect("the fixture is an installation").clone();
+    let written = entries.get(replacement).expect("the item was not registered");
+    assert_eq!(
+        written.provenance,
+        orng_tools::Provenance::Catalog {
+            version: "2.0.0".parse().expect("a version"),
+            reviewed_in: orng_tools::Revision::new("3f9a1c2e8b4d7a61c05f2d93ab7e14c8f6021b5d").ok(),
+        }
+    );
+    assert_eq!(
+        written.library_path.as_str(),
+        "modulators/My Modulators/BREATH FOLLOWER II.bwmodulator",
+        "the item was not placed under the name the catalog publishes it as"
+    );
+
+    // Bitwig reads the entry list at launch, so the row it just wrote is one an
+    // open Bitwig is not showing - and only that row.
+    harness.state_mut().show_view(View::Local);
+    harness.run();
+    assert_eq!(
+        harness.query_all_by_label("Pending restart").count(),
+        1,
+        "installing marked rows it did not write"
+    );
+}
+
+/// The two ways an install can fail, in one view.
+///
+/// A picture because what is being claimed is a colour and a pair of controls:
+/// both states are set in `--err-text` and only one of them offers to try
+/// again, and the design asks for them side by side precisely so that the
+/// difference is visible rather than argued. The banner under them is the other
+/// half of the trust event - the one thing a row has no room to say.
+///
+/// Reached by refusing two installs in turn rather than by declaring two
+/// failures, because a failure the window was told about is not evidence that
+/// the window can arrive at one.
+#[test]
+fn both_ways_an_install_can_fail() {
+    let mut harness = catalog_listing("catalog-failures", entries());
+    let index = orng_catalog::Index::parse(SUPERSEDED).expect("the sample index parses");
+    let refuse = |harness: &mut Harness<'static, App>, at: usize, why| {
+        harness.state_mut().set_installing(Install::finished(index.items[at].clone(), Err(why)));
+        settle(harness);
+    };
+
+    refuse(&mut harness, 0, crate::catalog::Refused::Download("the connection closed".to_owned()));
+    refuse(
+        &mut harness,
+        1,
+        crate::catalog::Refused::Verification("what arrived is something else".to_owned()),
+    );
+    // The banner's two lines wrap in what is left of the bar rather than under
+    // the control at its end. Asserted through the tree, because a picture of
+    // text drawn over a button and a picture of text drawn beside it differ by
+    // whichever was painted second - and only one of them can be read.
+    let body = harness
+        .get_by_label_contains("The file does not match the hash")
+        .rect();
+    let control = harness
+        .query_all_by_label("Copy details")
+        .map(|node| node.rect())
+        // Two rows wear the words and so does the banner; the banner is the
+        // lowest of them.
+        .max_by(|a, b| a.top().total_cmp(&b.top()))
+        .expect("the banner offered nothing to copy");
+    assert!(
+        body.right() <= control.left(),
+        "the banner's words run under its control: {body:?} against {control:?}"
+    );
+
+    look(&mut harness, "catalog-failures");
+}
+
+/// Bytes that are not the ones the catalog states are refused, and the refusal
+/// is a trust event rather than a network condition.
+///
+/// Three things have to be true at once and the design says so about each: the
+/// row holds the failure, the only control is `Copy details` and never `Retry`,
+/// and the banner promises that nothing was written. The last is the one a row
+/// cannot say.
+#[test]
+fn an_item_that_does_not_verify_is_refused_and_offers_no_way_to_try_again() {
+    let mut harness = catalog_listing("verification-failed", superseded_entries());
+    let item = orng_catalog::Index::parse(SUPERSEDED)
+        .expect("the sample index parses")
+        .items
+        .pop()
+        .expect("the sample index is not empty");
+    let name = item.name.clone();
+
+    harness.state_mut().set_installing(Install::finished(
+        item,
+        Err(crate::catalog::Refused::Verification("what arrived is something else".to_owned())),
+    ));
+    settle(&mut harness);
+
+    assert!(harness.query_by_label("Verification failed").is_some(), "the row says nothing");
+    // Twice, and both are meant: the row's own control and the banner's. The
+    // words are the same because the press is - there is one set of details.
+    assert_eq!(harness.query_all_by_label("Copy details").count(), 2);
+    assert!(
+        harness.query_by_label("Retry").is_none(),
+        "a hash that does not match was offered another go at matching"
+    );
+    assert!(
+        harness
+            .query_all_by_label_contains(&format!("{name} was not installed"))
+            .next()
+            .is_some(),
+        "a refused install was not said out loud"
+    );
+    assert!(
+        harness.state().registered().expect("an installation").get(
+            "d0d0caf0-2222-4333-8444-555566667777".parse().expect("a sample identity")
+        ).is_none(),
+        "something was registered for an item that did not verify"
+    );
+}
+
+/// An index that cannot say where its documents are refuses the press, and
+/// refuses it as the ordinary failure rather than as the trust one.
+///
+/// The one end-to-end run of the real worker that needs no network: an index
+/// generated inside a pull request carries no revision, there is no reviewed
+/// commit to read the bytes from, and the answer comes back without a socket
+/// being opened. It is also the assertion that the press reaches the worker at
+/// all, which is the half `Install::finished` steps over.
+#[test]
+fn an_index_that_names_no_commit_has_nowhere_to_fetch_from_and_says_so() {
+    let root = fixture("no-revision");
+    let session = copying(&root, superseded_entries());
+    let mut session = Some(session);
+    let mut harness = Harness::builder().with_size(SIZE).build_eframe(move |cc| {
+        let mut app = App::with(&cc.egui_ctx, session.take().expect("built once"));
+        let mut index = orng_catalog::Index::parse(SUPERSEDED).expect("the sample index parses");
+        index.revision = None;
+        app.set_catalog(Fetching::frozen(Ok(index)));
+        app.show_view(View::Catalog);
+        app
+    });
+    harness.run();
+
+    harness.get_by_label("Install").click();
+    settle(&mut harness);
+
+    assert!(
+        harness.query_by_label("Download failed").is_some(),
+        "an item with nowhere to be fetched from said nothing"
+    );
+    assert!(
+        harness.query_by_label("Retry").is_some(),
+        "an ordinary failure was not offered another go"
+    );
+    assert!(
+        harness.query_by_label("Verification failed").is_none(),
+        "nothing was fetched and the row accused the catalog of serving the wrong bytes"
     );
 }
 

@@ -76,6 +76,14 @@ pub enum Errand {
     /// anything new: the entry was already there, and what was missing was the
     /// file under it.
     Locate,
+    /// A published item was fetched, proved against the digest the index states,
+    /// and registered.
+    ///
+    /// Entries only, and the design is explicit about why: an item is 20 to 30
+    /// kilobytes and a new identity cannot affect a project that already exists,
+    /// so installing writes files and asks nothing. Preparing the installation
+    /// is the other press, and the action bar goes on offering it.
+    Install,
 }
 
 impl Errand {
@@ -83,7 +91,9 @@ impl Errand {
     pub fn work(self) -> Work {
         match self {
             Errand::Preparation => Work::PrepareThenEntries,
-            Errand::Registration | Errand::Edit | Errand::Locate => Work::Entries,
+            Errand::Registration | Errand::Edit | Errand::Locate | Errand::Install => {
+                Work::Entries
+            }
         }
     }
 

@@ -333,6 +333,11 @@ pub mod metric {
     /// A catalog row carries a description under the name, so it is taller than
     /// a registered one.
     pub const CATALOG_ROW: f32 = 48.0;
+    /// Its own control, which is a filled pill with a word in it rather than the
+    /// entry row's square glyph. A catalog row offers at most one, and what it
+    /// offers - `Install`, `See replacement` - cannot be read off an icon.
+    pub const CATALOG_ACTION: f32 = 24.0;
+    pub const CATALOG_ACTION_PAD_X: f32 = 10.0;
     /// A panel over the right of the list: the inspector in Local, the item's
     /// detail in Catalog. Everything under here is shared by both, read off
     /// `Inspector.dc.html` and `CatalogDetail.dc.html` - which agree on all
@@ -399,6 +404,18 @@ pub mod metric {
     /// A control inside one, which is shorter than a bar's.
     pub const NOTICE_CONTROL: f32 = 26.0;
     pub const NOTICE_CONTROL_PAD: f32 = 10.0;
+    /// The bar at the foot of the detail panel: the removal at one end and the
+    /// primary at the other, on the panel colour rather than the body's -
+    /// `CatalogDetail.dc.html:89`.
+    pub const PANEL_FOOT_PAD_X: f32 = 12.0;
+    pub const PANEL_FOOT_PAD_Y: f32 = 11.0;
+    pub const ALONG_A_PANEL_FOOT: f32 = 8.0;
+    /// Its two controls, which are two heights on purpose: the primary is the
+    /// taller, and it is the only accent fill in either panel.
+    pub const PANEL_REMOVE: f32 = 30.0;
+    pub const PANEL_REMOVE_PAD_X: f32 = 11.0;
+    pub const PANEL_PRIMARY: f32 = 32.0;
+    pub const PANEL_PRIMARY_PAD_X: f32 = 14.0;
     /// The inspector's shadow, `-18px 0 40px` in the design: cast to the left,
     /// because the panel is over the list rather than beside it.
     pub const PANEL_SHADOW_REACH: i8 = -18;

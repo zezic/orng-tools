@@ -28,13 +28,13 @@ use orng_tools::{
 };
 
 use crate::about::About;
-use crate::catalog::Fetching;
+use crate::catalog::{self, Fetching, Install};
 use crate::diagnostics::Diagnostics;
 use crate::restore::Backups;
 use crate::session::{Badge, Found, Session};
 use crate::settings::{Appearance, Preferences, Settings};
 use crate::staging::{self, Reading, Staged};
-use crate::status::{Action, Status};
+use crate::status::{Action, Offer, Published, Status};
 use crate::theme::{self, Palette, font, metric};
 use crate::widget::{self, Emphasis, Fact, Measure, Padding, Tone, icon};
 use crate::work::{Applying, Errand, Stage, Work};
@@ -255,6 +255,23 @@ pub struct App {
     /// that reaches for one before being asked is a window that hangs on a
     /// train.
     catalog: Option<Fetching>,
+    /// The item being fetched, while one is.
+    ///
+    /// Held apart from [`App::applying`] because it is the half of an install
+    /// that has written nothing: a fetch that fails leaves the machine exactly
+    /// as it was, and the design says so by holding that failure on the row
+    /// rather than stopping the window. The write that follows is an ordinary
+    /// [`Applying`], the same one a drop goes through.
+    installing: Option<Install>,
+    /// Items an install attempt refused, until something happens that could
+    /// change the answer.
+    ///
+    /// The design's two failure states are per item and not per window - a
+    /// catalog of forty rows where one did not verify is thirty-nine rows that
+    /// are still fine - so they are held against the identity that failed. Kept
+    /// until that item is pressed again or the catalog is fetched again, because
+    /// nothing else that happens makes them stop being true.
+    refused: std::collections::BTreeMap<Uuid, catalog::Refused>,
 }
 
 impl App {
@@ -303,6 +320,8 @@ impl App {
             inspecting: None,
             detailing: None,
             catalog: None,
+            installing: None,
+            refused: std::collections::BTreeMap::new(),
         }
     }
 
@@ -402,6 +421,24 @@ impl App {
         self.catalog = Some(catalog);
     }
 
+    /// Hand the window a fetch that has already answered, so that what it does
+    /// with the answer can be driven without a network. Tests only.
+    #[cfg(test)]
+    pub fn set_installing(&mut self, installing: Install) {
+        self.installing = Some(installing);
+    }
+
+    /// Whether either worker is still out there.
+    ///
+    /// What a test waits on, because a worker here is detached on purpose -
+    /// the window polls a channel when it draws and never blocks on a thread,
+    /// so there is no handle to join and this is the only thing that answers
+    /// "has it landed yet". Tests only.
+    #[cfg(test)]
+    pub fn is_working(&self) -> bool {
+        self.applying.is_some() || self.installing.is_some()
+    }
+
     /// Stage rows without a drop. Tests only.
     #[cfg(test)]
     pub fn set_staged(&mut self, staged: Vec<Staged>) {
@@ -476,7 +513,7 @@ impl App {
     /// the surface itself. The progress dialog is over all of them.
     pub fn draw(&mut self, ui: &mut egui::Ui) {
         self.settle_palette(ui.ctx());
-        self.pump();
+        self.pump(ui.ctx());
         self.take_drop(ui.ctx());
 
         match &self.screen {
@@ -1142,9 +1179,20 @@ impl App {
 
         let (source, source_icon) = match &entry.provenance {
             Provenance::Local => ("Local file".to_owned(), widget::icon::LOCAL_FILE),
-            Provenance::Catalog { version } => {
+            Provenance::Catalog { version, .. } => {
                 (format!("ORNG Catalog {} {version}", widget::SEPARATOR), widget::icon::CATALOG)
             }
+        };
+        // Off the entry rather than off the catalog, and that is the point of
+        // recording it: this says which review *this copy* came through, and the
+        // catalog has gone on publishing since. An item superseded last month is
+        // still traceable here and is not in the index at all.
+        let provenance = match &entry.provenance {
+            Provenance::Catalog { reviewed_in: Some(revision), .. } => Some((
+                format!("orng-catalog@{}", revision.short()),
+                crate::catalog::commit(revision),
+            )),
+            _ => None,
         };
         let identity = uuid.to_string();
         // Before the panel is borrowed to type into, for the reason `document`
@@ -1161,6 +1209,7 @@ impl App {
             path: entry.library_path.as_str(),
             source: &source,
             source_icon,
+            provenance: provenance.as_ref().map(|(at, url)| (at.as_str(), url.as_str())),
             placement,
             status,
             document,
@@ -1179,6 +1228,13 @@ impl App {
             }
             widget::Inspecting::Edited => self.write_words(ui.ctx()),
             widget::Inspecting::CopiedUuid => ui.ctx().copy_text(uuid.to_string()),
+            // Leaves the application, as the detail panel's own does and for
+            // the same reason: the review is in the catalog's pull request.
+            widget::Inspecting::Provenance => {
+                if let Some((_, url)) = &provenance {
+                    browse(url);
+                }
+            }
             // Through the same call the row's own controls go through, rather
             // than a second implementation of each: what the panel offers is
             // the row's list with words on it, so what it does must be the
@@ -1220,11 +1276,9 @@ impl App {
         // The item that lists this one under `supersedes`. A revision that
         // changes the parameter set takes a new identity rather than reusing
         // the old one, so both stay published and the old one points here.
-        let replacement = index
-            .items
-            .iter()
-            .find(|other| other.supersedes.contains(&uuid))
-            .map(|other| (other.name.as_str(), other.uuid));
+        let replacement = self.replacement_for(uuid);
+        let status = self.published_status(found, entry);
+        let document = self.deleting();
         let provenance = entry.merged_in.as_ref().map(|revision| {
             (format!("orng-catalog@{}", revision.short()), crate::catalog::commit(revision))
         });
@@ -1245,7 +1299,18 @@ impl App {
             uuid: &entry.uuid.to_string(),
             provenance: provenance.as_ref().map(|(at, url)| (at.as_str(), url.as_str())),
             homepage: entry.homepage.as_deref(),
-            replaced_by: replacement.map(|(name, _)| name),
+            // Only where the row actually reads `Replacement available`, which
+            // is not simply "something in the index replaces it": the offer is
+            // to whoever already has the old one, and telling somebody who has
+            // never installed it that a newer version exists as a separate
+            // device is a paragraph about nothing. The bundle gates its own
+            // notice on the status for the same reason.
+            replaced_by: match status {
+                Published::Superseded => replacement.map(|(name, _)| name),
+                _ => None,
+            },
+            status: &status,
+            document,
         };
 
         let (panel, pressed) =
@@ -1268,6 +1333,17 @@ impl App {
             }
             widget::Detailing::Replacement => {
                 self.detailing = replacement.map(|(_, uuid)| uuid);
+            }
+            // Through the same call the row's own control goes through, for the
+            // reason the inspector routes its action list into `act`: what the
+            // panel offers is the row's control with room for a word.
+            widget::Detailing::Acted(offer) => self.offer(uuid, offer, ui.ctx()),
+            // And this is the *Local* row's removal, not a second kind of one.
+            // An installed item is a registered entry, so it is queued and
+            // struck through until the apply that takes it away - which is what
+            // queueing does wherever it is pressed from.
+            widget::Detailing::Removed => {
+                self.act(Acting::Registered(uuid), Action::Remove, ui.ctx());
             }
             widget::Detailing::Nothing => {}
         }
@@ -1391,13 +1467,25 @@ impl App {
     /// No timer. A worker wakes the window when it has something to say, so a
     /// frame that gets here has a reason to have been drawn, and idle work
     /// costs nothing at all.
-    fn pump(&mut self) {
+    fn pump(&mut self, ctx: &egui::Context) {
         if let Some(catalog) = &mut self.catalog {
             catalog.poll();
         }
         if let Some(read) = self.reading.as_mut().and_then(Reading::take) {
             self.staged.extend(read);
             self.reading = None;
+        }
+        // Before the write below, because a finished fetch is what *starts* one:
+        // the two halves of an install are one press, and waiting a frame
+        // between them would draw a row that had stopped downloading and had not
+        // begun registering.
+        let answered = self.installing.as_mut().is_some_and(|fetching| {
+            fetching.poll();
+            !fetching.is_running()
+        });
+        if answered {
+            let finished = self.installing.take().expect("it answered a moment ago");
+            self.installed(finished, ctx);
         }
         let Some(applying) = &mut self.applying else { return };
         applying.poll();
@@ -1436,6 +1524,23 @@ impl App {
                     found.relist(entries);
                 }
                 self.outcome = Some(Outcome::Located);
+                self.awaiting_restart.extend(wrote);
+            }
+            // Announced, and it names the item: the press was about one row of
+            // a list the user is looking at, and "1 entry registered" would be
+            // the window declining to say which. Nothing pending is cleared,
+            // because an install is not one of the things the primary action
+            // does - somebody with three documents staged may install from the
+            // catalog and still expect to press Apply afterwards.
+            Ok(entries) if errand == Errand::Install => {
+                let [uuid] = wrote[..] else {
+                    panic!("an install writes exactly one row, and this one wrote {}", wrote.len())
+                };
+                let name = entries.get(uuid).expect("the row this run just wrote").name.clone();
+                if let Session::Found(found) = &mut self.session {
+                    found.relist(entries);
+                }
+                self.outcome = Some(Outcome::Installed { name });
                 self.awaiting_restart.extend(wrote);
             }
             Ok(entries) => {
@@ -1694,6 +1799,18 @@ enum Outcome {
     /// registered, the entry was already there, and the only thing that changed
     /// is that the file it names exists again.
     Located,
+    /// A published item was installed. Named, because the press was about one
+    /// item and a count of one is the window declining to say which.
+    Installed { name: String },
+    /// An item's bytes were not the ones the catalog states, so nothing was
+    /// installed.
+    ///
+    /// Its own variant rather than a [`Outcome::Failed`]: what failed is not a
+    /// run, because no run started. The design is explicit that this must not
+    /// read like a network error, and the thing that makes it not read like one
+    /// is the promise underneath - nothing reached the library or the
+    /// installation, because nothing got as far as being written.
+    Refused { item: String, why: String },
     Failed {
         /// Which run stopped, which is what decides what can honestly be
         /// promised about the state left behind: the three differ in what they
@@ -1728,10 +1845,13 @@ impl Outcome {
     /// with a control that copies nothing.
     fn details(&self) -> Option<&str> {
         match self {
-            Outcome::Failed { why, .. } | Outcome::NotRestored { why } => Some(why),
+            Outcome::Failed { why, .. }
+            | Outcome::NotRestored { why }
+            | Outcome::Refused { why, .. } => Some(why),
             Outcome::Prepared { .. }
             | Outcome::Registered { .. }
             | Outcome::Located
+            | Outcome::Installed { .. }
             | Outcome::Restored => None,
         }
     }
@@ -1798,6 +1918,29 @@ impl Outcome {
                     .to_owned(),
                 Some("Copy details"),
             ),
+            Outcome::Installed { name } => (
+                Tone::Ok,
+                format!("{name} is registered. Restart Bitwig Studio to load it."),
+                "Its description and search keywords were written too, so typing the name \
+                 finds it in the browser. Nothing in the installation was changed: an item is \
+                 a file and a row in the entry list."
+                    .to_owned(),
+                None,
+            ),
+            // Deliberately not worded as a network problem, and deliberately
+            // offering no way to try again. What is being said is that the
+            // catalog's review did not reach this machine intact, and the one
+            // useful thing to do with that is to report it.
+            Outcome::Refused { item, .. } => (
+                Tone::Err,
+                format!("{item} was not installed, and nothing was written."),
+                "The file does not match the hash the catalog states for it, so it was \
+                 refused before anything reached your library or your installation. The \
+                 catalog's review is what stands behind an item, and this file is not the \
+                 one that was reviewed."
+                    .to_owned(),
+                Some("Copy details"),
+            ),
             // Says nothing about which half failed, because both leave the same
             // state: a file that was not this entry's was never written, and a
             // write that could not finish placed nothing the entry points at.
@@ -1806,6 +1949,18 @@ impl Outcome {
                 "The entry was not pointed at that file.".to_owned(),
                 "Nothing was changed. The entry still names the document it always named, \
                  and that document is still missing."
+                    .to_owned(),
+                Some("Copy details"),
+            ),
+            // The bytes verified and the write is what stopped, so what can be
+            // promised is what a registration promises: the entry list goes
+            // last, and the item is not in it.
+            Outcome::Failed { what: Errand::Install, .. } => (
+                Tone::Err,
+                "The item was not installed.".to_owned(),
+                "It was fetched and checked against the digest the catalog states, and the \
+                 write is what stopped. The entry list is written last, so it is unchanged \
+                 and nothing is registered."
                     .to_owned(),
                 Some("Copy details"),
             ),
@@ -2200,14 +2355,28 @@ impl App {
                 let palette = self.palette;
                 let width = self.width();
                 let open = self.detailing;
-                let catalog =
-                    self.catalog.get_or_insert_with(|| Fetching::start(ui.ctx().clone()));
+                // Started before anything is asked of it, so that the answers
+                // below are about the catalog this frame has rather than about
+                // one that is fetched next frame.
+                if self.catalog.is_none() {
+                    self.catalog = Some(Fetching::start(ui.ctx().clone()));
+                }
+                // Every row's state, worked out once against the list and the
+                // index, before either is borrowed to draw from. A row cannot
+                // answer this for itself: what state a published item is in is a
+                // fact about this machine, and the machine is not in the index.
+                let states = self.published_states();
+                let catalog = self.catalog.as_ref().expect("a fetch was just started");
                 // Taken after the list has been drawn, for the reason the
                 // Local list takes its own: opening the panel changes how wide
                 // every row is, and changing that half way down a list draws
                 // the rest of it to a different grid.
-                if let Some(opened) = published(ui, palette, catalog, width, open) {
+                let pressed = published(ui, palette, catalog, width, open, &states);
+                if let Some(opened) = pressed.opened {
                     self.detailing = opened;
+                }
+                if let Some((uuid, offer)) = pressed.acted {
+                    self.offer(uuid, offer, ui.ctx());
                 }
             }
             Session::Found(_) => self.local(ui),
@@ -2375,7 +2544,7 @@ impl App {
     /// so a window nobody has opened the catalog in says nothing about updates
     /// instead of reaching for a socket to draw a list.
     fn update_available(&self, entry: &Registration) -> bool {
-        let Provenance::Catalog { version } = &entry.provenance else { return false };
+        let Provenance::Catalog { version, .. } = &entry.provenance else { return false };
         // By identity and never by name. The catalog allows two items to share
         // a display name and this application renames an entry when they
         // collide, so matching on the name would eventually mark the wrong row
@@ -2409,6 +2578,90 @@ impl App {
             return Status::PendingRestart;
         }
         Status::Registered
+    }
+
+    /// Which of the design's seven states a published item is in, on this
+    /// machine.
+    ///
+    /// Every one of them is a fact about this machine held against the index,
+    /// which is why it is answered here rather than anywhere near the drawing:
+    /// nothing in a signed index knows what is registered locally, and nothing
+    /// registered locally knows what has been published since.
+    ///
+    /// The order is what the states mean rather than what they are called. A
+    /// failed attempt outranks everything, because it is the only one of the
+    /// seven that is about a press the user just made and is entitled to an
+    /// answer about. After that the question is whether the item is here at all:
+    /// an installed item that this Bitwig is too old for is still installed, and
+    /// telling somebody they need a newer Bitwig for something already in their
+    /// browser is telling them nothing they can act on.
+    fn published_status(&self, found: &Found, item: &orng_catalog::IndexEntry) -> Published {
+        if let Some(refused) = self.refused.get(&item.uuid) {
+            return match refused {
+                catalog::Refused::Download(_) => Published::DownloadFailed,
+                catalog::Refused::Verification(_) => Published::VerificationFailed,
+            };
+        }
+
+        // By identity and never by name, for the reason `update_available`
+        // gives: the catalog allows two items to share a display name.
+        if let Some(entry) = found.entries().get(item.uuid) {
+            // An update before a replacement, because they are offers of
+            // different sizes: an update keeps the identity and every project
+            // that uses it, and a replacement is a different device the user has
+            // to choose to adopt. The one that can be taken without a decision
+            // is the one the row should be making.
+            if self.update_available(entry) {
+                return Published::UpdateAvailable;
+            }
+            if self.replacement_for(item.uuid).is_some() {
+                return Published::Superseded;
+            }
+            return Published::Installed;
+        }
+
+        // A build that does not state its version is not evidence that the item
+        // will not load, so it is not held against it - the same judgement the
+        // detail panel makes about the line it draws.
+        match &found.condition.build {
+            Some(build) if build.version < item.min_bitwig => {
+                Published::Incompatible(item.min_bitwig.clone())
+            }
+            _ => Published::Available,
+        }
+    }
+
+    /// Which state every published item is in, keyed by identity.
+    ///
+    /// Worked out in one pass before anything is drawn, because a row's state is
+    /// a fact about the whole machine and the whole index at once - what is
+    /// registered, what has been superseded by something else in the list, what
+    /// the last press came to - and a list that asked per row while it was being
+    /// drawn would be asking `self` questions with `self` already borrowed.
+    ///
+    /// Empty when there is no index or no installation, which is the two states
+    /// where there are no rows to say anything about.
+    fn published_states(&self) -> std::collections::BTreeMap<Uuid, Published> {
+        let (Session::Found(found), Some(index)) = (&self.session, self.index()) else {
+            return std::collections::BTreeMap::new();
+        };
+        index
+            .items
+            .iter()
+            .map(|item| (item.uuid, self.published_status(found, item)))
+            .collect()
+    }
+
+    /// The published item that lists this one as replaced, if one does.
+    ///
+    /// A fact about the whole index rather than about the row, which is why both
+    /// the row and the panel ask for it here instead of each walking the list.
+    fn replacement_for(&self, uuid: Uuid) -> Option<(&str, Uuid)> {
+        self.index()?
+            .items
+            .iter()
+            .find(|other| other.supersedes.contains(&uuid))
+            .map(|other| (other.name.as_str(), other.uuid))
     }
 
     /// What a removal does with the document, as the preferences have it.
@@ -2499,6 +2752,105 @@ impl App {
             // have come apart, which is worth the crash.
             (on, action) => unreachable!("{action:?} was offered on {on:?}"),
         }
+    }
+
+    /// Carry out what a catalog row's own control asked for.
+    ///
+    /// [`App::act`]'s opposite number, and separate from it for the reason the
+    /// two tables are separate: not one of the five controls a registered row
+    /// offers applies to something that is not registered.
+    fn offer(&mut self, on: Uuid, offer: Offer, ctx: &egui::Context) {
+        match offer {
+            // A press on a row that failed is a press on the row as it will be
+            // once it is tried again, so the failure goes before the attempt
+            // starts. Leaving it would draw `Download failed` over a download
+            // that is running.
+            Offer::Install | Offer::Retry => {
+                self.refused.remove(&on);
+                self.install(on, ctx);
+            }
+            Offer::SeeReplacement => {
+                self.detailing = self.replacement_for(on).map(|(_, uuid)| uuid);
+            }
+            Offer::CopyDetails => {
+                if let Some(refused) = self.refused.get(&on) {
+                    ctx.copy_text(refused.details().to_owned());
+                }
+            }
+        }
+    }
+
+    /// Fetch a published item, prove it is the one the index described, and
+    /// register it.
+    ///
+    /// The fetch is a worker of its own and the registration is the [`Applying`]
+    /// every other write goes through - which is the whole of why installing
+    /// needs no new machinery on this side. The design's own sentence: on a
+    /// prepared installation this is *Update entries* work, so there is no
+    /// backup, no confirmation and no requirement that Bitwig be closed.
+    ///
+    /// **Nothing starts on top of something already running**, for the reason
+    /// `write_words` gives. An install that is queued behind a preparation would
+    /// be an install nobody asked for by the time it ran.
+    fn install(&mut self, uuid: Uuid, ctx: &egui::Context) {
+        if self.applying.is_some() || self.installing.is_some() {
+            return;
+        }
+        let Some(index) = self.index() else { return };
+        let Some(item) = index.items.iter().find(|item| item.uuid == uuid) else { return };
+        // The index's own commit, which is where the documents it describes
+        // live. Not the item's `merged_in`: that names the change that published
+        // the item and is what the panel links to, and the tree at that commit
+        // is not the tree this index was built from.
+        self.installing =
+            Some(Install::start(item.clone(), index.revision.clone(), ctx.clone()));
+    }
+
+    /// Take what the fetch came back with, and write it or hold the refusal.
+    ///
+    /// Split out of [`App::pump`] because it is the seam between the two halves
+    /// of an install, and the registration it starts has to be built from the
+    /// row the digest was checked against rather than from whatever the catalog
+    /// says now.
+    fn installed(&mut self, finished: Install, ctx: &egui::Context) {
+        let outcome = finished.outcome.expect("only a finished install is taken");
+        let item = finished.item;
+        let document = match outcome {
+            Ok(document) => document,
+            Err(refused) => {
+                // A hash that does not match is a trust event and the design
+                // says it must not read like a network error, so it is said out
+                // loud as well as held on the row. An ordinary download failure
+                // is not: it is per-item, it offers `Retry`, and a banner for
+                // every dropped connection is a window talking over itself.
+                if let catalog::Refused::Verification(why) = &refused {
+                    self.outcome = Some(Outcome::Refused {
+                        item: item.name.clone(),
+                        why: why.clone(),
+                    });
+                }
+                self.refused.insert(item.uuid, refused);
+                return;
+            }
+        };
+
+        let Session::Found(found) = &self.session else { return };
+        let registration = match published_registration(&item, &document) {
+            Ok(registration) => registration,
+            // A published item this machine cannot register under: a name with a
+            // tab in it, or a file name that will not make a library path. The
+            // bytes verified, so this is the catalog carrying something the
+            // entry list cannot hold, and nothing has been written.
+            Err(why) => {
+                self.outcome = Some(Outcome::Failed { what: Errand::Install, why: why.to_string() });
+                return;
+            }
+        };
+
+        let mut update = Update::to(found.entries().clone());
+        update.add(registration, document);
+        self.applying =
+            Some(Applying::start(Errand::Install, found.to.clone(), update, ctx.clone()));
     }
 
     /// Point a registered entry back at its document.
@@ -3046,6 +3398,31 @@ fn revised(entry: &Registration, words: &widget::Words) -> Option<Registration> 
     })
 }
 
+/// What to register a published item as, once its bytes have been proved.
+///
+/// Derived from the **document** and not from the index row, which is the same
+/// choice a drop already makes: the description and the search keywords Bitwig
+/// will show live in the document's own identity, the index copied them out of
+/// there when it was built, and deriving them twice from two places is two
+/// places for them to differ. What the index adds is the only thing the document
+/// cannot know - which publication this is, and which change published it.
+fn published_registration(
+    item: &orng_catalog::IndexEntry,
+    document: &Document,
+) -> orng_tools::Result<Registration> {
+    // The index's path is a repository path, so what is after the last slash is
+    // the file name the catalog publishes under. The same name goes into the
+    // library, so the document is where somebody looking for it would look.
+    let file_name = item.path.rsplit_once('/').map(|(_, tail)| tail).unwrap_or(&item.path);
+    Ok(Registration {
+        provenance: Provenance::Catalog {
+            version: item.version,
+            reviewed_in: item.merged_in.clone(),
+        },
+        ..Registration::from_document(document, file_name)?
+    })
+}
+
 /// Show a document where it lives, in whatever the system uses to look at
 /// files.
 ///
@@ -3265,17 +3642,29 @@ const BESIDE_THE_NAME: f32 = 9.0;
 /// Between a catalog item's name and the description under it.
 const UNDER_THE_NAME: f32 = 2.0;
 
-/// The Catalog view: what ORNG Catalog publishes, once it has been proved.
+/// What a press in the catalog list was.
 ///
-/// Answers which row was opened, if one was - `Some(None)` closes the panel,
-/// which is what clicking the open row again means.
+/// Two fields rather than one enum because they are not alternatives: the row's
+/// own control stops the press reaching the row, so at most one of these
+/// happens, but which one is not a choice the list makes.
+#[derive(Default)]
+struct Pressed {
+    /// The row that was opened, if one was. `Some(None)` closes the panel,
+    /// which is what clicking the open row again means.
+    opened: Option<Option<Uuid>>,
+    /// The item whose own control was pressed, and which control it was.
+    acted: Option<(Uuid, Offer)>,
+}
+
+/// The Catalog view: what ORNG Catalog publishes, once it has been proved.
 fn published(
     ui: &mut egui::Ui,
     palette: Palette,
     catalog: &Fetching,
     width: widget::Width,
     open: Option<Uuid>,
-) -> Option<Option<Uuid>> {
+    states: &std::collections::BTreeMap<Uuid, Published>,
+) -> Pressed {
     match catalog.outcome.as_ref() {
         None => {
             let empty = widget::Empty {
@@ -3334,11 +3723,15 @@ fn published(
         // view divides into pending, registered and factory, and the catalog is
         // one list of one kind of thing.
         Some(Ok(index)) => {
-            let mut opened = None;
+            let mut pressed = Pressed::default();
+            let mut acted = None;
             widget::list(ui, |ui| {
                 for entry in &index.items {
                     let selected = open == Some(entry.uuid);
                     let secondary = widget::supporting_ink(palette, selected);
+                    let status = states
+                        .get(&entry.uuid)
+                        .expect("every published item was answered for before the list was drawn");
                     let row = widget::catalog_row(ui, palette, width, selected, |ui, columns| {
                         widget::cell(ui, columns.kind, Align::Min, |ui| {
                             widget::kind_label(ui, secondary, entry.kind.into());
@@ -3351,7 +3744,7 @@ fn published(
                         widget::stacked_cell(ui, columns.name, |ui| {
                             ui.label(
                                 font::run(&entry.name, font::emphasis(ui.ctx(), font::ROW_NAME))
-                                    .color(palette.ink),
+                                    .color(widget::published_name_colour(palette, status)),
                             );
                             ui.add_space(UNDER_THE_NAME);
                             ui.add(
@@ -3384,18 +3777,32 @@ fn published(
                                 );
                             });
                         }
+                        widget::cell(ui, columns.status, Align::Min, |ui| {
+                            ui.add(
+                                egui::Label::new(
+                                    font::run(status.word(), font::plain(font::CHIP))
+                                        .color(widget::published_colour(palette, status)),
+                                )
+                                .truncate(),
+                            );
+                        });
+                        if let Some(offer) = widget::catalog_action(ui, palette, columns.actions, status)
+                        {
+                            acted = Some((entry.uuid, offer));
+                        }
                     });
                     if row.clicked() {
                         // The same row again closes it, which is what makes the
                         // panel answerable from the list it is about.
-                        opened = Some(if selected { None } else { Some(entry.uuid) });
+                        pressed.opened = Some(if selected { None } else { Some(entry.uuid) });
                     }
                 }
             });
-            return opened;
+            pressed.acted = acted;
+            return pressed;
         }
     }
-    None
+    Pressed::default()
 }
 
 #[cfg(test)]
@@ -3415,6 +3822,7 @@ mod tests {
             digest: None,
             provenance: Provenance::Catalog {
                 version: "1.0.0".parse().expect("a version"),
+                reviewed_in: None,
             },
         }
     }

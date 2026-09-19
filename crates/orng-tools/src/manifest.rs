@@ -14,7 +14,9 @@ use std::path::Path;
 
 use uuid::Uuid;
 
-use crate::{Digest, Error, ItemVersion, Kind, LibraryPath, Provenance, Registration, Result, fs};
+use crate::{
+    Digest, Error, ItemVersion, Kind, LibraryPath, Provenance, Registration, Result, Revision, fs,
+};
 
 /// Format marker, written first and checked on the way back in. The reader
 /// refuses a number it does not know rather than misreading a future layout.
@@ -41,16 +43,26 @@ enum Format {
     /// column that goes empty stays interior - the same hazard [`columns_for`]
     /// names, and the digest is empty for every row registered before this.
     V3,
+    /// Ten columns: the catalog commit an item was reviewed in, which is what
+    /// lets an installed entry name the change that published it rather than
+    /// only the version it was at.
+    ///
+    /// Written between the version and the source for the reason the digest is
+    /// written before both: it is empty for every row that is not a catalog
+    /// item, and the source column stays last so that the column an editor
+    /// might strip is never the empty one.
+    V4,
 }
 
 impl Format {
-    const CURRENT: Format = Format::V3;
+    const CURRENT: Format = Format::V4;
 
     fn parse(number: &str) -> Option<Format> {
         match number {
             "1" => Some(Format::V1),
             "2" => Some(Format::V2),
             "3" => Some(Format::V3),
+            "4" => Some(Format::V4),
             _ => None,
         }
     }
@@ -60,6 +72,7 @@ impl Format {
             Format::V1 => 6,
             Format::V2 => 8,
             Format::V3 => 9,
+            Format::V4 => 10,
         }
     }
 
@@ -68,6 +81,7 @@ impl Format {
             Format::V1 => 1,
             Format::V2 => 2,
             Format::V3 => 3,
+            Format::V4 => 4,
         }
     }
 }
@@ -124,10 +138,10 @@ impl Manifest {
     pub fn to_tsv(&self) -> String {
         let mut out = format!("{MARKER} {}\n", Format::CURRENT.number());
         for entry in &self.entries {
-            let (version, source) = columns_for(&entry.provenance);
+            let (version, reviewed_in, source) = columns_for(&entry.provenance);
             let digest = entry.digest.as_ref().map(Digest::as_str).unwrap_or_default();
             out.push_str(&format!(
-                "{}\t{}\t{}\t{}\t{}\t{}\t{digest}\t{version}\t{source}\n",
+                "{}\t{}\t{}\t{}\t{}\t{}\t{digest}\t{version}\t{reviewed_in}\t{source}\n",
                 entry.uuid,
                 entry.kind.enum_constant(),
                 entry.name,
@@ -168,27 +182,42 @@ impl Manifest {
     }
 }
 
-/// Provenance as its two columns: the version its source can name, then the
-/// source itself.
+/// Provenance as its three columns: the version its source can name, the change
+/// that published it, then the source itself.
 ///
-/// Source last, and so never empty, because a version is what goes missing: a
-/// local file has none, and a trailing empty column is the one an editor that
+/// Source last, and so never empty, because the other two are what go missing: a
+/// local file has neither, and a trailing empty column is the one an editor that
 /// strips trailing whitespace would silently eat.
-fn columns_for(provenance: &Provenance) -> (String, &'static str) {
+fn columns_for(provenance: &Provenance) -> (String, &str, &'static str) {
     match provenance {
-        Provenance::Local => (String::new(), "local"),
-        Provenance::Catalog { version } => (version.to_string(), "catalog"),
+        Provenance::Local => (String::new(), "", "local"),
+        Provenance::Catalog { version, reviewed_in } => (
+            version.to_string(),
+            reviewed_in.as_ref().map(Revision::as_str).unwrap_or_default(),
+            "catalog",
+        ),
     }
 }
 
-fn parse_provenance(version: &str, source: &str) -> Option<Provenance> {
+/// Read them back, refusing anything that says two things at once.
+///
+/// `reviewed_in` is `None` for every row written before format 4 and for any
+/// item whose index could not name the commit that published it, so an empty
+/// column is an answer rather than a fault. Anything else there has to be a
+/// revision, for the reason a digest that cannot be one is refused: a link built
+/// from it would go nowhere and say nothing about why.
+fn parse_provenance(version: &str, reviewed_in: &str, source: &str) -> Option<Provenance> {
     match (source, version) {
-        ("local", "") => Some(Provenance::Local),
-        ("catalog", version) => {
-            Some(Provenance::Catalog { version: version.parse::<ItemVersion>().ok()? })
-        }
-        // A local file with a version, or a catalog item without one, is a row
-        // no writer here produces and no reader can act on.
+        ("local", "") if reviewed_in.is_empty() => Some(Provenance::Local),
+        ("catalog", version) => Some(Provenance::Catalog {
+            version: version.parse::<ItemVersion>().ok()?,
+            reviewed_in: match reviewed_in {
+                "" => None,
+                text => Some(Revision::new(text).ok()?),
+            },
+        }),
+        // A local file with a version or a review, or a catalog item without a
+        // version, is a row no writer here produces and no reader can act on.
         _ => None,
     }
 }
@@ -210,9 +239,14 @@ fn parse_line(line: &str, number: usize, format: Format) -> Result<Registration>
         // Everything written under version 1 predates the catalog, so it can
         // only have come from a file the user chose.
         Format::V1 => Provenance::Local,
-        Format::V2 => parse_provenance(columns[6], columns[7])
+        // Nothing written before version 4 recorded which change published an
+        // item, so every row read under an older layout is told that no review
+        // was named - which is the truth about it.
+        Format::V2 => parse_provenance(columns[6], "", columns[7])
             .ok_or(Error::MalformedManifest { line: number, reason: "bad provenance" })?,
-        Format::V3 => parse_provenance(columns[7], columns[8])
+        Format::V3 => parse_provenance(columns[7], "", columns[8])
+            .ok_or(Error::MalformedManifest { line: number, reason: "bad provenance" })?,
+        Format::V4 => parse_provenance(columns[7], columns[8], columns[9])
             .ok_or(Error::MalformedManifest { line: number, reason: "bad provenance" })?,
     };
     // Nothing written before version 3 recorded what it placed, and an empty
@@ -221,8 +255,8 @@ fn parse_line(line: &str, number: usize, format: Format) -> Result<Registration>
     // carries one and cannot be compared is worse than one that carries none.
     let digest = match format {
         Format::V1 | Format::V2 => None,
-        Format::V3 if columns[6].is_empty() => None,
-        Format::V3 => Some(
+        Format::V3 | Format::V4 if columns[6].is_empty() => None,
+        Format::V3 | Format::V4 => Some(
             Digest::new(columns[6])
                 .map_err(|_| Error::MalformedManifest { line: number, reason: "bad digest" })?,
         ),
@@ -257,9 +291,16 @@ mod tests {
         }
     }
 
+    /// The commit a sample item was published by. Forty hex digits, as git names
+    /// an object and as [`Revision`] insists.
+    const REVIEWED_IN: &str = "3f9a1c2e8b4d7a61c05f2d93ab7e14c8f6021b5d";
+
     fn from_catalog() -> Registration {
         Registration {
-            provenance: Provenance::Catalog { version: "2.0.3".parse().unwrap() },
+            provenance: Provenance::Catalog {
+                version: "2.0.3".parse().unwrap(),
+                reviewed_in: Some(Revision::new(REVIEWED_IN).unwrap()),
+            },
             ..sample()
         }
     }
@@ -297,10 +338,10 @@ mod tests {
     #[test]
     fn malformed_lines_are_refused_rather_than_skipped() {
         assert!(
-            Manifest::parse(&row("not-a-uuid\tDEVICE\tA\tdevices/a.bwdevice\t\t\t\t\tlocal"))
+            Manifest::parse(&row("not-a-uuid\tDEVICE\tA\tdevices/a.bwdevice\t\t\t\t\t\tlocal"))
                 .is_err()
         );
-        assert!(Manifest::parse("#orng-registry 3\n#comment\n\n").unwrap().is_empty());
+        assert!(Manifest::parse("#orng-registry 4\n#comment\n\n").unwrap().is_empty());
     }
 
     #[test]
@@ -309,8 +350,46 @@ mod tests {
         manifest.insert(from_catalog());
         let parsed = Manifest::parse(&manifest.to_tsv()).unwrap();
         assert_eq!(parsed, manifest);
-        let installed = Provenance::Catalog { version: "2.0.3".parse().unwrap() };
+        let installed = Provenance::Catalog {
+            version: "2.0.3".parse().unwrap(),
+            reviewed_in: Some(Revision::new(REVIEWED_IN).unwrap()),
+        };
         assert_eq!(parsed.entries()[0].provenance, installed);
+    }
+
+    /// The commit a catalog item was published by, back off the disk whole.
+    ///
+    /// Worth its own assertion because the value is only ever obtainable at the
+    /// moment of installing: the catalog goes on publishing, so an item this
+    /// build installed today and that is superseded next month has nowhere left
+    /// to look the review up. A round trip that lost it would lose it for good.
+    #[test]
+    fn the_change_that_published_an_item_round_trips() {
+        let mut manifest = Manifest::default();
+        manifest.insert(from_catalog());
+        let parsed = Manifest::parse(&manifest.to_tsv()).unwrap();
+        let Provenance::Catalog { reviewed_in, .. } = &parsed.entries()[0].provenance else {
+            panic!("the catalog item came back as a local file");
+        };
+        assert_eq!(reviewed_in.as_ref().map(Revision::as_str), Some(REVIEWED_IN));
+    }
+
+    /// An index generated inside a pull request cannot name the commit that has
+    /// not merged yet, so an item installed from one records no review. That is
+    /// an answer and not a fault, and it has to survive the round trip as one
+    /// rather than becoming a parse failure.
+    #[test]
+    fn a_catalog_item_with_no_review_named_is_read_back_as_having_none() {
+        let mut manifest = Manifest::default();
+        manifest.insert(Registration {
+            provenance: Provenance::Catalog {
+                version: "2.0.3".parse().unwrap(),
+                reviewed_in: None,
+            },
+            ..sample()
+        });
+        let parsed = Manifest::parse(&manifest.to_tsv()).unwrap();
+        assert_eq!(parsed, manifest);
     }
 
     #[test]
@@ -330,7 +409,9 @@ mod tests {
         let mut manifest = Manifest::default();
         manifest.insert(Registration { digest: None, ..sample() });
         let line = manifest.to_tsv().lines().nth(1).unwrap().to_owned();
-        assert!(line.contains("\t\t\tlocal"), "{line:?}");
+        // The digest, the version and the review, all empty, and the source
+        // behind them.
+        assert!(line.contains("\t\t\t\tlocal"), "{line:?}");
         assert!(line.ends_with("\tlocal"), "{line:?}");
         // And it comes back as nothing recorded rather than as a parse failure.
         let parsed = Manifest::parse(&manifest.to_tsv()).unwrap();
@@ -359,12 +440,26 @@ mod tests {
         let path = "devices/My Devices/A.bwdevice";
         let real = Digest::of(b"DISPERSER").to_string();
         for digest in ["nonsense", &real[..63], &real.to_uppercase()] {
-            let line = format!("{uuid}\tDEVICE\tA\t{path}\t\t\t{digest}\t\tlocal");
+            let line = format!("{uuid}\tDEVICE\tA\t{path}\t\t\t{digest}\t\t\tlocal");
             assert!(Manifest::parse(&row(&line)).is_err(), "accepted {digest:?}");
         }
         // And the real one is accepted, so the loop above is refusing the
         // digest rather than the row around it.
-        let line = format!("{uuid}\tDEVICE\tA\t{path}\t\t\t{real}\t\tlocal");
+        let line = format!("{uuid}\tDEVICE\tA\t{path}\t\t\t{real}\t\t\tlocal");
+        assert!(Manifest::parse(&row(&line)).is_ok());
+    }
+
+    /// The same for the review: a revision that cannot be one is a link that
+    /// goes nowhere, and the panel would draw it as somewhere to go.
+    #[test]
+    fn a_review_that_cannot_be_a_commit_is_refused() {
+        let uuid = "80c0dc4c-d142-53a7-85ee-b91427819b66";
+        let path = "devices/My Devices/A.bwdevice";
+        for review in ["3f9a1c2", &REVIEWED_IN.to_uppercase(), &"z".repeat(40)] {
+            let line = format!("{uuid}\tDEVICE\tA\t{path}\t\t\t\t2.0.3\t{review}\tcatalog");
+            assert!(Manifest::parse(&row(&line)).is_err(), "accepted {review:?}");
+        }
+        let line = format!("{uuid}\tDEVICE\tA\t{path}\t\t\t\t2.0.3\t{REVIEWED_IN}\tcatalog");
         assert!(Manifest::parse(&row(&line)).is_ok());
     }
 
@@ -380,7 +475,29 @@ mod tests {
             \tlocal\n";
         let parsed = Manifest::parse(v2).unwrap();
         assert_eq!(parsed.entries(), &[Registration { digest: None, ..sample() }]);
-        assert!(parsed.to_tsv().starts_with("#orng-registry 3\n"));
+        assert!(parsed.to_tsv().starts_with("#orng-registry 4\n"));
+    }
+
+    /// The list the build before this one wrote: nine columns under marker 3,
+    /// with the digest but no review. It keeps loading, its digest survives, and
+    /// its catalog rows come back naming no review - which is the truth about
+    /// them, because nothing recorded one.
+    #[test]
+    fn a_list_written_before_the_review_says_nothing_about_which_change_published_it() {
+        let real = Digest::of(b"DISPERSER");
+        let v3 = format!(
+            "#orng-registry 3\n\
+            80c0dc4c-d142-53a7-85ee-b91427819b66\tDEVICE\tDISPERSER\t\
+            devices/My Devices/DISPERSER.bwdevice\tAllpass phase-rotator\tdisperser allpass\t\
+            {real}\t2.0.3\tcatalog\n"
+        );
+        let parsed = Manifest::parse(&v3).unwrap();
+        assert_eq!(parsed.entries()[0].digest, Some(real));
+        assert_eq!(
+            parsed.entries()[0].provenance,
+            Provenance::Catalog { version: "2.0.3".parse().unwrap(), reviewed_in: None }
+        );
+        assert!(parsed.to_tsv().starts_with("#orng-registry 4\n"));
     }
 
     #[test]
@@ -394,7 +511,7 @@ mod tests {
         assert_eq!(parsed.entries(), &[Registration { digest: None, ..sample() }]);
 
         // And is rewritten in the current format, not the one it arrived in.
-        assert!(parsed.to_tsv().starts_with("#orng-registry 3\n"));
+        assert!(parsed.to_tsv().starts_with("#orng-registry 4\n"));
     }
 
     #[test]
@@ -413,8 +530,14 @@ mod tests {
         let path = "devices/My Devices/A.bwdevice";
         // A local file cannot be at a published version, and a catalog item
         // cannot be at none: neither says anything an update check could use.
-        for (version, source) in [("2.0.3", "local"), ("", "catalog"), ("nonsense", "catalog")] {
-            let line = format!("{uuid}\tDEVICE\tA\t{path}\t\t\t\t{version}\t{source}");
+        // Nor can a local file have been reviewed anywhere.
+        for (version, review, source) in [
+            ("2.0.3", "", "local"),
+            ("", "", "catalog"),
+            ("nonsense", "", "catalog"),
+            ("", REVIEWED_IN, "local"),
+        ] {
+            let line = format!("{uuid}\tDEVICE\tA\t{path}\t\t\t\t{version}\t{review}\t{source}");
             assert!(Manifest::parse(&row(&line)).is_err(), "accepted {version:?} {source:?}");
         }
     }

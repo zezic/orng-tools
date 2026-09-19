@@ -50,6 +50,10 @@ pub use bitwig_registry::{Anchor, Binding, BuildId, Entry, GuardState};
 pub use entries::{TheDocument, Update};
 pub use home::OrngHome;
 pub use orng_catalog::Digest;
+/// The commit a catalog item was published by, which a registration records so
+/// that an installed item can still name the review it came through. Re-exported
+/// for the reason [`Digest`] is: it is the type of a public field here.
+pub use orng_catalog::Revision;
 pub use orng_catalog::manifest::ItemVersion;
 pub use placement::{Content, Placement, Standing, Strategy};
 pub use manifest::Manifest;
@@ -237,8 +241,16 @@ pub struct Registration {
 pub enum Provenance {
     /// A file the user chose themselves. Nothing upstream to compare against.
     Local,
-    /// An ORNG Catalog item, at the version that was installed.
-    Catalog { version: ItemVersion },
+    /// An ORNG Catalog item, at the version that was installed and with the
+    /// change that published it.
+    ///
+    /// The revision is optional because the index it came from may not have
+    /// carried one: an index generated inside a pull request cannot name the
+    /// commit that has not merged yet. It is recorded at install and never
+    /// afterwards - the catalog goes on publishing, and an item superseded next
+    /// month could not be traced back to the review this copy came through if it
+    /// were looked up rather than written down.
+    Catalog { version: ItemVersion, reviewed_in: Option<Revision> },
 }
 
 impl Registration {

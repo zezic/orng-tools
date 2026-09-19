@@ -315,7 +315,13 @@ fn the_injected_class_registers_the_entry_list() {
             // columns it knows is covered too.
             provenance: match kind {
                 Kind::Device => Provenance::Local,
-                _ => Provenance::Catalog { version: "1.2.0".parse().unwrap() },
+                _ => Provenance::Catalog {
+                    version: "1.2.0".parse().unwrap(),
+                    reviewed_in: orng_tools::Revision::new(
+                        "3f9a1c2e8b4d7a61c05f2d93ab7e14c8f6021b5d",
+                    )
+                    .ok(),
+                },
             },
         });
     }

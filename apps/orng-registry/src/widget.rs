@@ -23,7 +23,7 @@ use eframe::egui::{
 };
 use orng_tools::{Kind, Placement, TheDocument};
 
-use crate::status::{Action, Status};
+use crate::status::{Action, Offer, Published, Status};
 use crate::theme::{Palette, font, metric};
 
 /// The frame behind the install bar and the action bar.
@@ -1024,6 +1024,58 @@ pub fn row_actions(
     pressed
 }
 
+/// The control at the right end of a catalog row, in the column reserved for it.
+///
+/// Which one it is is the status's answer and not this function's - see
+/// [`crate::status`], where the catalog's table is transcribed beside the entry
+/// list's.
+///
+/// **Drawn whether or not the pointer is on the row**, and that is the design's
+/// own difference from an entry row: `CatalogRow.dc.html:98` gates the control
+/// on there *being* one and never on hover, and moves only its opacity. A
+/// catalog list is read to decide something, and a press that appears only once
+/// you are already over the row is one nobody knows is there.
+///
+/// Answers whether it was pressed.
+pub fn catalog_action(
+    ui: &mut Ui,
+    palette: Palette,
+    at: Rect,
+    status: &Published,
+) -> Option<Offer> {
+    let offer = status.offer()?;
+    // The design colours the words and never the fill: the action bar's primary
+    // stays the only accent fill in the window, which is what keeps it the one
+    // thing the window is asking for.
+    let ink = match status {
+        Published::UpdateAvailable => palette.accent_text,
+        Published::DownloadFailed | Published::VerificationFailed => palette.err_text,
+        _ => palette.ink,
+    };
+    let mut group = ui.new_child(
+        egui::UiBuilder::new().max_rect(at).layout(Layout::right_to_left(Align::Center)),
+    );
+    let label = offer.label();
+    let button = egui::Button::new(font::run(label, font::emphasis(group.ctx(), font::CHIP)).color(ink))
+        .stroke(Stroke::NONE)
+        .corner_radius(CornerRadius::same(metric::RADIUS))
+        .min_size(vec2(0.0, metric::CATALOG_ACTION));
+    let pressed = group
+        .scope(|ui| {
+            ui.spacing_mut().button_padding = vec2(metric::CATALOG_ACTION_PAD_X, 0.0);
+            // A button is never shorter than the style's interactive size, and
+            // this one is: the theme sets that to a bar control's 26 and the
+            // design draws this at 24. `min_size` alone is a floor and not a
+            // ceiling, so it cannot bring a control back down.
+            ui.spacing_mut().interact_size.y = metric::CATALOG_ACTION;
+            filled_button(ui, palette.btn, palette.btn_hover, button)
+                .on_hover_cursor(egui::CursorIcon::PointingHand)
+        })
+        .inner
+        .clicked();
+    pressed.then_some(offer)
+}
+
 /// One of those controls: a square with a mark in it, and nothing else until
 /// the pointer is on it.
 ///
@@ -1156,6 +1208,36 @@ pub fn status_colour(palette: Palette, status: Status) -> Color32 {
     }
 }
 
+/// The same map for a catalog row - `CatalogRow.dc.html:68-76`.
+///
+/// A second function rather than a second arm, because the two tables are two
+/// tables: `Installed` is the quiet grey of something already dealt with and
+/// `Registered` is the quieter grey of a row with nothing to say, and they are
+/// not the same colour.
+pub fn published_colour(palette: Palette, status: &Published) -> Color32 {
+    match status {
+        Published::UpdateAvailable => palette.accent_text,
+        Published::DownloadFailed | Published::VerificationFailed => palette.err_text,
+        // Brighter than `Available`, because both of these are about something
+        // the user already has.
+        Published::Installed | Published::Superseded => palette.ink_2,
+        Published::Available | Published::Incompatible(_) => palette.ink_3,
+    }
+}
+
+/// The ink an installed item's *name* is set in.
+///
+/// The design dims it: a catalog list is read to choose something, and the rows
+/// that are not a choice any more step back. `CatalogRow.dc.html:89`, which dims
+/// on exactly the two states where the item is on this machine and needs
+/// nothing - an update is still a choice, so it keeps the full ink.
+pub fn published_name_colour(palette: Palette, status: &Published) -> Color32 {
+    match status {
+        Published::Installed | Published::Superseded => palette.ink_2,
+        _ => palette.ink,
+    }
+}
+
 /// The ink a row's supporting text is set in, which the design warms while a
 /// panel is open on that row - so a selected row reads as one thing rather than
 /// as an ordinary row with a colour behind it.
@@ -1284,6 +1366,11 @@ pub struct Inspected<'a> {
     /// a phrase.
     pub source: &'a str,
     pub source_icon: &'a str,
+    /// The change that published it, as a label and the link behind it - the
+    /// same pair [`Detailed`] carries, and absent for anything that did not come
+    /// from the catalog or that was registered before the entry list recorded
+    /// one.
+    pub provenance: Option<(&'a str, &'a str)>,
     /// Where the document actually is, which is a different question.
     pub placement: &'a Placement,
     /// Which of the design's ten states this entry is in, which is what decides
@@ -1301,6 +1388,10 @@ pub enum Inspecting {
     Nothing,
     Closed,
     CopiedUuid,
+    /// The change that published this entry, where it came from the catalog.
+    /// The same press the detail panel's own provenance line is, leading to the
+    /// same commit - one fact about the item, stated on both surfaces.
+    Provenance,
     /// One of the entry's own controls, which are the row's controls with
     /// words on them. The same press and the same consequence: queueing a
     /// removal from here leaves the row there, struck through, until the apply
@@ -1356,8 +1447,8 @@ pub fn inspector(
         footnote(ui, palette, "Proposed from the name.");
 
         rule(ui, palette, metric::BETWEEN_GROUPS);
-        if facts(ui, palette, item) {
-            pressed = Inspecting::CopiedUuid;
+        if let Some(fact) = facts(ui, palette, item) {
+            pressed = fact;
         }
 
         rule(ui, palette, metric::BETWEEN_GROUPS);
@@ -1428,6 +1519,84 @@ fn panel_header(ui: &mut Ui, palette: Palette, name: &str, tag: impl FnOnce(&mut
             );
         });
         closed
+    })
+    .inner
+}
+
+/// The bar at the foot of a panel, on the header's colour rather than the body's.
+///
+/// Claimed before [`panel_body`] and never after it, for the reason the aside
+/// itself is claimed before the page: the body scrolls in what is left, and a
+/// bar allocated after it would be laid out inside the scrolling region and
+/// travel with the content.
+fn panel_foot<T>(ui: &mut Ui, palette: Palette, contents: impl FnOnce(&mut Ui) -> T) -> T {
+    let mut out = None;
+    egui::Panel::bottom("panel-foot")
+        .frame(
+            Frame::new().fill(palette.panel).inner_margin(Margin::symmetric(
+                metric::PANEL_FOOT_PAD_X as i8,
+                metric::PANEL_FOOT_PAD_Y as i8,
+            )),
+        )
+        .show_separator_line(false)
+        .show(ui, |ui| {
+            ui.horizontal(|ui| {
+                ui.spacing_mut().item_spacing.x = metric::ALONG_A_PANEL_FOOT;
+                // The taller of the two controls, stated rather than arrived
+                // at: `align-items:center` centres the shorter one against the
+                // bar, and a row that is only as tall as whatever was laid out
+                // first has nothing to centre the next thing against - which
+                // leaves the 30 sitting on the 32's top edge, one pixel out.
+                ui.set_min_height(metric::PANEL_PRIMARY);
+                out = Some(contents(ui));
+            });
+        });
+    out.expect("the foot's contents run once")
+}
+
+/// The removal at the left end of that bar.
+///
+/// `--ink-2`, and red only under the pointer: the same promise the row's own
+/// removal makes, made the same way. What becomes of the document is a setting,
+/// so the caller states it on the hover rather than this function guessing.
+/// **Painted rather than laid out as a button**, because what the pointer
+/// changes here is the ink and not the ground - `style-hover:color:var(
+/// --err-text)` and no fill of its own. A button carries its colour in the text
+/// it was built from, so it is settled before anything can be asked about the
+/// pointer; the design's own order is the other way round.
+fn panel_remove(ui: &mut Ui, palette: Palette, consequence: &str) -> Response {
+    let font = font::plain(font::CONTROL);
+    let words = ui.painter().layout_no_wrap("Remove".to_owned(), font, palette.ink_2);
+    let (rect, response) = ui.allocate_exact_size(
+        vec2(words.size().x + 2.0 * metric::PANEL_REMOVE_PAD_X, metric::PANEL_REMOVE),
+        Sense::click(),
+    );
+    response.widget_info(|| {
+        egui::WidgetInfo::labeled(egui::WidgetType::Button, ui.is_enabled(), "Remove")
+    });
+
+    ui.painter().rect_filled(rect, CornerRadius::same(metric::RADIUS), palette.btn);
+    let ink = if response.hovered() { palette.err_text } else { palette.ink_2 };
+    ui.painter().galley(
+        rect.center() - words.size() / 2.0,
+        ui.painter().layout_no_wrap("Remove".to_owned(), font::plain(font::CONTROL), ink),
+        ink,
+    );
+    response.on_hover_cursor(egui::CursorIcon::PointingHand).on_hover_text(consequence)
+}
+
+/// The primary at the right end of it, which is the one accent fill either panel
+/// draws.
+fn panel_primary(ui: &mut Ui, palette: Palette, label: &str) -> Response {
+    let button =
+        egui::Button::new(font::run(label, font::emphasis(ui.ctx(), font::ACTION)).color(palette.accent_ink))
+            .stroke(Stroke::NONE)
+            .corner_radius(CornerRadius::same(metric::RADIUS))
+            .min_size(vec2(0.0, metric::PANEL_PRIMARY));
+    ui.scope(|ui| {
+        ui.spacing_mut().button_padding = vec2(metric::PANEL_PRIMARY_PAD_X, 0.0);
+        filled_button(ui, palette.accent, palette.accent, button)
+            .on_hover_cursor(egui::CursorIcon::PointingHand)
     })
     .inner
 }
@@ -1671,8 +1840,8 @@ fn rule(ui: &mut Ui, palette: Palette, gap: f32) {
 /// What is true of this entry rather than what can be typed into it: the
 /// identity, where the registry points, where it came from, and where it is.
 ///
-/// Answers whether the identity was copied.
-fn facts(ui: &mut Ui, palette: Palette, item: &Inspected<'_>) -> bool {
+/// Answers which of its two presses happened, if either did.
+fn facts(ui: &mut Ui, palette: Palette, item: &Inspected<'_>) -> Option<Inspecting> {
     label_above(ui, palette, "UUID", metric::UNDER_A_FACT);
     // In a `horizontal`, which takes the height of what is in it. A bare
     // `with_layout` in a top-down column takes the whole of what is left of the
@@ -1718,6 +1887,27 @@ fn facts(ui: &mut Ui, palette: Palette, item: &Inspected<'_>) -> bool {
         palette.ink_3,
         metric::ALONG_A_PANEL_ACTION,
     ));
+    // Under the source and inside the same group, which is why this is the one
+    // gap here that is the group's own rather than [`metric::BETWEEN_FACTS`] -
+    // `Inspector.dc.html:84` sets the Source block on `gap:3px`. It says where
+    // this machine's copy came through, which is a different fact from the
+    // catalog detail's line about the item; the two carry the same URL because
+    // it is the same commit.
+    let mut reviewed = None;
+    if let Some((label, _)) = item.provenance {
+        ui.add_space(metric::UNDER_A_FACT);
+        let line = format!("Reviewed in {label}");
+        if ui
+            .add(
+                egui::Label::new(font::run(line, font::plain(font::NOTE)).color(palette.accent_text))
+                    .sense(Sense::click()),
+            )
+            .on_hover_cursor(egui::CursorIcon::PointingHand)
+            .clicked()
+        {
+            reviewed = Some(Inspecting::Provenance);
+        }
+    }
 
     ui.add_space(metric::BETWEEN_FACTS);
     ui.horizontal(|ui| {
@@ -1725,7 +1915,10 @@ fn facts(ui: &mut Ui, palette: Palette, item: &Inspected<'_>) -> bool {
         ui.label(font::run("Placement", font::emphasis(ui.ctx(), font::NOTE)).color(palette.ink_2));
         placement_chip(ui, palette, item.placement);
     });
-    copied
+    // The identity first, because it is the press above: two presses cannot
+    // happen in one frame, and if they somehow did the nearer one is the one
+    // the pointer is on.
+    copied.then_some(Inspecting::CopiedUuid).or(reviewed)
 }
 
 /// Where a registered document actually is, as the design tones it: a link is
@@ -1857,6 +2050,13 @@ pub struct Detailed<'a> {
     pub homepage: Option<&'a str>,
     /// The item that takes this one's place, if one does.
     pub replaced_by: Option<&'a str>,
+    /// Which of the design's seven states this item is in, which is what decides
+    /// the foot of the panel - see [`crate::status`].
+    pub status: &'a Published,
+    /// What removing it would do to its document, for the removal to name, in
+    /// the words the row's own control uses. Only read where the item is
+    /// installed, which is the only state that offers the control.
+    pub document: TheDocument,
 }
 
 /// What was pressed in the detail panel, if anything was.
@@ -1869,6 +2069,16 @@ pub enum Detailing {
     Homepage,
     /// The item that replaces this one.
     Replacement,
+    /// The one control the item's state offers, whichever that is.
+    ///
+    /// The single press variant, for the reason the inspector has one: what the
+    /// panel offers is the row's own control with room for a word, so what it
+    /// does has to be the row's press and not a second implementation of it.
+    Acted(Offer),
+    /// Take the entry this item is installed as out of the list. The queued
+    /// removal the Local row already has, because an installed catalog item is
+    /// a registered entry and there is only one way to stop being one.
+    Removed,
 }
 
 /// The catalog's detail panel.
@@ -1882,6 +2092,28 @@ pub fn detail(ui: &mut Ui, palette: Palette, item: &Detailed<'_>) -> Detailing {
     });
     if closed.clicked() {
         pressed = Detailing::Closed;
+    }
+
+    // Before the body, which scrolls in what is left. A state with neither
+    // control draws no bar at all, which is a shape the bundle already has:
+    // both of its halves are behind an `sc-if`.
+    let primary = item.status.primary();
+    if item.status.installed() || primary.is_some() {
+        panel_foot(ui, palette, |ui| {
+            if item.status.installed()
+                && panel_remove(ui, palette, crate::status::removal_consequence(item.document))
+                    .clicked()
+            {
+                pressed = Detailing::Removed;
+            }
+            if let Some(offer) = primary {
+                ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                    if panel_primary(ui, palette, offer.label()).clicked() {
+                        pressed = Detailing::Acted(offer);
+                    }
+                });
+            }
+        });
     }
 
     panel_body(ui, |ui| {
@@ -3144,35 +3376,40 @@ pub fn banner(ui: &mut Ui, palette: Palette, banner: &Banner<'_>) -> Answered {
                 ui.spacing_mut().item_spacing.x = 0.0;
                 dot(ui, banner.tone.colour(palette));
                 ui.add_space(metric::GAP);
-                ui.vertical(|ui| {
-                    ui.spacing_mut().item_spacing.y = BETWEEN_THE_LINES;
-                    ui.label(
-                        font::run(banner.title, font::emphasis(ui.ctx(), font::CONTROL))
-                            .color(banner.tone.colour(palette)),
-                    );
-                    ui.label(
-                        font::run(banner.body, font::plain(font::NOTE))
-                            .color(banner.tone.supporting(palette)),
-                    );
-                });
-                if banner.action.is_some() || banner.dismissible {
-                    ui.with_layout(Layout::right_to_left(Align::Min), |ui| {
-                        if banner.dismissible {
-                            if dismiss(ui, palette).clicked() {
-                                pressed = Answered::Dismissed;
-                            }
-                            // Only between the two of them. Laid out from the
-                            // right, a gap with nothing after it is a gap that
-                            // moves whatever is before it off the edge.
-                            ui.add_space(metric::TOOL_GAP);
+                // **The controls first, from the right**, so the two lines wrap
+                // in what is left of the bar rather than under them. The same
+                // order `panel_header` puts its close control in, and for the
+                // same reason: a block that takes the whole width first leaves
+                // nothing for the control to be laid out in, so the control is
+                // drawn over the text instead of beside it. Only a body long
+                // enough to reach that far shows it, which is why this stood.
+                ui.with_layout(Layout::right_to_left(Align::Min), |ui| {
+                    if banner.dismissible {
+                        if dismiss(ui, palette).clicked() {
+                            pressed = Answered::Dismissed;
                         }
-                        if let Some(action) = banner.action
-                            && outlined_button(ui, banner.tone.colour(palette), action).clicked()
-                        {
-                            pressed = Answered::Action;
-                        }
+                        // Only between the two of them. Laid out from the
+                        // right, a gap with nothing after it is a gap that
+                        // moves whatever is before it off the edge.
+                        ui.add_space(metric::TOOL_GAP);
+                    }
+                    if let Some(action) = banner.action
+                        && outlined_button(ui, banner.tone.colour(palette), action).clicked()
+                    {
+                        pressed = Answered::Action;
+                    }
+                    ui.with_layout(Layout::top_down(Align::Min), |ui| {
+                        ui.spacing_mut().item_spacing.y = BETWEEN_THE_LINES;
+                        ui.label(
+                            font::run(banner.title, font::emphasis(ui.ctx(), font::CONTROL))
+                                .color(banner.tone.colour(palette)),
+                        );
+                        ui.label(
+                            font::run(banner.body, font::plain(font::NOTE))
+                                .color(banner.tone.supporting(palette)),
+                        );
                     });
-                }
+                });
             });
         },
     );

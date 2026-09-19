@@ -136,6 +136,14 @@ The entry list has to gain columns. That is cheap and safe: the injected class a
 the first four and ignores anything after them, so older prepared installations keep working
 against a longer list. Accepted; noted so the design knows the requirement was real.
 
+Both halves have since landed. Version and source went in as format 2, and `Changed` needed
+one more - format 3 carries the digest of the document as it was placed, because comparing
+a file against the *catalog's* digest cannot tell an available update from a local edit, and
+nothing else recorded what the entry was registered with. All four computed statuses are
+drawn now. The one cost worth stating: a row written by an older build has no digest and
+never reports `Changed`, and nothing can repair that, because hashing whatever is on disk
+today would record the present as the past.
+
 ### 7. Derive provenance from the UUID, not the name
 
 The fix for the Local and Catalog views drifting apart is right, and its key is wrong. An
@@ -250,7 +258,10 @@ next reader will see `\u{b7}` and wonder.
   put behind it. Nothing in the running application produces a catalog provenance
   at all yet; every one in the tree is a test fixture. Recording the revision means
   widening a persisted format, and the first thing that would write one is
-  installing from the catalog, which is where that decision belongs. The catalog
+  installing from the catalog, which is where that decision belongs. *What that
+  costs is now known rather than guessed*: the list widened once more for the
+  digest `Changed` is read against, and the whole of it was one column, one
+  parser arm and a format number. The catalog
   detail *does* draw its own `Reviewed in`, off the index's `merged_in` - a
   different fact, about the item rather than about this machine's copy of it.
 - **`Licences` on the About screen** - `AboutScreen.dc.html:64`, the second of the

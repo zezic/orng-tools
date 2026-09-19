@@ -278,14 +278,18 @@ at least that many. Columns after them are the application's business:
 | --- | --- |
 | 1 to 4 | What the injected class registers |
 | 5, 6 | Description and search keywords, applied by the app when it writes the bundles |
-| 7, 8 | Version and source (7.6), which only the app reads |
+| 7 | The digest of the document as it was placed, which is what `Changed` is read against |
+| 8, 9 | Version and source (7.6), which only the app reads |
 
 That asymmetry is why the list can grow: an installation prepared before a column was added
 keeps working against a longer list, so a format change costs a parser change here and not
 a re-preparation. A marker line states the format, and a reader that does not know the
 number refuses the file rather than reading it under a guessed layout. Source is the last
 column and never empty, because the column that goes missing is the empty one an editor
-stripping trailing whitespace would eat.
+stripping trailing whitespace would eat - which is also why the digest sits before the
+provenance pair rather than after it: it is empty for every row registered by a build that
+did not record one, and nothing can fill it in afterwards, because hashing whatever is on
+disk now would write the present down as the past.
 
 ### 5.3 Obfuscated names are never persisted
 
@@ -614,7 +618,9 @@ Built and tested against a real installation:
   changes the design was promised: the per-item merging commit in the index (7.5), and
   version and source in the entry list (5.2, 7.6). The entry list's format marker is now
   checked on read rather than only written, and a list written before the catalog existed
-  still loads, as local content.
+  still loads, as local content. The list has since gained one more column, the digest of
+  the document as placed, and a list written before that one loads too - saying nothing
+  about its documents, which is the truth about it.
 
 - Index signing, both halves: the lint signs with a key it will only take from the
   environment and verifies against a public one, and the library offers the single call the
@@ -692,6 +698,26 @@ is not cosmetic: during design the inspector offered `Reveal file` on a missing 
 which is the one action that cannot work, while omitting `Locate file`, which is the one
 that fixes it.
 
+**A registered row's status is computed, not assumed.** Four of the design's ten are
+answers about the machine rather than about the press that was just made, and all four are
+resolved when the list is read rather than per row per frame - the same shape every screen
+here uses, and for the same reason: this audience keeps libraries on external and network
+volumes, where one `stat` against a spun-down mount is tens of milliseconds of a frame.
+`Missing file` is the registered path failing to resolve. `Changed` is the document there
+hashing to something other than what was recorded when it was placed (5.2), which is the
+one statement that separates a file somebody else rewrote from one that is simply gone -
+same remedy on the surface, different cause, and the cause is what the user needs in order
+to act. `Update available` is the recorded provenance held against the published index, by
+identity and never by name, and only once an index has been fetched: a window nobody has
+opened the catalog in must not answer "up to date" any more than "out of date". `Pending
+restart` is what a run wrote into a live installation, until the list is read off the
+machine again - Bitwig reads the entry list when it launches, so a row written while it is
+open is one it is not showing, and nothing here watches for it being restarted.
+
+One row says one thing, and which one is the design's own colours in order: broken first,
+then a decision waiting, then work in flight with nothing to decide. A row that is both
+changed and updatable states the change, because updating it would discard exactly that.
+
 **A removal is queued, not done.** The entry stays registered, struck through, and the
 row that queued it offers only the undo, until the press of the primary action that
 carries it out - so one press is the confirmation for every removal in the list, and
@@ -734,9 +760,11 @@ the panel is for - they are what makes a registered device feel native in the br
 by hand. An edit is written when a field is finished with, through the same worker a
 press of the primary action uses, because it is the same operation: the three bundles
 rewritten from the whole list, then the list. Nothing is said when one lands and a
-failure is said either way. Its action list carries `Reveal file` and `Remove entry`,
-which is the whole of what the bundle draws unconditionally there; the two beside them
-are gated on states a panel opened from a registered row cannot be in. The panel takes
+failure is said either way. Its action list is the row's list, gated on the same status
+table, because the design's own rule is that the panel's status rules are the row's and
+not a second set - so an entry whose file is missing is offered `Locate file...` here and
+never `Reveal file`, and a press from the panel goes through the same call a press on the
+row does. The panel takes
 272 of the window's 820, so the list beside it draws to a grid of its own and the toolbar
 beside it drops its labels and shrinks its field - all three as the design has them.
 

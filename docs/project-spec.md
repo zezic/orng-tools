@@ -647,6 +647,13 @@ Known gaps:
   elevation for preparation has to answer it here, and until it does the honest statement
   is "no part of the *archive*" rather than "no part of the installation".
 
+  **A removal that deletes the document is a second way in, under the copy strategy
+  only.** A placed document resolves inside the user library when the installation is
+  linked and inside the installation when it is copied (6.3), so the delete follows it
+  there. Nothing new is needed for it - it is the same directory, the same refusal and
+  the same answer - but it is one more press that reaches a place the interface says the
+  cheap mode does not.
+
 The catalog repository's own continuous integration, which checks a pull request, decides
 whether it may auto-merge, and on merge regenerates the index, signs it and publishes both
 assets. The published index verifies against the published key.
@@ -677,6 +684,32 @@ A row is a grid, so identities and statuses line up down the list. The icons are
 design's own set, Phosphor, in the Light weight it names. Every empty state is the
 designer's copy verbatim rather than something invented beside it.
 
+A row's own controls, at the right end of it, hidden off hover rather than removed so the
+columns before them do not move when the pointer arrives. Which of the five a row offers
+is a table the design states per status, and that table is written once - in
+`apps/orng-registry/src/status.rs` - for the two surfaces that draw it. Getting it wrong
+is not cosmetic: during design the inspector offered `Reveal file` on a missing file,
+which is the one action that cannot work, while omitting `Locate file`, which is the one
+that fixes it.
+
+**A removal is queued, not done.** The entry stays registered, struck through, and the
+row that queued it offers only the undo, until the press of the primary action that
+carries it out - so one press is the confirmation for every removal in the list, and
+"2 to add, 1 to remove" in the action bar is what the design always assumed. Whether the
+document goes with the entry is the preference in Settings, read for the first time here,
+and the control that queues the removal names which way it is set rather than warning in
+the abstract: the design made that wording the confirmation instead of adding a dialog.
+The delete runs after the entry list is written, which is the mirror of the reason the
+documents are placed first - deleting before would leave, for as long as the write takes
+and for ever if it fails, an entry registered with nothing behind it.
+
+`Assign new UUID` mints an identity for a staged document and reads the whole pending set
+again, because a conflict is a statement about the set and settling one row settles the
+row it collided with. `Locate file` points a registered entry back at a document and
+keeps the *recorded* registration: the entry still exists and its words may have been
+edited since, so deriving them again from the file found would quietly undo that. It is
+not a re-drop. A file carrying another identity is refused by name.
+
 A condition that stands in the way of the press is a banner directly above the action bar,
 where the design puts it: the tone as a dot, the reason under the headline, and the one
 thing that can be done about it at the right end. A preparation in flight is the design's
@@ -701,9 +734,11 @@ the panel is for - they are what makes a registered device feel native in the br
 by hand. An edit is written when a field is finished with, through the same worker a
 press of the primary action uses, because it is the same operation: the three bundles
 rewritten from the whole list, then the list. Nothing is said when one lands and a
-failure is said either way. The panel takes 272 of the window's 820, so the list beside
-it draws to a grid of its own and the toolbar beside it drops its labels and shrinks its
-field - all three as the design has them.
+failure is said either way. Its action list carries `Reveal file` and `Remove entry`,
+which is the whole of what the bundle draws unconditionally there; the two beside them
+are gated on states a panel opened from a registered row cannot be in. The panel takes
+272 of the window's 820, so the list beside it draws to a grid of its own and the toolbar
+beside it drops its labels and shrinks its field - all three as the design has them.
 
 The Settings screen, which the overflow opens. **A full-window surface and not a panel**:
 `width:100%; height:100%` on the page colour with a 44-pixel header of its own, so it
@@ -771,14 +806,12 @@ Not built yet:
   the index carries, and registering it. The catalog view has no toolbar of its own yet,
   so its search, kind filters and `All / Installed / Updatable` switch are missing, and
   the detail panel is drawn without the footer its `Install` and `Remove` live in.
-- Row actions: `Remove`, `Assign new UUID`, `Locate file`, and the choice of whether a
-  removed entry's document goes with it. The column they sit in is reserved, because the
-  design reserves it - it hides those controls off hover rather than removing them, so the
-  four columns before it do not move when the pointer arrives - but nothing is drawn in it
-  yet. The same is true of a catalog row's status and its `Install` control, which wait on
-  installing from the catalog. `Reveal file` is built, and is in the inspector's action
-  list; the rest of that list waits on removal, which is the machinery the row's own
-  controls need as well.
+- A catalog row's status and its `Install` control, and the catalog detail's footer,
+  which wait on installing from the catalog. The columns are reserved at the design's
+  widths, because the design reserves them.
+- The entry row's overflow control, which the bundle draws on every row in every state
+  and never says the contents of. A question for the designer rather than work - see
+  `design-review.md` round 3 item 3.
 - Cancelling a preparation. The design offers it up to the Activate step, on the grounds
   that nothing has changed until then, and nothing here can honour it: the dialog is drawn
   without the control rather than with a dead one, which is a shape the design itself draws

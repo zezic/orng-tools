@@ -220,17 +220,28 @@ next reader will see `\u{b7}` and wonder.
 - **Cancel, in the progress dialog.** Nothing can cancel a preparation yet. The
   dialog is drawn without the control rather than with a dead one - which is the
   shape the bundle itself draws from the Activate step onwards.
-- **The row actions and a catalog row's status and `Install`.** The columns are
-  reserved at the design's widths and left empty, because the design reserves them
-  too: it hides those controls off hover rather than removing them.
+- **A catalog row's status and `Install`.** The columns are reserved at the
+  design's widths and left empty, because the design reserves them too: it hides
+  those controls off hover rather than removing them. *The entry row's own
+  actions were the other half of this item and are now drawn* -
+  `EntryRow.dc.html:44-60`, all five of them, gated by the table in
+  `status.rs`. What is still missing from that group is below.
+- **The entry row's overflow** - `EntryRow.dc.html:60`, the
+  `ph-dots-three-vertical` control the design draws on every row in every state.
+  Nothing in the bundle says what its menu holds: not the row section of the
+  README, not the interactions section, not the full-window mockup. So there is
+  a control to draw and no menu to put behind it, and a control that opens
+  nothing is worse than a control that is not there. **For the designer:** what
+  is in it? The five conditional actions are all already on the row, and the
+  narrow grid drops the identity column rather than any control, so it is not
+  obviously the overflow for a squeezed row either.
 - **The catalog detail's footer** - `Remove` and the primary control,
   `CatalogDetail.dc.html:89-98`. Both are behind `sc-if` in the bundle, so a panel
   without the bar is a shape it already draws. Installing from the catalog is not
-  built, and removal is not built, so there is nothing to put in either slot.
-- **`Remove entry` in the inspector** - `Inspector.dc.html:116`, the one action in
-  that list the bundle draws unconditionally. It waits on the same removal work as
-  the footer above. The two actions beside it are conditional in the bundle, so the
-  group is drawn without this one rather than with it dead.
+  built, so the primary slot has nothing to put in it. Removal is built now, and
+  what the footer's `Remove` would do to a *catalog* row - an installed item is
+  a registered entry, so it is the same queued removal - is the part that waits
+  on installing.
 - **`Reviewed in <commit>` in the inspector** - `Inspector.dc.html:90-92`, under
   Source and behind `fromCatalog`. Not drawn, and not because of the layout: the
   entry list does not record which commit published an item. `Provenance::Catalog`

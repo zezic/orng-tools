@@ -746,6 +746,18 @@ keeps the *recorded* registration: the entry still exists and its words may have
 edited since, so deriving them again from the file found would quietly undo that. It is
 not a re-drop. A file carrying another identity is refused by name.
 
+**The bar's note answers the filter once the filter has emptied the list.** The line under
+the summary normally says what the press would cost - which mode it runs in, and whether a
+backup is written first. A search or a kind chip that leaves nothing on screen takes it
+instead and states how many entries are behind the filter: the empty state offers the way
+out but states no number, and how much of the list is still there is what says whether
+clearing it is worth doing. The count is of the rows the list would have drawn, so a
+document dropped over an entry already registered is one row and not two, and a dropped
+file that is not a document is not counted at all - it carries no entry for a filter over
+names and identities to hide it by. The sentence is the design's
+(`ORNG Registry.dc.html:490`); the arithmetic under it and the rule about when the line
+changes hands are ours, and are in `design-review.md` round 3.
+
 A condition that stands in the way of the press is a banner directly above the action bar,
 where the design puts it: the tone as a dot, the reason under the headline, and the one
 thing that can be done about it at the right end. A preparation in flight is the design's

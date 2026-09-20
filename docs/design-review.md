@@ -408,3 +408,34 @@ drawn but never captioned. It reads `Catalog · N installed`, which is the same
 sentence with the same substitution. Worth a look only because the pattern it
 extends is the design's and the extension is not.
 
+### 7. The Local bar's hidden-entries note: the sentence is drawn, the number is ours
+
+For the designer, and smaller still. `ORNG Registry.dc.html:490` is the one Local
+scenario whose note is not what a press would cost: under a search that matches
+nothing the bar keeps its pending-work summary and the note reads `5 entries
+hidden by the current filter`. The window now draws that line. Two things about
+it are decisions rather than readings, because the bundle's notes are declared
+per scenario and computed nowhere - `:828` is `note: a.note ?? ""`, so the
+literal is copy and not arithmetic.
+
+**When the line changes hands.** It is drawn only once the filter has left
+nothing on screen, which is the state the bundle draws it in and the only one. A
+list with rows still in it goes on being told what the press would cost, because
+the bar has one note line and a list you can see does not need to be told what is
+missing from it. The bundle draws no filtered-but-not-empty Local scenario, so
+this is unproven either way; widening it is one condition.
+
+**What the number counts.** The rows the list would have drawn, which is
+`0` shown against all of them hidden - so it states how much of the list is
+behind the filter. The bundle's own `5` is not that: the sample has ten entries
+and none of them shown, and `5` is the count in `Apply 5 changes` on the same
+bar. If it was meant to count the *pending work* that is out of sight rather than
+the list, this is a different sentence and should be said so.
+
+One consequence worth naming: in the preparing mode the note it replaces is
+`Prepare install · a backup is written first`, and that warning is gone for as
+long as the filter is empty. The summary keeps the warn tone that only that mode
+takes and the button still reads `Prepare installation`, so the mode is still
+stated - but if the cost should outrank the count there, it is one arm in
+`App::summary`.
+

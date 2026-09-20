@@ -245,6 +245,14 @@ pub mod metric {
     /// The overflow control, which is wider than it is tall and is the one
     /// control the design gives both measurements for.
     pub const OVERFLOW: f32 = 26.0;
+    /// The catalog's refresh control, which is the shortest control in any bar:
+    /// `InstallBar.dc.html:95` states `height:22px` on both of its shapes, and
+    /// `:97` states the square it draws while it is icon-only.
+    pub const REFRESH: f32 = 22.0;
+    /// From that control's edge to its label, once being stale has given it
+    /// one. `InstallBar.dc.html:97`, and the same nine every filled control in
+    /// a bar is padded by.
+    pub const REFRESH_PAD_X: f32 = 9.0;
     /// The primary action, which is taller than anything beside it.
     pub const ACTION: f32 = 32.0;
     /// A control in an empty state. The design draws both of the pair at the

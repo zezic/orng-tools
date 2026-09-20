@@ -28,7 +28,7 @@ use orng_tools::{
 };
 
 use crate::about::About;
-use crate::catalog::{self, Fetching, Install};
+use crate::catalog::{self, Catalog, Freshness, Install};
 use crate::diagnostics::{self, Diagnostics};
 use crate::restore::Backups;
 use crate::session::{Badge, Found, Session};
@@ -321,11 +321,17 @@ pub struct App {
     /// the list it was opened in, and switching views and back should not have
     /// forgotten it.
     detailing: Option<Uuid>,
-    /// The published catalog, once somebody has asked for it. Not fetched on
-    /// opening: this application is useful with no network at all, and a window
-    /// that reaches for one before being asked is a window that hangs on a
-    /// train.
-    catalog: Option<Fetching>,
+    /// The published catalog: what was kept from last time, and what this run
+    /// has made of it.
+    ///
+    /// **Read on opening and refreshed on opening**, which is two acts and not
+    /// one. Reading is two files and a signature, so a window with no network
+    /// browses the catalog it browsed yesterday. The refresh behind it is on a
+    /// worker and the window never waits for it, which is what the older rule
+    /// here - do not reach for a socket before being asked - was actually
+    /// protecting: a window that hangs on a train. This one does not hang; it
+    /// states the age of what it has, and offers `Refresh`.
+    catalog: Catalog,
     /// The item being fetched, while one is.
     ///
     /// Held apart from [`App::applying`] because it is the half of an install
@@ -340,8 +346,9 @@ pub struct App {
     /// The design's two failure states are per item and not per window - a
     /// catalog of forty rows where one did not verify is thirty-nine rows that
     /// are still fine - so they are held against the identity that failed. Kept
-    /// until that item is pressed again or the catalog is fetched again, because
-    /// nothing else that happens makes them stop being true.
+    /// until that item is pressed again or a refresh brings back a *different*
+    /// index, because nothing else that happens makes them stop being true - and
+    /// a refresh that confirms the index they were made against does not either.
     refused: std::collections::BTreeMap<Uuid, catalog::Refused>,
 }
 
@@ -358,12 +365,20 @@ impl App {
                 eprintln!("no home directory, so no preferences: {why}");
             })
             .ok();
-        let preferences = match home {
+        let preferences = match home.clone() {
             Some(home) => Preferences::read(home),
             None => Preferences::unwritten(Settings::default()),
         };
         let session = Session::read(preferences.chosen());
-        App::with(&cc.egui_ctx, session).having(preferences)
+        let mut app = App::with(&cc.egui_ctx, session).having(preferences);
+        // The kept index first, so the first frame has a catalog, and the check
+        // behind it, so what the first frame has is not silently last month's.
+        // Both on every launch: the file is under a kilobyte, and the only
+        // thing the user ever sees of the check is the age beside the view
+        // switch changing.
+        app.catalog = Catalog::opened(home);
+        app.catalog.refresh(&cc.egui_ctx);
+        app
     }
 
     /// The window over a session that is already known.
@@ -391,7 +406,11 @@ impl App {
             outcome: None,
             inspecting: None,
             detailing: None,
-            catalog: None,
+            // Nothing read and nothing fetched. `App::new` is the one caller
+            // that hands this a home directory, so a render fixture cannot
+            // reach the cache of whoever ran it, and cannot start a fetch by
+            // being put in the Catalog view either.
+            catalog: Catalog::opened(None),
             installing: None,
             refused: std::collections::BTreeMap::new(),
         }
@@ -495,8 +514,8 @@ impl App {
 
     /// Put a catalog on screen without fetching one. Tests only.
     #[cfg(test)]
-    pub fn set_catalog(&mut self, catalog: Fetching) {
-        self.catalog = Some(catalog);
+    pub fn set_catalog(&mut self, catalog: Catalog) {
+        self.catalog = catalog;
     }
 
     /// Hand the window a fetch that has already answered, so that what it does
@@ -1571,8 +1590,14 @@ impl App {
     /// frame that gets here has a reason to have been drawn, and idle work
     /// costs nothing at all.
     fn pump(&mut self, ctx: &egui::Context) {
-        if let Some(catalog) = &mut self.catalog {
-            catalog.poll();
+        // A refusal is a claim about one row of one index, so an index that has
+        // been replaced takes them with it. Not merely tidiness: the map is
+        // keyed by identity and the bar reads `Install refused` while anything
+        // is in it, so a refusal against an item the catalog has since stopped
+        // publishing would sit on that bar for the rest of the run with no row
+        // under it to explain itself.
+        if self.catalog.poll() {
+            self.refused.clear();
         }
         if let Some(read) = self.reading.as_mut().and_then(Reading::take) {
             self.staged.extend(read);
@@ -2108,6 +2133,45 @@ fn counted(registered: usize) -> String {
     }
 }
 
+/// How old the catalog is, in the design's own two sentences.
+///
+/// Two, and the difference is not decoration: `Catalog updated 20 minutes ago`
+/// reports a check that happened, and `Catalog from 12 days ago` describes what
+/// is on screen. The bundle writes both - `InstallBar.dc.html:61`'s default and
+/// `ORNG Registry.dc.html:467` - and puts the second beside the control that
+/// has grown its label, which is the state that is asking for something.
+fn stated(freshness: Freshness) -> String {
+    match freshness {
+        // `:472`. No age, because there is nothing to date.
+        Freshness::Never => "Never fetched".to_owned(),
+        Freshness::Current(age) => format!("Catalog updated {}", elapsed(age)),
+        Freshness::Stale(age) => format!("Catalog from {}", elapsed(age)),
+    }
+}
+
+/// A duration as the design writes one: the largest unit that gives a whole
+/// number, and never a zero.
+///
+/// **Ours** - the bundle states two finished strings and no rule -
+/// `docs/design-review.md` round 3 item 6. Nothing smaller than a minute is
+/// counted, because a fetch that landed nine seconds ago rounds to
+/// `0 minutes ago`, which reads as broken rather than as recent.
+fn elapsed(age: std::time::Duration) -> String {
+    const MINUTE: u64 = 60;
+    const HOUR: u64 = 60 * MINUTE;
+    const DAY: u64 = 24 * HOUR;
+
+    let seconds = age.as_secs();
+    let (count, unit) = match seconds {
+        MINUTE..HOUR => (seconds / MINUTE, "minute"),
+        HOUR..DAY => (seconds / HOUR, "hour"),
+        DAY.. => (seconds / DAY, "day"),
+        ..MINUTE => return "just now".to_owned(),
+    };
+    let plural = if count == 1 { "" } else { "s" };
+    format!("{count} {unit}{plural} ago")
+}
+
 /// The clause naming what a press also took away, where it took anything away.
 ///
 /// Empty when it took nothing, rather than ", 0 removed". Every count in this
@@ -2181,6 +2245,22 @@ impl App {
                     self.locate(Which::Install);
                 }
                 ui.add_space(metric::GAP);
+
+                // Catalog view only, which is the bundle's own condition -
+                // `InstallBar.dc.html:35`. Placed here rather than beside the
+                // path because this layout runs from the right: the design's
+                // order left to right is the age, the control, `Change
+                // install`, so inserting them after that button puts them
+                // before it on screen.
+                if self.view == View::Catalog {
+                    let freshness = self.catalog.freshness();
+                    if widget::refresh(ui, palette, freshness.is_stale()).clicked() {
+                        self.catalog.refresh(ui.ctx());
+                    }
+                    ui.add_space(metric::GAP);
+                    widget::freshness(ui, palette, &stated(freshness), freshness.is_stale());
+                    ui.add_space(metric::GAP);
+                }
 
                 ui.with_layout(Layout::left_to_right(Align::Center), |ui| {
                     self.install_identity(ui);
@@ -2600,18 +2680,16 @@ impl App {
                 let palette = self.palette;
                 let width = self.width();
                 let open = self.detailing;
-                // Started before anything is asked of it, so that the answers
-                // below are about the catalog this frame has rather than about
-                // one that is fetched next frame.
-                if self.catalog.is_none() {
-                    self.catalog = Some(Fetching::start(ui.ctx().clone()));
-                }
-                let catalog = self.catalog.as_ref().expect("a fetch was just started");
+                // Nothing is started here. Opening the window reads the kept
+                // index and asks the catalog about it, so by the time this
+                // region is drawn the answer is either in hand, on its way, or
+                // already known to be no.
                 // Taken after the list has been drawn, for the reason the
                 // Local list takes its own: opening the panel changes how wide
                 // every row is, and changing that half way down a list draws
                 // the rest of it to a different grid.
-                let pressed = published(ui, palette, catalog, width, open, states, &self.filter);
+                let pressed =
+                    published(ui, palette, &self.catalog, width, open, states, &self.filter);
                 if let Some(opened) = pressed.opened {
                     self.detailing = opened;
                 }
@@ -2620,6 +2698,9 @@ impl App {
                 }
                 if pressed.cleared {
                     self.filter = Filter::default();
+                }
+                if pressed.retried {
+                    self.catalog.refresh(ui.ctx());
                 }
             }
             Session::Found(_) => self.local(ui),
@@ -2767,14 +2848,15 @@ impl App {
     ///
     /// Nothing here touches the disk: the looking was done when the list was
     /// read, and this is the reading of it.
-    /// The published index, once a fetch has answered with one.
+    /// The published index, whether it came off the network this run or off the
+    /// disk.
     ///
-    /// `None` covers three states the callers treat alike - nobody has asked
-    /// for the catalog, the fetch is still running, or it did not verify - and
-    /// they are alike here: in all three this application knows nothing about
-    /// what is published and must not say that anything is up to date either.
+    /// `None` covers the two states the callers treat alike - the fetch is
+    /// still running, or nothing has ever verified here - and they are alike:
+    /// in both this application knows nothing about what is published and must
+    /// not say that anything is up to date either.
     fn index(&self) -> Option<&Index> {
-        self.catalog.as_ref()?.outcome.as_ref()?.as_ref().ok()
+        self.catalog.index()
     }
 
     /// Whether the catalog publishes a newer revision of this entry.
@@ -3359,22 +3441,23 @@ impl App {
             return ("Install refused".to_owned(), Tone::Err, String::new());
         }
 
-        match self.catalog.as_ref().and_then(|fetch| fetch.outcome.as_ref()) {
-            // Nobody has asked for it yet, or it has not answered. The same pair
-            // the list draws one empty state for, and they are alike here too:
-            // this bar is laid out before the region that starts the fetch, so
-            // the frame it starts on is a frame where there is no fetch at all.
+        match self.catalog.index() {
+            // Nothing has ever verified here. The fetch is still running, or it
+            // has answered and the answer was no - and the two are one line
+            // apart, because an index that did not arrive and one that did not
+            // verify read the same here too. The bar has one line and the
+            // difference is in the empty state's own words. `:474` and its warn
+            // tone.
+            None if self.catalog.failure().is_some() => {
+                ("Catalog unavailable".to_owned(), Tone::Warn, String::new())
+            }
             None => ("Fetching the catalog".to_owned(), Tone::Neutral, String::new()),
-            // An index that did not arrive and one that did not verify read the
-            // same here, because the bar has one line and the difference is in
-            // the empty state's own words. `:474` and its warn tone.
-            Some(Err(_)) => ("Catalog unavailable".to_owned(), Tone::Warn, String::new()),
             // No note: what installing costs is not worth saying over a list
             // with nothing in it to install.
-            Some(Ok(index)) if index.items.is_empty() => {
+            Some(index) if index.items.is_empty() => {
                 (format!("Catalog {separator} 0 items"), Tone::Neutral, String::new())
             }
-            Some(Ok(index)) => {
+            Some(index) => {
                 let counted = index
                     .items
                     .iter()
@@ -3396,12 +3479,16 @@ impl App {
                     .iter()
                     .filter(|item| self.filter.accepts_published(item, status(item)))
                     .count();
-                // What the filters did, then what a press would cost. The first
-                // is the design's answer to a list that has gone empty under the
-                // user - `:486`, where the summary goes on stating the whole
-                // catalog and the note carries the absence.
+                // What the filters did, then what being offline costs, then what
+                // a press would cost. The first is the design's answer to a list
+                // that has gone empty under the user - `:486`, where the summary
+                // goes on stating the whole catalog and the note carries the
+                // absence - and it stays first because it is about something the
+                // user just typed. The second is `:468`.
                 let note = if showing == 0 {
                     "No item matches the current search and filters".to_owned()
+                } else if self.catalog.is_cached() {
+                    format!("Offline {separator} installing a cached item still works")
                 } else if self.filter.shown == Shown::Updatable {
                     // `:439`. The one sentence that matters about an update, on
                     // the filter that is looking for them: it reaches backwards
@@ -3414,7 +3501,15 @@ impl App {
                     let cost = "no backup, Bitwig may stay open";
                     format!("Installing is Update entries work {separator} {cost}")
                 };
-                (format!("Catalog {separator} {what}"), Tone::Neutral, note)
+                // `:468` again, and it goes on the summary rather than only in
+                // the note because the count is what it qualifies: nine items
+                // as of some point in the past is a different claim from nine
+                // items.
+                let cached = match self.catalog.is_cached() {
+                    true => format!(" {separator} cached"),
+                    false => String::new(),
+                };
+                (format!("Catalog {separator} {what}{cached}"), Tone::Neutral, note)
             }
         }
     }
@@ -4258,20 +4353,27 @@ struct Pressed {
     /// Not a row press at all, and it is here because it is the one other thing
     /// this region answers.
     cleared: bool,
+    /// Whether the empty state left behind by a catalog that never arrived was
+    /// asked to go and look again. The other press that is not a row's.
+    retried: bool,
 }
 
 /// The Catalog view: what ORNG Catalog publishes, once it has been proved.
 fn published(
     ui: &mut egui::Ui,
     palette: Palette,
-    catalog: &Fetching,
+    catalog: &Catalog,
     width: widget::Width,
     open: Option<Uuid>,
     states: &std::collections::BTreeMap<Uuid, Published>,
     filter: &Filter,
 ) -> Pressed {
-    match catalog.outcome.as_ref() {
-        None => {
+    // Nothing held is the only state with an empty region, and being offline is
+    // not one of them: a kept index browses exactly as a fetched one does,
+    // which is the whole of what the design means by a degraded state rather
+    // than an error.
+    match catalog.index() {
+        None if catalog.failure().is_none() => {
             let empty = widget::Empty {
                 icon: icon::CATALOG,
                 inviting: false,
@@ -4288,26 +4390,34 @@ fn published(
             };
             widget::empty_state(ui, palette, &empty);
         }
-        Some(Err(why)) => {
+        None => {
+            let why = catalog.failure().expect("the arm above took the other case");
             let empty = widget::Empty {
                 icon: icon::UNREADABLE,
                 inviting: false,
                 marks: true,
                 title: "The catalog could not be read",
+                // The last clause is `EmptyState.dc.html:89`'s, and it is worth
+                // saying now that it is true: what this state costs is one
+                // fetch and not a permanent requirement, which is the point of
+                // the scenario the design draws it for.
                 body: "Nothing is installed from an index that does not verify. The catalog \
                        is one small file over HTTPS, signed by the key this application was \
-                       built with.",
+                       built with, and once fetched it is cached - so browsing works offline \
+                       afterwards.",
                 extensions: false,
                 aside: Some(why),
-                action: None,
-                action_is_primary: false,
+                action: Some("Try again"),
+                action_is_primary: true,
                 alt: None,
-                foot: Some("Everything already registered keeps working"),
+                foot: Some("Everything already registered keeps working offline"),
                 minor: false,
             };
-            widget::empty_state(ui, palette, &empty);
+            if widget::empty_state(ui, palette, &empty) == widget::Pressed::Action {
+                return Pressed { retried: true, ..Pressed::default() };
+            }
         }
-        Some(Ok(index)) if index.items.is_empty() => {
+        Some(index) if index.items.is_empty() => {
             let empty = widget::Empty {
                 icon: icon::CATALOG,
                 inviting: false,
@@ -4327,7 +4437,7 @@ fn published(
         // No section heading here, and that is the design's decision: the Local
         // view divides into pending, registered and factory, and the catalog is
         // one list of one kind of thing.
-        Some(Ok(index)) => {
+        Some(index) => {
             let shown: Vec<&orng_catalog::IndexEntry> = index
                 .items
                 .iter()
@@ -4503,6 +4613,37 @@ mod tests {
         assert_eq!(revised.kind, entry.kind);
         assert_eq!(revised.library_path, entry.library_path);
         assert_eq!(revised.provenance, entry.provenance);
+    }
+
+    /// The two sentences the bundle writes about the catalog's age, and the
+    /// rule underneath them that it does not.
+    ///
+    /// Both literals are the design's: `InstallBar.dc.html:61` defaults to
+    /// `Catalog updated 20 minutes ago` and `ORNG Registry.dc.html:467` writes
+    /// `Catalog from 12 days ago` on the stale scenario. So the two forms are
+    /// pinned against the bundle, and only the unit arithmetic between them is
+    /// ours.
+    #[test]
+    fn the_catalogs_age_is_stated_in_the_designs_two_sentences() {
+        let minutes = std::time::Duration::from_secs(20 * 60);
+        assert_eq!(stated(Freshness::Current(minutes)), "Catalog updated 20 minutes ago");
+        let days = std::time::Duration::from_secs(12 * 24 * 60 * 60);
+        assert_eq!(stated(Freshness::Stale(days)), "Catalog from 12 days ago");
+        assert_eq!(stated(Freshness::Never), "Never fetched");
+
+        // The largest unit that gives a whole number, and never a zero: a fetch
+        // that landed nine seconds ago reads as recent rather than as
+        // `0 minutes ago`, which reads as broken.
+        let ago = |seconds| elapsed(std::time::Duration::from_secs(seconds));
+        assert_eq!(ago(0), "just now");
+        assert_eq!(ago(59), "just now");
+        assert_eq!(ago(60), "1 minute ago");
+        assert_eq!(ago(119), "1 minute ago");
+        assert_eq!(ago(59 * 60), "59 minutes ago");
+        assert_eq!(ago(60 * 60), "1 hour ago");
+        assert_eq!(ago(23 * 60 * 60), "23 hours ago");
+        assert_eq!(ago(24 * 60 * 60), "1 day ago");
+        assert_eq!(ago(90 * 24 * 60 * 60), "90 days ago");
     }
 
     /// The clause the result banner adds when a press took something away.

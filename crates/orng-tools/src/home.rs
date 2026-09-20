@@ -67,6 +67,26 @@ impl OrngHome {
         self.root().join("settings.toml")
     }
 
+    /// The last catalog index that verified, so a window opened with no network
+    /// has something to browse rather than nothing.
+    ///
+    /// A directory of two files rather than one, because what is kept is the
+    /// bytes as they arrived and the signature over them: reading it back is the
+    /// same check the download went through, so a cache edited on disk is
+    /// refused exactly as a tampered download is. An index this crate
+    /// re-serialised would be one nothing could prove.
+    pub fn catalog(&self) -> PathBuf {
+        self.root().join("catalog")
+    }
+
+    pub fn catalog_index(&self) -> PathBuf {
+        self.catalog().join("index.json")
+    }
+
+    pub fn catalog_signature(&self) -> PathBuf {
+        self.catalog().join("index.json.sig")
+    }
+
     /// What a JVM has to be told `user.home` is for the injected class to find
     /// this entry list. On a real installation that is already true of the JVM
     /// Bitwig starts, which is why nothing sets it outside verification.

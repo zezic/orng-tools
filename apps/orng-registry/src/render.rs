@@ -20,7 +20,7 @@ use orng_tools::{
 use crate::app::{App, View};
 use crate::session::{Found, Session};
 use crate::settings::{Appearance, Settings};
-use crate::catalog::{Fetching, Install};
+use crate::catalog::{Catalog, Install};
 use crate::staging::{self, Staged};
 use crate::theme::metric;
 use crate::work::{Applying, Stage, State};
@@ -378,16 +378,16 @@ fn shot_dragging(name: &str, over: &[&str]) {
     look_while_dragging(&mut harness, name);
 }
 
-/// The catalog view with a fetch held still, on an installation with nothing
-/// registered.
-fn catalog_with(name: &str, fetching: Fetching) -> Harness<'static, App> {
+/// The catalog view with the catalog held still, on an installation with
+/// nothing registered.
+fn catalog_with(name: &str, catalog: Catalog) -> Harness<'static, App> {
     let root = fixture(name);
     let session = found(&root, Helper::Present, GuardState::Disarmed);
     let mut session = Some(session);
-    let mut fetching = Some(fetching);
+    let mut catalog = Some(catalog);
     let mut harness = Harness::builder().with_size(SIZE).build_eframe(move |cc| {
         let mut app = App::with(&cc.egui_ctx, session.take().expect("built once"));
-        app.set_catalog(fetching.take().expect("built once"));
+        app.set_catalog(catalog.take().expect("built once"));
         app.show_view(View::Catalog);
         app
     });
@@ -395,9 +395,9 @@ fn catalog_with(name: &str, fetching: Fetching) -> Harness<'static, App> {
     harness
 }
 
-/// Render the catalog view with a fetch held still.
-fn shot_catalog(name: &str, fetching: Fetching) {
-    let mut harness = catalog_with(name, fetching);
+/// Render the catalog view with the catalog held still.
+fn shot_catalog(name: &str, catalog: Catalog) {
+    let mut harness = catalog_with(name, catalog);
     look(&mut harness, name);
 }
 
@@ -581,7 +581,7 @@ fn the_catalogs_filters_match_nothing() {
     let mut harness = Harness::builder().with_size(SIZE).build_eframe(move |cc| {
         let mut app = App::with(&cc.egui_ctx, session.take().expect("built once"));
         let index = orng_catalog::Index::parse(SUPERSEDED).expect("the sample index parses");
-        app.set_catalog(Fetching::frozen(Ok(index)));
+        app.set_catalog(Catalog::just_fetched(index));
         app.show_view(View::Catalog);
         app.set_query("granular");
         app
@@ -761,7 +761,7 @@ fn the_empty_states_controls_are_centred_in_the_window() {
 fn the_catalog_view() {
     let index = orng_catalog::Index::parse(include_str!("../tests/published-index.json"))
         .expect("the sample index does not parse");
-    shot_catalog("catalog", Fetching::frozen(Ok(index)));
+    shot_catalog("catalog", Catalog::just_fetched(index));
 }
 
 /// The catalog's detail panel, on the one item the catalog publishes today.
@@ -886,7 +886,7 @@ fn a_catalog_row_opens_the_detail_and_the_notice_walks_to_the_replacement() {
     let mut harness = Harness::builder().with_size(SIZE).build_eframe(move |cc| {
         let mut app = App::with(&cc.egui_ctx, session.take().expect("built once"));
         let index = orng_catalog::Index::parse(SUPERSEDED).expect("the sample index parses");
-        app.set_catalog(Fetching::frozen(Ok(index)));
+        app.set_catalog(Catalog::just_fetched(index));
         app.show_view(View::Catalog);
         app
     });
@@ -927,7 +927,7 @@ fn shot_detail(name: &str, index: orng_catalog::Index, open: &str, entries: Mani
     let open = open.parse().expect("a sample identity");
     let mut harness = Harness::builder().with_size(SIZE).build_eframe(move |cc| {
         let mut app = App::with(&cc.egui_ctx, session.take().expect("built once"));
-        app.set_catalog(Fetching::frozen(Ok(index.take().expect("built once"))));
+        app.set_catalog(Catalog::just_fetched(index.take().expect("built once")));
         app.show_view(View::Catalog);
         app.set_detailing(open);
         app
@@ -1209,7 +1209,7 @@ fn an_entry_says_when_the_catalog_has_a_newer_revision_of_it() {
         "a window with no catalog claimed to know what is published"
     );
 
-    harness.state_mut().set_catalog(Fetching::frozen(Ok(published())));
+    harness.state_mut().set_catalog(Catalog::just_fetched(published()));
     harness.run();
     assert!(
         harness.query_by_label("Update available").is_none(),
@@ -1218,7 +1218,7 @@ fn an_entry_says_when_the_catalog_has_a_newer_revision_of_it() {
 
     let mut newer = published();
     newer.items[0].version = "2.1.0".parse().expect("a version");
-    harness.state_mut().set_catalog(Fetching::frozen(Ok(newer)));
+    harness.state_mut().set_catalog(Catalog::just_fetched(newer));
     harness.run();
     // One row and not the list: the other three are local files, which have
     // nothing upstream to be behind.
@@ -1290,7 +1290,7 @@ fn catalog_listing(name: &str, entries: Manifest) -> Harness<'static, App> {
     let mut harness = Harness::builder().with_size(SIZE).build_eframe(move |cc| {
         let mut app = App::with(&cc.egui_ctx, session.take().expect("built once"));
         let index = orng_catalog::Index::parse(SUPERSEDED).expect("the sample index parses");
-        app.set_catalog(Fetching::frozen(Ok(index)));
+        app.set_catalog(Catalog::just_fetched(index));
         app.show_view(View::Catalog);
         app
     });
@@ -1850,7 +1850,7 @@ fn an_update_the_catalog_publishes_is_counted_as_one_and_says_what_it_costs() {
 fn a_catalog_that_did_not_arrive_and_an_install_that_was_refused_replace_the_count() {
     let unavailable = catalog_with(
         "catalog-bar-unavailable",
-        Fetching::frozen(Err("the signature does not match this index under this key".to_owned())),
+        Catalog::unavailable("the signature does not match this index under this key"),
     );
     assert!(anywhere(&unavailable, "Catalog unavailable"));
     assert!(
@@ -2061,7 +2061,7 @@ fn detail_on(name: &str, entries: Manifest, open: &str) -> Harness<'static, App>
     let mut harness = Harness::builder().with_size(SIZE).build_eframe(move |cc| {
         let mut app = App::with(&cc.egui_ctx, session.take().expect("built once"));
         let index = orng_catalog::Index::parse(SUPERSEDED).expect("the sample index parses");
-        app.set_catalog(Fetching::frozen(Ok(index)));
+        app.set_catalog(Catalog::just_fetched(index));
         app.show_view(View::Catalog);
         app.set_detailing(open);
         app
@@ -2251,7 +2251,7 @@ fn an_index_that_names_no_commit_has_nowhere_to_fetch_from_and_says_so() {
         let mut app = App::with(&cc.egui_ctx, session.take().expect("built once"));
         let mut index = orng_catalog::Index::parse(SUPERSEDED).expect("the sample index parses");
         index.revision = None;
-        app.set_catalog(Fetching::frozen(Ok(index)));
+        app.set_catalog(Catalog::just_fetched(index));
         app.show_view(View::Catalog);
         app
     });
@@ -3029,6 +3029,230 @@ fn choosing_a_backup_changes_which_one_would_be_put_back() {
 fn a_catalog_that_does_not_verify() {
     shot_catalog(
         "catalog-refused",
-        Fetching::frozen(Err("the signature does not match this index under this key".to_owned())),
+        Catalog::unavailable("the signature does not match this index under this key"),
     );
 }
+
+/// The sample index every catalog fixture in this file is built on, as bytes.
+const PUBLISHED: &str = include_str!("../tests/published-index.json");
+
+/// How long ago the design's stale scenario says its index arrived -
+/// `ORNG Registry.dc.html:467`.
+const TWELVE_DAYS: std::time::Duration = std::time::Duration::from_secs(12 * 24 * 60 * 60);
+
+fn sample() -> orng_catalog::Index {
+    orng_catalog::Index::parse(PUBLISHED).expect("the sample index does not parse")
+}
+
+/// Offline with a kept index: the list still browses, and the bar states its
+/// age in the accent beside a control that has grown its word.
+///
+/// `ORNG Registry.dc.html:465-469`, which is the one catalog scenario about the
+/// network that is not an empty region. Everything the caption claims is in one
+/// picture: no banner, rows that still press, `cached` after the count and
+/// `Offline` under it.
+#[test]
+fn a_catalog_that_is_offline_with_something_kept() {
+    shot_catalog("catalog-cached", Catalog::cached(sample(), TWELVE_DAYS, "no route to host"));
+}
+
+/// The catalog's age and its refresh control, where the design puts them and at
+/// the size it draws them.
+///
+/// Measured off `InstallBar.dc.html` at its own 820 by 42 preview with `view`
+/// flipped to catalog, once current and once stale. The bundle's own numbers:
+/// the control is 22 square while it is icon-only and 22 tall once it is not,
+/// it sits twelve from the age on its left and twelve from `Change install` on
+/// its right in both shapes, and the group is centred in the bar's 24-tall row
+/// rather than standing on its floor.
+///
+/// **Only the box is measured against the bundle and not the width of the
+/// stale shape.** Chrome has no network in this sandbox, so Inter falls back
+/// and the bundle's 80.1 is nine of padding, sixteen of glyph, six of gap and
+/// whatever width the fallback gave the word. The paddings are the claim; the
+/// word is not.
+#[test]
+fn the_catalogs_age_and_its_refresh_sit_where_the_bundle_draws_them() {
+    /// `InstallBar.dc.html:24`, the gap between every pair in the bar.
+    const BETWEEN: f32 = 12.0;
+    /// `:95` and `:97`.
+    const CONTROL: f32 = 22.0;
+
+    let current = catalog_with("catalog-freshness", Catalog::just_fetched(sample()));
+    let age = current.get_by_label("Catalog updated just now").rect();
+    let refresh = current.get_by_label(crate::widget::REFRESH_CATALOG).rect();
+    // The glyph is appended to this one's text, so it is matched on part of the
+    // label - `widget::small_button` builds the run and the label follows it.
+    let change = current.get_by_label_contains("Change install").rect();
+
+    assert_eq!(
+        (refresh.width(), refresh.height()),
+        (CONTROL, CONTROL),
+        "the current shape is not the square the design draws"
+    );
+    assert_eq!(refresh.left() - age.right(), BETWEEN, "the control is not twelve from the age");
+    assert_eq!(
+        change.left() - refresh.right(),
+        BETWEEN,
+        "the control is not twelve from Change install"
+    );
+    // Centred in the row rather than sitting on its floor, which is what a
+    // control two shorter than the one beside it has to do.
+    assert_eq!(refresh.center().y, change.center().y);
+
+    // Stale: the same box in every direction but one, and the one it grows in
+    // is the only one the design lets it.
+    let stale =
+        catalog_with("catalog-freshness-stale", Catalog::cached(sample(), TWELVE_DAYS, "x"));
+    let age = stale.get_by_label("Catalog from 12 days ago").rect();
+    let refresh = stale.get_by_label(crate::widget::REFRESH_CATALOG).rect();
+    let change = stale.get_by_label_contains("Change install").rect();
+
+    assert_eq!(refresh.height(), CONTROL, "the stale shape is not the design's height");
+    assert!(refresh.width() > CONTROL, "the stale shape did not grow a label");
+    assert_eq!(refresh.left() - age.right(), BETWEEN);
+    assert_eq!(change.left() - refresh.right(), BETWEEN);
+    assert_eq!(refresh.center().y, change.center().y);
+    // The word itself, which is what the growth is for, and only the one.
+    assert_eq!(
+        stale.query_all_by_label_contains("Refresh").count(),
+        1,
+        "the stale control is drawn twice, or not at all"
+    );
+    // An index that is old is not an index that was never had, and the two
+    // states are one sentence apart on the same eleven pixels of bar.
+    assert!(
+        !anywhere(&stale, "Never fetched"),
+        "a window holding a twelve-day-old index said it had never fetched one"
+    );
+
+    // And neither is drawn in the Local view, which is the bundle's own
+    // condition at `:35`.
+    let mut local = catalog_with("catalog-freshness-local", Catalog::just_fetched(sample()));
+    local.state_mut().show_view(View::Local);
+    local.run();
+    assert!(
+        !anywhere(&local, "Catalog updated just now"),
+        "the Local view states the catalog's age"
+    );
+    assert!(
+        local.query_all_by_label(crate::widget::REFRESH_CATALOG).next().is_none(),
+        "the Local view offers to refresh the catalog"
+    );
+}
+
+/// What the bar says when the index on screen is one the last refresh did not
+/// replace.
+///
+/// `ORNG Registry.dc.html:468` is both halves - `cached` after the count and
+/// `Offline` before what still works - and this is the assertion a picture
+/// cannot make: the same nine rows are on screen either way, so only the two
+/// sentences tell a window that checked from a window that could not.
+///
+/// **It turns on the refresh having failed and not on where the bytes came
+/// from.** An index read off the disk and then confirmed by a fetch that worked
+/// is current, and the last arm here is what says so.
+#[test]
+fn the_bar_says_cached_only_when_a_refresh_did_not_replace_what_is_on_screen() {
+    let separator = crate::widget::SEPARATOR;
+    let offline = catalog_with(
+        "catalog-cached-bar",
+        Catalog::cached(sample(), TWELVE_DAYS, "no route to host"),
+    );
+    assert!(
+        bar_says(&offline, &format!("1 item {separator} cached")),
+        "the bar counts a kept catalog without saying it is one"
+    );
+    assert!(
+        anywhere(&offline, &format!("Offline {separator} installing a cached item still works")),
+        "the bar does not say that a kept item still installs"
+    );
+    // The note it displaces, which is what a window that had just checked would
+    // be saying instead.
+    assert!(
+        !anywhere(&offline, &format!("Installing is Update entries work {separator} no backup, \
+                                      Bitwig may stay open")),
+        "the offline note did not displace the cost of a press"
+    );
+    // The rows are still there, and still press. A degraded state, not an
+    // error: `:466` says no banner, and an empty region would be worse than one.
+    assert!(anywhere(&offline, "VOLSHAPER"), "an offline window lost the list it had");
+
+    let checked = catalog_with("catalog-current-bar", Catalog::just_fetched(sample()));
+    assert!(bar_says(&checked, "1 item"), "the bar does not count a catalog it just fetched");
+    assert!(
+        !anywhere(&checked, &format!("1 item {separator} cached")),
+        "a catalog that just arrived was reported as cached"
+    );
+    assert!(!anywhere(&checked, &format!("Offline {separator} installing a cached item still \
+                                          works")));
+}
+
+/// A refusal is a claim about one row of one index, and an index that has been
+/// replaced takes it with it.
+///
+/// Not tidiness. The map is keyed by identity and the bar reads `Install
+/// refused` while anything is in it, so a refusal against an item the catalog
+/// has since stopped publishing would hold that bar for the rest of the run
+/// with no row under it to explain itself. Nothing refetched the catalog before
+/// this change, so the field's own comment promised this and nothing could
+/// reach it.
+#[test]
+fn a_refresh_that_changes_the_catalog_takes_the_refusals_with_it() {
+    let mut harness = catalog_listing("catalog-refresh-clears", superseded_entries());
+    let item = orng_catalog::Index::parse(SUPERSEDED)
+        .expect("the sample index parses")
+        .items
+        .pop()
+        .expect("the sample index is not empty");
+    harness.state_mut().set_installing(Install::finished(
+        item,
+        Err(crate::catalog::Refused::Download("the connection closed".to_owned())),
+    ));
+    settle(&mut harness);
+    assert!(anywhere(&harness, "Install refused"), "the fixture reaches no refusal");
+
+    // A refresh that confirms the index it already had leaves the refusal
+    // alone: nothing it was a claim about has changed.
+    let same = orng_catalog::Index::parse(SUPERSEDED).expect("the sample index parses");
+    let held = Catalog::just_fetched(same.clone()).answering(Ok(same.clone()));
+    harness.state_mut().set_catalog(held);
+    harness.run();
+    assert!(
+        anywhere(&harness, "Install refused"),
+        "a refresh that changed nothing threw away what the user was told"
+    );
+
+    // A different one takes it.
+    let mut other = same.clone();
+    other.items.remove(0);
+    harness.state_mut().set_catalog(Catalog::just_fetched(same).answering(Ok(other)));
+    harness.run();
+    assert!(
+        !anywhere(&harness, "Install refused"),
+        "the bar still reports a refusal against a catalog that has been replaced"
+    );
+}
+
+/// The catalog that never arrived offers to go and look again.
+///
+/// `EmptyState.dc.html:90` draws `Try again` as this state's primary and there
+/// was nothing behind it until the catalog could be refreshed. The press itself
+/// is deliberately not made here: it opens a socket, and a test that reaches
+/// the network is a test that fails when a train goes into a tunnel. What is
+/// pinned is that the control is drawn, is the primary, and is the only one -
+/// the wire from it to `Catalog::refresh` is one line in `App::browse` and is
+/// the part this gives up.
+#[test]
+fn a_catalog_that_never_arrived_offers_to_go_and_look_again() {
+    let never = catalog_with("catalog-try-again", Catalog::unavailable("no route to host"));
+    assert!(in_the_region(&never, "Try again").rect().height() == 32.0, "not the primary's height");
+    assert!(anywhere(&never, "Never fetched"), "the bar does not say the catalog was never had");
+    // And the sentence the design puts there now that it is true: this state
+    // costs one fetch rather than a permanent connection - `EmptyState.dc.html:89`.
+    assert!(
+        anywhere(&never, "Everything already registered keeps working offline"),
+        "the empty state does not say what still works"
+    );
+}
+

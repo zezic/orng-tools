@@ -15,11 +15,18 @@
 //!
 //! That is what makes a mirror safe to add later. A mirror can be wrong; it
 //! cannot be believed.
+//!
+//! **The last index that verified is kept on disk**, so a window opened with no
+//! network browses an old catalog rather than none. What is kept is the bytes
+//! and the signature over them and never a re-serialised index, which means
+//! reading the cache back is the same check the download went through: a file
+//! edited under `~/.orng` is refused on exactly the terms a tampered download
+//! is, and the trust boundary does not move because the bytes came off a disk.
 
-use std::time::Duration;
+use std::time::{Duration, SystemTime};
 
 use orng_catalog::{Digest, Index, IndexEntry, PublicKey, Revision, Signature};
-use orng_tools::{Document, Kind};
+use orng_tools::{Document, Kind, OrngHome};
 
 /// The catalog itself, which is a repository: this is where the review of an
 /// item happened and where a link to the change that published it goes.
@@ -86,6 +93,17 @@ const PUBLIC_KEY: &str = "5377b5a59aa5519e5e955abb63cdc59f7175a9d684b57023cb582d
 const CONNECT: Duration = Duration::from_secs(5);
 const TOTAL: Duration = Duration::from_secs(20);
 
+/// A verified index, with the bytes it was proved from.
+///
+/// The bytes travel with it because they are what gets kept: an index this
+/// application re-serialised is one the signature no longer covers, so the only
+/// copy worth writing down is the one that arrived.
+struct Fetched {
+    index: Index,
+    bytes: Vec<u8>,
+    signature: Vec<u8>,
+}
+
 /// Fetch the published index, or say why not.
 ///
 /// **Blocking, and private.** [`Fetching`] is the only way in from outside this
@@ -97,14 +115,24 @@ const TOTAL: Duration = Duration::from_secs(20);
 /// There is no variant of this that returns an unverified index. Verification
 /// happens over the bytes that arrived, before they are parsed, so a caller
 /// cannot hold a parsed index that was never proved.
-fn fetch() -> Result<Index, String> {
-    let key = PublicKey::from_hex(PUBLIC_KEY).map_err(|e| format!("built-in key: {e}"))?;
-    let index = get(INDEX_URL, INDEX_LIMIT)?;
+fn fetch() -> Result<Fetched, String> {
+    let bytes = get(INDEX_URL, INDEX_LIMIT)?;
     let signature = get(SIGNATURE_URL, INDEX_LIMIT)?;
-    let signature = Signature::parse(&String::from_utf8_lossy(&signature))
+    let index = verified(&bytes, &signature)?;
+    Ok(Fetched { index, bytes, signature })
+}
+
+/// The check itself, over bytes and nothing else.
+///
+/// Apart from the fetch for the reason [`checked`] is, and it earns that twice
+/// over now: the download and the cache both come through here, so there is one
+/// place where an index becomes believable and it takes no socket and no disk.
+fn verified(bytes: &[u8], signature: &[u8]) -> Result<Index, String> {
+    let key = PublicKey::from_hex(PUBLIC_KEY).map_err(|e| format!("built-in key: {e}"))?;
+    let signature = Signature::parse(&String::from_utf8_lossy(signature))
         .map_err(|e| format!("signature: {e}"))?;
 
-    Index::verified(&index, &signature, &key).map_err(|e| format!("{e}"))
+    Index::verified(bytes, &signature, &key).map_err(|e| format!("{e}"))
 }
 
 /// A published index is a kilobyte or so. A cap means a server that answers with
@@ -132,13 +160,17 @@ fn get(url: &str, limit: u64) -> Result<Vec<u8>, String> {
 ///
 /// The same shape as a preparation: start it, poll it, draw whatever it has
 /// said. A window must not wait on a socket.
-pub struct Fetching {
-    result: std::sync::mpsc::Receiver<Result<Index, String>>,
-    pub outcome: Option<Result<Index, String>>,
+///
+/// Private, because [`Catalog`] is what the window holds: a fetch on its own
+/// cannot answer "what can be browsed", and a window that asked it would have
+/// no catalog every time the network was down.
+struct Fetching {
+    result: std::sync::mpsc::Receiver<Result<Fetched, String>>,
+    outcome: Option<Result<Fetched, String>>,
 }
 
 impl Fetching {
-    pub fn start(ctx: eframe::egui::Context) -> Fetching {
+    fn start(ctx: eframe::egui::Context) -> Fetching {
         let (tx, result) = std::sync::mpsc::channel();
         std::thread::spawn(move || {
             let _ = tx.send(fetch());
@@ -150,37 +182,299 @@ impl Fetching {
         Fetching { result, outcome: None }
     }
 
-    /// Returns whether anything arrived.
-    pub fn poll(&mut self) -> bool {
+    /// Take the answer if there is one.
+    ///
+    /// Says nothing about whether there was: [`Catalog::poll`] is the only
+    /// caller and it reads [`Fetching::outcome`] afterwards, which is the one
+    /// question that is still true on the frame after the answer landed.
+    fn poll(&mut self) {
         use std::sync::mpsc::TryRecvError;
         if self.outcome.is_some() {
-            return false;
+            return;
         }
         match self.result.try_recv() {
-            Ok(outcome) => {
-                self.outcome = Some(outcome);
-                true
-            }
-            Err(TryRecvError::Empty) => false,
+            Ok(outcome) => self.outcome = Some(outcome),
+            Err(TryRecvError::Empty) => {}
             // The worker died without answering. Silence is not an empty
             // catalog, and must not be drawn as one.
             Err(TryRecvError::Disconnected) => {
                 self.outcome = Some(Err("the fetch stopped without reporting".to_owned()));
-                true
+            }
+        }
+    }
+}
+
+/// The catalog as this window has it.
+///
+/// Three questions, and they are deliberately not one: what can be browsed,
+/// what the last attempt came to, and how old what is browsable is. A window
+/// that is offline with a cache answers all three at once and the design draws
+/// all three at once - the list, `cached` on the action bar, and the age beside
+/// the view switch. A single `Result` could only ever say one of them, which is
+/// why the fetch alone was never enough to hold.
+pub struct Catalog {
+    /// The last index that verified, and when its bytes arrived. Read off the
+    /// disk on opening and replaced by every fetch that succeeds.
+    held: Option<Held>,
+    /// The fetch in flight. Taken the frame it answers, because a fetch that
+    /// has reported is not work in flight - the same rule [`crate::app::App`]
+    /// applies to an [`Install`].
+    fetching: Option<Fetching>,
+    /// Why the last attempt produced nothing. Cleared by one that succeeds.
+    failed: Option<String>,
+    /// Where a verified index is written back to. **`None` under the tests**,
+    /// for the reason [`crate::settings::Preferences`] keeps its own `None`
+    /// there: a fixture must neither read nor write the cache of whoever ran
+    /// it. Also `None` on a machine with no home directory, which still
+    /// browses - it just starts every run with nothing.
+    home: Option<OrngHome>,
+}
+
+/// An index, and the moment its bytes arrived.
+struct Held {
+    index: Index,
+    fetched: SystemTime,
+}
+
+/// How old the index in hand is, as the bar states it.
+///
+/// Three states rather than a duration beside a boolean, because the design
+/// draws three and each carries what the next one needs: `Never fetched` with
+/// no age at all, an age in `ink_3` beside a bare icon, and the same age in the
+/// accent beside a control that has grown its word - `InstallBar.dc.html:36-40`
+/// and `:93-97`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Freshness {
+    /// Nothing has ever verified on this machine.
+    Never,
+    /// Fetched, and recently enough not to say so loudly.
+    Current(Duration),
+    /// Old enough that the design asks for it to be refreshed.
+    Stale(Duration),
+}
+
+impl Freshness {
+    /// Whether the design states this one loudly: the accent rather than the
+    /// quiet grey, and the control with its label rather than the icon alone.
+    ///
+    /// `Never` is stale - `ORNG Registry.dc.html:472` sets `stale: true` on the
+    /// scenario whose freshness reads `Never fetched`.
+    pub fn is_stale(self) -> bool {
+        !matches!(self, Freshness::Current(_))
+    }
+}
+
+/// When an index stops being described as current.
+///
+/// **Ours, not the bundle's.** It draws 20 minutes as current and 12 days as
+/// stale and states no line between them - `docs/design-review.md` round 3
+/// item 6. A week, because of what reaching it now means: this window checks on
+/// every launch, so seven days without one succeeding is a machine that has
+/// been off the network for a week rather than a catalog nobody has published
+/// to, and that is worth saying out loud.
+const STALE_AFTER: Duration = Duration::from_secs(7 * 24 * 60 * 60);
+
+impl Catalog {
+    /// What the disk already has, with no network at all.
+    ///
+    /// Opening is not fetching: this reads two files and checks a signature,
+    /// and the window is drawable the moment it returns. [`Catalog::refresh`]
+    /// is the other half and it is a separate call for that reason.
+    pub fn opened(home: Option<OrngHome>) -> Catalog {
+        let held = home.as_ref().and_then(cached);
+        Catalog { held, fetching: None, failed: None, home }
+    }
+
+    /// Ask the catalog again.
+    ///
+    /// A press while one is already in flight is nothing rather than a second
+    /// thread. The control stays pressable because the design draws it that
+    /// way, and what it asks for is already happening.
+    pub fn refresh(&mut self, ctx: &eframe::egui::Context) {
+        if self.fetching.is_none() {
+            self.fetching = Some(Fetching::start(ctx.clone()));
+        }
+    }
+
+    /// Take whatever the fetch has said, and keep it.
+    ///
+    /// **Returns whether the catalog on screen is now a different catalog**,
+    /// which is narrower than whether anything arrived: a refresh that confirms
+    /// what was already held moves the age and nothing else, and one that
+    /// failed moves neither. What the answer is for is everything the window
+    /// worked out against the old index and cannot carry over - see
+    /// [`crate::app::App::pump`].
+    #[must_use]
+    pub fn poll(&mut self) -> bool {
+        let Some(fetching) = &mut self.fetching else { return false };
+        // Asked of the outcome rather than of the call, because "did anything
+        // arrive just now" is false again on the next frame and "is there an
+        // answer here" is not. The same distinction `App::pump` draws around
+        // an `Install`, and the reason it asks `is_running` rather than
+        // trusting the poll.
+        fetching.poll();
+        if fetching.outcome.is_none() {
+            return false;
+        }
+        let fetching = self.fetching.take().expect("it answered a moment ago");
+        match fetching.outcome.expect("a fetch that answered carries an outcome") {
+            Ok(fetched) => {
+                if let Some(home) = &self.home {
+                    keep(home, &fetched);
+                }
+                let replaced = self.index() != Some(&fetched.index);
+                // Now, rather than reading back the time the file landed with:
+                // the two are one write, and a machine with nowhere to keep it
+                // still knows when this arrived.
+                self.held = Some(Held { index: fetched.index, fetched: SystemTime::now() });
+                self.failed = None;
+                replaced
+            }
+            // **What is held is not dropped.** It verified when it arrived and
+            // it still does, and the design is explicit that browsing an older
+            // index offline is a degraded state and not an error. So nothing on
+            // screen is a different catalog, and nothing worked out against the
+            // one held has stopped being true.
+            Err(why) => {
+                self.failed = Some(why);
+                false
             }
         }
     }
 
-    pub fn is_running(&self) -> bool {
-        self.outcome.is_none()
+    /// The index in hand, whether it came off the network this run or off the
+    /// disk.
+    ///
+    /// `None` covers the two states the callers treat alike - nothing has ever
+    /// verified here, or a fetch is still running - and they are alike: in both
+    /// this application knows nothing about what is published and must not say
+    /// that anything is up to date either.
+    pub fn index(&self) -> Option<&Index> {
+        self.held.as_ref().map(|held| &held.index)
     }
 
-    /// One held still, for drawing without a network. Tests only.
-    #[cfg(test)]
-    pub fn frozen(outcome: Result<Index, String>) -> Fetching {
+    /// Why the last attempt produced no index, for the one surface that states
+    /// it: the empty state, which is drawn only when nothing is held.
+    pub fn failure(&self) -> Option<&str> {
+        self.failed.as_deref()
+    }
+
+    /// Whether what is on screen is an index the last refresh did not replace.
+    ///
+    /// The design's `cached` word - `ORNG Registry.dc.html:468` - and it turns
+    /// on the refresh having failed rather than on where the bytes came from.
+    /// An index read off the disk and then confirmed by a fetch that worked is
+    /// current, and calling it cached would be the window reporting its own
+    /// plumbing.
+    pub fn is_cached(&self) -> bool {
+        self.held.is_some() && self.failed.is_some()
+    }
+
+    pub fn freshness(&self) -> Freshness {
+        let Some(held) = &self.held else { return Freshness::Never };
+        // A clock moved backwards since the write says nothing about the index,
+        // so it reads as just fetched rather than as an age in the future.
+        let age = held.fetched.elapsed().unwrap_or_default();
+        if age >= STALE_AFTER { Freshness::Stale(age) } else { Freshness::Current(age) }
+    }
+}
+
+/// The kept index, if there is one and it still proves.
+///
+/// Silent about a cache that is not there, which is every first run. Loud about
+/// one that is there and does not verify, because that is either a half-written
+/// pair or a file somebody edited, and neither should pass without a word - but
+/// loud only where a developer reads: the remedy is the refresh that is already
+/// starting, and there is nothing for the user to do.
+fn cached(home: &OrngHome) -> Option<Held> {
+    let bytes = std::fs::read(home.catalog_index()).ok()?;
+    let signature = std::fs::read(home.catalog_signature()).ok()?;
+    // The file's own write time, which is when this arrived: every successful
+    // fetch rewrites both files whether or not the bytes changed, so the age
+    // states when the catalog was last confirmed rather than when it last said
+    // something new.
+    let fetched = std::fs::metadata(home.catalog_index()).and_then(|at| at.modified()).ok()?;
+    match verified(&bytes, &signature) {
+        Ok(index) => Some(Held { index, fetched }),
+        Err(why) => {
+            eprintln!("the kept catalog index did not verify, so it was ignored: {why}");
+            None
+        }
+    }
+}
+
+/// Write an index back, so the next launch has one before it has a network.
+///
+/// The two files are written in the order they are read in, and a run
+/// interrupted between them leaves a pair that does not verify - which
+/// [`cached`] refuses and the next fetch overwrites. That is the whole of the
+/// recovery, and it is why there is no third file holding a time: anything this
+/// pair cannot prove about itself is not worth keeping beside it.
+fn keep(home: &OrngHome, fetched: &Fetched) {
+    let write = || -> std::io::Result<()> {
+        std::fs::create_dir_all(home.catalog())?;
+        std::fs::write(home.catalog_index(), &fetched.bytes)?;
+        std::fs::write(home.catalog_signature(), &fetched.signature)
+    };
+    if let Err(why) = write() {
+        // A cache that could not be written costs a slower next launch and
+        // nothing else. Reported where a developer sees it and nowhere the user
+        // has to act on it.
+        eprintln!("the catalog index was not kept: {why}");
+    }
+}
+
+/// The four states the window draws, built without a disk or a socket.
+///
+/// Tests only, and every one of them has no home, so a fixture neither reads
+/// nor writes the cache of whoever ran it.
+#[cfg(test)]
+impl Catalog {
+    /// A fetch in flight with nothing to show yet. The state a first run is in
+    /// for a second or two, and the one nothing could reach before the window
+    /// held a catalog rather than a fetch.
+    pub fn fetching() -> Catalog {
+        Catalog { held: None, fetching: None, failed: None, home: None }
+    }
+
+    /// One that answered a moment ago, which is the ordinary state.
+    pub fn just_fetched(index: Index) -> Catalog {
+        Catalog {
+            held: Some(Held { index, fetched: SystemTime::now() }),
+            ..Catalog::fetching()
+        }
+    }
+
+    /// An index from `ago` back and a refresh that came to nothing: the offline
+    /// state, which the design draws `cached` for.
+    pub fn cached(index: Index, ago: Duration, why: &str) -> Catalog {
+        Catalog {
+            held: Some(Held { index, fetched: SystemTime::now() - ago }),
+            failed: Some(why.to_owned()),
+            ..Catalog::fetching()
+        }
+    }
+
+    /// Nothing held, and nothing arrived.
+    pub fn unavailable(why: &str) -> Catalog {
+        Catalog { failed: Some(why.to_owned()), ..Catalog::fetching() }
+    }
+
+    /// Any of the four with a refresh that has already answered, so that what
+    /// [`Catalog::poll`] makes of an answer can be driven without a socket.
+    ///
+    /// The bytes are empty because nothing here reads them: they are what
+    /// [`keep`] writes, and a catalog built this way has nowhere to write to.
+    pub fn answering(mut self, outcome: Result<Index, String>) -> Catalog {
         let (tx, result) = std::sync::mpsc::channel();
+        // Kept alive on purpose, for the reason `Install::finished` keeps its
+        // own: a disconnected channel with no outcome is how a dead worker is
+        // recognised, and this one is not dead.
         std::mem::forget(tx);
-        Fetching { result, outcome: Some(outcome) }
+        let outcome = outcome
+            .map(|index| Fetched { index, bytes: Vec::new(), signature: Vec::new() });
+        self.fetching = Some(Fetching { result, outcome: Some(outcome) });
+        self
     }
 }
 
@@ -362,9 +656,15 @@ mod tests {
     #[test]
     #[ignore = "needs the network"]
     fn the_published_index_verifies() {
-        let index = fetch().expect("the published index did not verify");
-        assert_eq!(index.schema, orng_catalog::index::SCHEMA);
-        assert!(!index.items.is_empty(), "the published catalog is empty");
+        let fetched = fetch().expect("the published index did not verify");
+        assert_eq!(fetched.index.schema, orng_catalog::index::SCHEMA);
+        assert!(!fetched.index.items.is_empty(), "the published catalog is empty");
+        // And the bytes that came with it are the bytes that were proved, which
+        // is the whole of what makes them safe to write down and read back.
+        assert_eq!(
+            verified(&fetched.bytes, &fetched.signature).expect("the kept bytes do not verify"),
+            fetched.index
+        );
     }
 
     /// Both assets come from one release, so they must name one place. A URL
@@ -387,6 +687,171 @@ mod tests {
     fn published() -> Index {
         Index::parse(include_str!("../tests/published-index.json"))
             .expect("the published index does not parse")
+    }
+
+    /// The same index as bytes, with the signature ORNG Catalog published over
+    /// exactly those bytes.
+    ///
+    /// The real pair, because the cache is only worth testing against one: the
+    /// check it goes through is the compiled-in key, and nothing this test
+    /// could sign for itself would exercise that. `the_published_index_verifies`
+    /// is what says the pair is still the published one, and it needs the
+    /// network; this needs neither a network nor a secret key.
+    fn published_pair() -> Fetched {
+        let bytes = include_bytes!("../tests/published-index.json").to_vec();
+        let signature = include_bytes!("../tests/published-index.json.sig").to_vec();
+        let index = verified(&bytes, &signature).expect("the published pair does not verify");
+        Fetched { index, bytes, signature }
+    }
+
+    /// An index kept on disk is read back, and read back through the same check
+    /// it arrived through.
+    ///
+    /// The round trip whole, because the halves are worth nothing apart: bytes
+    /// written in a shape [`cached`] cannot prove are bytes the next launch
+    /// throws away, and the failure would be invisible - a window that simply
+    /// went on having no catalog until it had a network.
+    #[test]
+    fn a_kept_index_is_read_back_and_proved() {
+        let temp = tempfile::tempdir().expect("somewhere to keep it");
+        let home = OrngHome::at(temp.path());
+        let published = published_pair();
+
+        assert!(cached(&home).is_none(), "an empty home had a catalog in it");
+        keep(&home, &published);
+        let held = cached(&home).expect("what was just written did not come back");
+        assert_eq!(held.index, published.index);
+        // And it is dated, which is what the bar states an age from.
+        assert!(
+            held.fetched.elapsed().expect("the clock went backwards") < Duration::from_secs(60),
+            "the kept index came back dated some other time than when it was written"
+        );
+    }
+
+    /// A cache somebody edited is refused, on the terms a tampered download is.
+    ///
+    /// This is the reason the bytes are kept rather than a re-serialised index.
+    /// `~/.orng` is an ordinary directory in the user's home, so the file is
+    /// writable by anything running as them - and an index decides what gets
+    /// downloaded into a DAW and what digest it is held against.
+    ///
+    /// **The edit leaves valid JSON on purpose.** A byte flipped at the end of
+    /// the file is caught by the parser, so refusing it says nothing about the
+    /// signature; what has to be refused is a file that parses perfectly and
+    /// describes a different download. Here that is one character of the digest
+    /// every fetched document is checked against.
+    #[test]
+    fn a_kept_index_that_was_edited_is_refused() {
+        let temp = tempfile::tempdir().expect("somewhere to keep it");
+        let home = OrngHome::at(temp.path());
+        keep(&home, &published_pair());
+
+        let written = std::fs::read_to_string(home.catalog_index()).expect("it was just written");
+        let edited = written.replace("\"digest\": \"bfda", "\"digest\": \"bfdb");
+        assert_ne!(edited, written, "the digest this edits is not in the fixture any more");
+        assert!(Index::parse(&edited).is_ok(), "the edit broke the file rather than its meaning");
+        std::fs::write(home.catalog_index(), &edited).expect("could not edit it");
+        assert!(cached(&home).is_none(), "an edited index was believed");
+
+        // And the half-written pair a run interrupted between the two writes
+        // would leave. Refused for the same reason and by the same check.
+        keep(&home, &published_pair());
+        std::fs::remove_file(home.catalog_signature()).expect("it was just written");
+        assert!(cached(&home).is_none(), "an index with no signature beside it was believed");
+    }
+
+    /// The three things the bar asks a catalog, in the states that separate
+    /// them.
+    ///
+    /// `cached` and `stale` are not the same question and the design draws them
+    /// apart: one is about the last refresh having failed and the other is
+    /// about age. An index fetched a fortnight ago and confirmed a minute ago
+    /// is neither.
+    ///
+    /// **The two ages are the bundle's and the line between them is not.** It
+    /// draws 20 minutes as current (`InstallBar.dc.html:61`) and 12 days as
+    /// stale (`ORNG Registry.dc.html:467`) and states nothing in between, so
+    /// those two are what is pinned here. [`STALE_AFTER`] is ours and can move
+    /// anywhere inside that bracket without this failing, which is the honest
+    /// shape: asserting it against itself would prove only that a constant is
+    /// equal to itself.
+    #[test]
+    fn what_the_bar_asks_a_catalog() {
+        let minutes = Duration::from_secs(20 * 60);
+        let days = Duration::from_secs(12 * 24 * 60 * 60);
+
+        let fresh = Catalog::just_fetched(published());
+        assert!(fresh.index().is_some());
+        assert!(!fresh.is_cached(), "a catalog that just arrived was called cached");
+        assert_eq!(fresh.freshness(), Freshness::Current(Duration::ZERO));
+        assert!(!fresh.freshness().is_stale());
+
+        // Old enough to be stated loudly, and offline with it.
+        let old = Catalog::cached(published(), days, "no route to host");
+        assert!(old.index().is_some(), "an offline window lost the index it had");
+        assert!(old.is_cached());
+        assert!(
+            matches!(old.freshness(), Freshness::Stale(_)),
+            "the index the design draws as stale is not stale here"
+        );
+
+        // Offline for twenty minutes is offline and is not old, which is the
+        // two questions being two.
+        let recent = Catalog::cached(published(), minutes, "no route to host");
+        assert!(recent.is_cached());
+        assert!(
+            !recent.freshness().is_stale(),
+            "the index the design draws as current is stale here"
+        );
+
+        // Nothing ever fetched: no index, no age, and stale - `:472` draws the
+        // labelled control on exactly this state.
+        let never = Catalog::unavailable("no route to host");
+        assert!(never.index().is_none());
+        assert!(!never.is_cached(), "a window with nothing held cannot be showing a cached one");
+        assert_eq!(never.freshness(), Freshness::Never);
+        assert!(never.freshness().is_stale());
+
+        // And the one state that has no answer yet, which is neither a failure
+        // nor a catalog.
+        let waiting = Catalog::fetching();
+        assert!(waiting.index().is_none());
+        assert!(waiting.failure().is_none());
+        assert_eq!(waiting.freshness(), Freshness::Never);
+    }
+
+    /// A refresh reports a *different* catalog and not merely an answer.
+    ///
+    /// The distinction is the whole value of the return: what the window does
+    /// with it is throw away everything it worked out against the index it had,
+    /// and doing that every launch over an index that had not moved would
+    /// silently undo the user's last press.
+    #[test]
+    fn a_refresh_reports_only_a_catalog_that_is_not_the_one_already_held() {
+        let mut confirmed = Catalog::just_fetched(published()).answering(Ok(published()));
+        assert!(!confirmed.poll(), "a refresh that confirmed the index reported a new one");
+        // It still moved the age, which is the other half of what a refresh is
+        // for, and it cleared the offline state.
+        assert!(!confirmed.is_cached());
+
+        let mut emptied = published();
+        emptied.items.clear();
+        let mut changed = Catalog::just_fetched(emptied).answering(Ok(published()));
+        assert!(changed.poll(), "a refresh that brought back a different index reported nothing");
+
+        let mut first = Catalog::fetching().answering(Ok(published()));
+        assert!(first.poll(), "the first index ever to arrive reported nothing");
+
+        let mut failed =
+            Catalog::just_fetched(published()).answering(Err("no route to host".to_owned()));
+        assert!(!failed.poll(), "a refresh that failed reported a different catalog");
+        assert!(failed.index().is_some(), "a refresh that failed dropped the index it had");
+        assert!(failed.is_cached());
+
+        // And a poll with nothing in flight is not an answer at all, which is
+        // every frame the window draws between refreshes.
+        let mut idle = Catalog::just_fetched(published());
+        assert!(!idle.poll());
     }
 
     /// A document is fetched at the commit the index names and never from a
@@ -493,7 +958,7 @@ mod tests {
     #[test]
     #[ignore = "needs the network"]
     fn the_published_document_is_the_one_the_index_describes() {
-        let index = fetch().expect("the published index did not verify");
+        let index = fetch().expect("the published index did not verify").index;
         let item = index.items.first().expect("the published catalog is empty");
         let revision = index.revision.clone().expect("a published index names its commit");
         let document = fetch_document(item, &revision).expect("the published document was refused");

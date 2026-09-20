@@ -206,6 +206,75 @@ pub fn small_button(ui: &mut Ui, palette: Palette, icon: &str, label: &str) -> R
         .on_hover_cursor(egui::CursorIcon::PointingHand)
 }
 
+/// How old the catalog index is, stated beside the view switch.
+///
+/// Catalog view only, and the first of the two things the design puts there -
+/// `InstallBar.dc.html:36`. Quiet grey while the index is current and the
+/// accent once it is stale, which is `:93`: at that point the age stops being a
+/// fact about the window and becomes the reason the control beside it has grown
+/// a word.
+pub fn freshness(ui: &mut Ui, palette: Palette, stated: &str, stale: bool) {
+    let ink = if stale { palette.accent_text } else { palette.ink_3 };
+    ui.label(font::run(stated, font::plain(font::CHIP)).color(ink));
+}
+
+/// The second: go and ask the catalog again.
+///
+/// **Two shapes and one control** - `InstallBar.dc.html:94-97`. A bare glyph in
+/// `ink_3` on no ground while the index is current, and a filled button
+/// carrying the word once it is stale. 22 tall either way, which makes it the
+/// shortest control in any bar and two under the tabs it sits beside.
+///
+/// The label is stated rather than left to the text, for the reason
+/// [`row_action`] states its own: the current shape is a glyph and nothing
+/// else, and a button built from one is announced as a private-use codepoint.
+/// `Refresh catalog` is the bundle's own `title` at `:37`.
+pub fn refresh(ui: &mut Ui, palette: Palette, stale: bool) -> Response {
+    let (text, fill, min, pad) = if stale {
+        (
+            with_icon(ui, icon::REFRESH, "Refresh", font::CHIP, palette.ink, palette.ink),
+            palette.btn,
+            vec2(0.0, metric::REFRESH),
+            metric::REFRESH_PAD_X,
+        )
+    } else {
+        // Square, and the padding is zeroed to let it be one: the glyph is 16
+        // across in a box the design states at 22, and `min_size` is a floor
+        // that cannot bring a wider box back down.
+        (
+            egui::WidgetText::from(
+                font::run(icon::REFRESH, font::icon(ui.ctx(), font::ICON)).color(palette.ink_3),
+            ),
+            Color32::TRANSPARENT,
+            vec2(metric::REFRESH, metric::REFRESH),
+            0.0,
+        )
+    };
+    let button = egui::Button::new(text)
+        .stroke(Stroke::NONE)
+        .corner_radius(CornerRadius::same(metric::RADIUS))
+        .min_size(min);
+    let response = ui
+        .scope(|ui| {
+            ui.spacing_mut().button_padding = vec2(pad, 0.0);
+            // The theme's interactive size is a bar control's 26 and this one
+            // is 22, and `min_size` alone is a floor - the same correction
+            // [`catalog_action`] makes for its 24.
+            ui.spacing_mut().interact_size.y = metric::REFRESH;
+            filled_button(ui, fill, palette.btn_hover, button)
+                .on_hover_cursor(egui::CursorIcon::PointingHand)
+        })
+        .inner;
+    response.widget_info(|| {
+        egui::WidgetInfo::labeled(egui::WidgetType::Button, ui.is_enabled(), REFRESH_CATALOG)
+    });
+    response.on_hover_text(REFRESH_CATALOG)
+}
+
+/// What the refresh control is, wherever it is asked about: the tooltip, the
+/// accessibility tree and the test that presses it.
+pub const REFRESH_CATALOG: &str = "Refresh catalog";
+
 /// A screen's own version of [`small_button`]: `Copy diagnostics`, `Licences`.
 ///
 /// The same box the bar draws - 26 tall, padded ten, six from icon to word -
@@ -591,6 +660,10 @@ pub mod icon {
     pub const ADD_FILES: &str = light::FILE_PLUS;
     pub const SEARCH: &str = light::MAGNIFYING_GLASS;
     pub const SETTINGS: &str = light::GEAR_SIX;
+    /// Go and ask the catalog again. Not [`RESET`]'s single counter-clockwise
+    /// arrow, which puts a setting back to what it was: this one is a round
+    /// trip, and the design draws it as one.
+    pub const REFRESH: &str = light::ARROWS_CLOCKWISE;
     pub const RESTORE: &str = light::CLOCK_COUNTER_CLOCKWISE;
     pub const ABOUT: &str = light::INFO;
     pub const COPY: &str = light::COPY;

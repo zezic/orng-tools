@@ -3003,6 +3003,7 @@ dependencies = [
  "eframe",
  "egui-phosphor",
  "egui_kittest",
+ "getrandom 0.4.3",
  "jiff",
  "objc2 0.6.4",
  "objc2-app-kit 0.3.2",
@@ -3014,9 +3015,12 @@ dependencies = [
  "raw-window-handle",
  "rfd",
  "serde",
+ "serde_json",
  "tempfile",
  "toml",
  "ureq",
+ "uuid",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]

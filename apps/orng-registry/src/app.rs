@@ -24,12 +24,13 @@ use eframe::egui::{self, Align, Layout, vec2};
 use orng_catalog::Index;
 use orng_tools::{
     Backup, Content, Document, Kind, Placement, Provenance, Registration, RunState, Step,
-    Strategy, TheDocument, Update, Uuid, placement,
+    Rights, Strategy, TheDocument, Uuid, placement,
 };
 
 use crate::about::About;
 use crate::catalog::{self, Catalog, Freshness, Install};
 use crate::diagnostics::{self, Diagnostics};
+use crate::elevate::{self, Job};
 use crate::restore::Backups;
 use crate::session::{Badge, Found, Session};
 use crate::settings::{Appearance, Preferences, Settings};
@@ -1135,7 +1136,24 @@ impl App {
     fn put_back(&mut self, ctx: &egui::Context) {
         let Screen::Restore(backups) = &self.screen else { return };
         let Session::Found(found) = &self.session else { return };
-        let outcome = backups.restore(&found.to.install);
+        // A restore replaces files inside the installation, so it needs the
+        // same rights preparing does and is handed over the same way when this
+        // process does not hold them. Still on this thread either way: the
+        // design draws no progress for it, and a child that is waited on is no
+        // more blocking than a copy that is.
+        let outcome = match &found.rights {
+            Rights::Held => {
+                backups.restore(&found.to.install).map(|done| done.map_err(|e| e.to_string()))
+            }
+            Rights::Withheld { .. } => backups.chosen_directory().map(|from| {
+                elevate::run(
+                    &elevate::Task::Restore { from: from.to_path_buf() },
+                    &found.to.install,
+                    &|_| {},
+                )
+                .map(drop)
+            }),
+        };
         self.screen = Screen::Browsing;
         match outcome {
             // Nothing was pointed at, so nothing happened. Unreachable from the
@@ -1144,9 +1162,7 @@ impl App {
             // a window that swallowed a press.
             None => return,
             Some(Ok(())) => self.outcome = Some(Outcome::Restored),
-            Some(Err(why)) => {
-                self.outcome = Some(Outcome::NotRestored { why: why.to_string() });
-            }
+            Some(Err(why)) => self.outcome = Some(Outcome::NotRestored { why }),
         }
         self.reread();
         ctx.request_repaint();
@@ -1498,12 +1514,13 @@ impl App {
         };
         let Some(revised) = revised(entry, &open.words) else { return };
 
-        let mut update = Update::to(found.entries().clone());
-        update.revise(revised);
+        let mut job = Job::against(Work::Entries, &found.to, found.entries());
+        job.revise(revised);
         self.applying = Some(Applying::start(
             Errand::Edit,
             found.to.clone(),
-            update,
+            job,
+            found.rights.clone(),
             ctx.clone(),
         ));
     }
@@ -1822,15 +1839,49 @@ impl App {
 
     /// What stands between the user and the primary action, if anything does.
     ///
-    /// Only the preparing mode can be blocked. Registering entries writes no
-    /// part of the archive and is never held up by a running Bitwig, which is
-    /// the whole of what the cheap mode buys.
+    /// Two of the three are about the archive, so only the preparing mode can
+    /// be held up by them: registering entries writes no part of it and is
+    /// never held up by a running Bitwig, which is the whole of what the cheap
+    /// mode buys.
+    ///
+    /// **Rights are the exception, and they hold up either mode.** The
+    /// description bundles live inside the installation and are rewritten by
+    /// every change to the entry list (4.4), so an installation this account
+    /// may not write refuses the cheap mode for the same reason as the
+    /// expensive one. That is only a refusal where the platform has no way to
+    /// ask for more; where it has, the press asks, and is not blocked at all.
     fn blocking(&self) -> Option<Blocked> {
         let Session::Found(found) = &self.session else { return None };
-        if self.pending(found) != Some(Work::PrepareThenEntries) {
+        if self.applying.as_ref().is_some_and(Applying::is_running) {
             return None;
         }
-        if self.applying.as_ref().is_some_and(Applying::is_running) {
+        let pending = self.pending(found)?;
+
+        // First, because it is the one condition that is true of both modes and
+        // because it is the one the other two would otherwise hide: an
+        // installation nothing may write is not made writable by quitting
+        // Bitwig.
+        if let Rights::Withheld { directory, .. } = &found.rights
+            && !elevate::can_ask()
+        {
+            return Some(Blocked {
+                tone: Tone::Err,
+                title: "This installation is not yours to change.",
+                body: format!(
+                    "{} cannot be written by this account, and nothing registered takes \
+                     effect until it can. Preparing writes the archive, and every entry \
+                     change rewrites the description bundles beside it.",
+                    widget::drawn_path(directory)
+                ),
+                // Nothing from here resolves it: the remedy is the installation's
+                // permissions or the account this runs as, and neither is a
+                // press. An offer that leads nowhere is worse than none - the
+                // rule the unrecognised guard already follows.
+                action: None,
+            });
+        }
+
+        if pending != Work::PrepareThenEntries {
             return None;
         }
         match (&found.running, found.condition.guard) {
@@ -3172,10 +3223,15 @@ impl App {
             }
         };
 
-        let mut update = Update::to(found.entries().clone());
-        update.add(registration, document);
-        self.applying =
-            Some(Applying::start(Errand::Install, found.to.clone(), update, ctx.clone()));
+        let mut job = Job::against(Work::Entries, &found.to, found.entries());
+        job.add(registration, &document);
+        self.applying = Some(Applying::start(
+            Errand::Install,
+            found.to.clone(),
+            job,
+            found.rights.clone(),
+            ctx.clone(),
+        ));
     }
 
     /// Point a registered entry back at its document.
@@ -3218,10 +3274,15 @@ impl App {
             }
         };
 
-        let mut update = Update::to(found.entries().clone());
-        update.add(entry.clone(), document);
-        self.applying =
-            Some(Applying::start(Errand::Locate, found.to.clone(), update, ctx.clone()));
+        let mut job = Job::against(Work::Entries, &found.to, found.entries());
+        job.add(entry.clone(), &document);
+        self.applying = Some(Applying::start(
+            Errand::Locate,
+            found.to.clone(),
+            job,
+            found.rights.clone(),
+            ctx.clone(),
+        ));
     }
 
     /// The drop target, while something is over the window.
@@ -3778,7 +3839,7 @@ impl App {
     /// Hand the pending work to a thread that is not this one.
     fn start(&mut self, work: Work, ctx: &egui::Context) {
         let Session::Found(found) = &self.session else { return };
-        let mut update = Update::to(found.entries().clone());
+        let mut job = Job::against(work, &found.to, found.entries());
         // Only the rows that are ready. A conflict is pending work the user has
         // to resolve, and writing it would be resolving it for them.
         //
@@ -3788,7 +3849,7 @@ impl App {
         // kilobytes and the copy is not worth avoiding at that price.
         for staged in &self.staged {
             if let crate::staging::State::Ready { registration, document } = &staged.state {
-                update.add(registration.clone(), (**document).clone());
+                job.add(registration.clone(), document);
             }
         }
         // And the rows the user asked to be rid of, which have been struck
@@ -3797,12 +3858,17 @@ impl App {
         // control named that preference when it was pressed.
         let document = self.deleting();
         for uuid in self.removals(found).collect::<Vec<_>>() {
-            update.remove(uuid, document);
+            job.remove(uuid, document);
         }
         // What the last press came to is not what this one will come to.
         self.outcome = None;
-        self.applying =
-            Some(Applying::start(work.into(), found.to.clone(), update, ctx.clone()));
+        self.applying = Some(Applying::start(
+            work.into(),
+            found.to.clone(),
+            job,
+            found.rights.clone(),
+            ctx.clone(),
+        ));
     }
 }
 

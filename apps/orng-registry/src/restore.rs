@@ -16,6 +16,8 @@
 //! why no snapshot of this screen carries a row: a picture of a date is a picture
 //! of whichever runner took it. See `interface-notes.md`.
 
+use std::path::Path;
+
 use orng_tools::{Backup, Installation, Result};
 
 use crate::diagnostics::{directory_size, megabytes, when};
@@ -99,6 +101,15 @@ impl Backups {
     /// nothing to choose.
     pub fn restore(&self, install: &Installation) -> Option<Result<()>> {
         self.chosen().map(|taken| taken.backup.restore(install))
+    }
+
+    /// Where the chosen copy lives.
+    ///
+    /// The one thing a child process needs in order to put the same copy back:
+    /// a backup has no name but its directory, and the child holds that path
+    /// against the copies it can see rather than trusting it.
+    pub fn chosen_directory(&self) -> Option<&Path> {
+        self.chosen().map(|taken| taken.backup.directory())
     }
 }
 

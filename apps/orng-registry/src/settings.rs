@@ -233,7 +233,12 @@ impl Appearance {
 /// is this application's, `orng-tools` has no other reason to depend on serde,
 /// and a preference nothing outside this binary reads should not be able to pull
 /// one into a crate that only locates installations and edits documents.
-mod placement {
+///
+/// [`crate::elevate::Job`] spells it the same way, because it is the same
+/// choice crossing to a child process that will act on it. One spelling rather
+/// than two: a job that read `copy` as `link` would place documents somewhere
+/// the window did not say.
+pub(crate) mod placement {
     use orng_tools::Strategy;
     use serde::{Deserialize, Deserializer, Serialize, Serializer};
 

@@ -37,6 +37,18 @@ egui-phosphor = { version = "0.14", default-features = false, features = ["light
 serde = { version = "1", features = ["derive"] }
 toml = "1"
 
+# The conversation with an elevated child process. JSON rather than the entry
+# list's own form because what crosses is a job and its progress, not a list -
+# and rather than a binary frame because a protocol between two copies of one
+# binary is worth being able to read when it goes wrong.
+serde_json = "1"
+
+# Named explicitly for its `serde` feature, which the job's identities need. It
+# arrives in the graph through `orng-tools` either way, but relying on another
+# crate to have switched the feature on is relying on something nobody here
+# would think to keep true.
+uuid = { workspace = true, features = ["serde"] }
+
 # One date: when the backup of this build was taken. A `SystemTime` says nothing
 # a reader can use, and turning one into a civil date in the reader's own zone is
 # a calendar and a timezone database rather than arithmetic. `jiff` carries both
@@ -51,6 +63,31 @@ jiff = "0.2"
 # reveals over D-Bus, which is the same choice `rfd` is configured for above:
 # a call to whatever the desktop already runs, and no toolkit linked.
 opener = { version = "0.8", features = ["reveal"] }
+
+# Asking for administrator rights, which on Windows means asking for another
+# process: a running one cannot gain them. `ShellExecuteEx` with `runas` raises
+# the system's consent dialog, and the named pipe beside it is how the child
+# reports back - `runas` inherits no handles, so there is no stdout to read.
+# Only the features these calls live in, because the crate is the whole API
+# surface of Windows and the default is none of it.
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.61", features = [
+    "Win32_Foundation",
+    "Win32_Storage_FileSystem",
+    "Win32_System_IO",
+    "Win32_System_Pipes",
+    # `SHELLEXECUTEINFOW` carries an `HKEY`, so the structure does not exist
+    # without the registry's own types - even though nothing here opens a key.
+    "Win32_System_Registry",
+    "Win32_System_Threading",
+    "Win32_UI_Shell",
+    "Win32_UI_WindowsAndMessaging",
+] }
+
+# The pipe's name has to be one nothing could have prepared in advance, or a
+# process running as this user could squat it and hand the elevated child a job
+# of its own. Already in the tree through `orng-catalog`.
+getrandom = "0.4"
 
 # Colour management is AppKit's, and neither eframe nor winit exposes it. A
 # window that does not declare its colour space is handed to the panel

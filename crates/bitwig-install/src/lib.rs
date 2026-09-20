@@ -13,11 +13,13 @@
 //! Every path into any of them is resolved here and nowhere else.
 
 mod layout;
+mod rights;
 mod running;
 
 use std::path::{Path, PathBuf};
 
 pub use layout::{Installation, UserLibrary, AppData};
+pub use rights::{Rights, rights};
 pub use running::{RunState, running_state};
 
 /// Install root override. The `Bitwig Studio.app` bundle on macOS, the install

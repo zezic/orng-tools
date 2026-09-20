@@ -24,14 +24,21 @@ use std::sync::mpsc::{Receiver, TryRecvError, channel};
 use std::thread;
 
 use eframe::egui;
-use orng_tools::{Destination, Manifest, Plan, Step, Update, Uuid};
+use orng_tools::{Destination, Manifest, Plan, Rights, Step, Uuid};
+
+use crate::elevate::{self, Job, Report, Task};
 
 /// What one press of the primary action has to do.
 ///
 /// Not a flag on the worker, because the two differ in what they may do rather
 /// than in how they are drawn: one modifies the installation and needs Bitwig
 /// closed, the other writes files and does not (decision 6.2).
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+///
+/// It crosses to an elevated child as part of a [`crate::elevate::Job`], which
+/// is why it is serialisable: which of the two a run is, is the one thing the
+/// child cannot work out for itself - a prepared installation with entries
+/// waiting and a press that only writes entries look the same from there.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum Work {
     /// The installation already reads the entry list. Only the entries change,
     /// which is a handful of file writes.
@@ -175,15 +182,22 @@ pub struct Applying {
 
 impl Applying {
     /// Start it. Returns immediately.
+    ///
+    /// `rights` decides *where* it runs and nothing else. Held, it runs on the
+    /// worker this spawns; withheld, the same job is carried to a child process
+    /// that holds them and the worker reads that child's reports instead. The
+    /// progress the dialog draws is the same either way, which is the point of
+    /// describing the press as a [`Job`] rather than doing it.
     pub fn start(
         errand: Errand,
         to: Destination,
-        update: Update,
+        job: Job,
+        rights: Rights,
         ctx: egui::Context,
     ) -> Applying {
-        let work = errand.work();
-        let writing = update.writing().collect();
+        let writing = job.written.entries().iter().map(|entry| entry.uuid).collect();
         let (tx, updates) = channel();
+        let work = errand.work();
         thread::spawn(move || {
             // Every send is followed by a wake, so the window redraws when
             // something happened and stays asleep when nothing did.
@@ -191,8 +205,25 @@ impl Applying {
                 let _ = tx.send(progress);
                 ctx.request_repaint();
             };
-            let result = run(work, &to, update, &say);
-            say(Progress::Finished(result.map_err(|e| e.to_string())));
+            let result = match rights {
+                Rights::Held => run(&job, &to, &say),
+                // The installation is not this process's to write, so the press
+                // is carried rather than made. What comes back is the same
+                // conversation a worker here would have had, which is why the
+                // reports map straight onto the progress the dialog draws.
+                Rights::Withheld { .. } => {
+                    elevate::run(&Task::Apply(job), &to.install, &|report| match report {
+                        Report::Planned(steps) => {
+                            say(Progress::Planned(steps.into_iter().map(Into::into).collect()));
+                        }
+                        Report::Began(step) => say(Progress::Began(step.into())),
+                        Report::Registering => say(Progress::Registering),
+                        // Never sent here: how it ended is the call's own answer.
+                        Report::Finished(_) => {}
+                    })
+                }
+            };
+            say(Progress::Finished(result));
         });
 
         Applying {
@@ -325,19 +356,19 @@ impl Applying {
 /// A plan that cannot be computed has written nothing, which is the property the
 /// transaction exists to have, so it leaves the run failed with no step failed:
 /// none ran.
-fn run(
-    work: Work,
-    to: &Destination,
-    update: Update,
-    say: &impl Fn(Progress),
-) -> orng_tools::Result<Manifest> {
-    if work == Work::PrepareThenEntries {
-        let plan = Plan::compute(to)?;
+///
+/// The twin of [`elevate::serve`], which does the same against a job that
+/// arrived from another process. Both build their update through `Job::update`,
+/// so the two are one description of the work carried out in two places.
+fn run(job: &Job, to: &Destination, say: &impl Fn(Progress)) -> Result<Manifest, String> {
+    let update = job.update()?;
+    if job.work == Work::PrepareThenEntries {
+        let plan = Plan::compute(to).map_err(|e| e.to_string())?;
         say(Progress::Planned(plan.steps().collect()));
-        plan.apply(|step| say(Progress::Began(step)))?;
+        plan.apply(|step| say(Progress::Began(step))).map_err(|e| e.to_string())?;
         say(Progress::Registering);
     }
-    update.apply(to)
+    update.apply(to).map_err(|e| e.to_string())
 }
 
 #[cfg(test)]

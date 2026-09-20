@@ -24,8 +24,8 @@
 use std::collections::BTreeMap;
 
 use orng_tools::{
-    Condition, Destination, GuardState, Helper, InstallError, Installation, Manifest, RunState,
-    Standing, UserLibrary, Uuid, prepare, running_state,
+    Condition, Destination, GuardState, Helper, InstallError, Installation, Manifest, Rights,
+    RunState, Standing, UserLibrary, Uuid, prepare, running_state,
 };
 
 use crate::settings::Settings;
@@ -53,6 +53,19 @@ pub struct Found {
     pub condition: Condition,
     /// Whether Bitwig is running, which preparation needs it not to be.
     pub running: RunState,
+    /// Whether this process may write inside the installation.
+    ///
+    /// Beside [`Found::running`] because it is the same kind of fact and is
+    /// wanted at the same moment: both are conditions on a press, both are
+    /// about the machine rather than about the list, and both are answered once
+    /// when the installation is read rather than per frame. Three probes on a
+    /// spun-down volume is the same cost the standing already refuses to pay
+    /// per row.
+    ///
+    /// On Windows this is the ordinary answer for an installation under
+    /// `Program Files`, and what it decides is whether a press is carried out
+    /// here or handed to a child process holding rights this one does not.
+    pub rights: Rights,
     /// Everything this app has registered.
     entries: Manifest,
     /// What the disk says about each registered document, keyed by identity.
@@ -78,7 +91,17 @@ impl Found {
         running: RunState,
         entries: Manifest,
     ) -> Found {
-        Found { standing: standing_of(&to.install, &entries), to, condition, running, entries }
+        Found {
+            standing: standing_of(&to.install, &entries),
+            // Asked here rather than taken, for the reason the standing is:
+            // it is derived from the installation and the disk, so a caller
+            // who could supply one could supply the wrong one.
+            rights: orng_tools::rights(&to.install),
+            to,
+            condition,
+            running,
+            entries,
+        }
     }
 
     /// Everything this app has registered.

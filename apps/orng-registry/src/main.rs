@@ -18,6 +18,7 @@ pub mod about;
 pub mod app;
 pub mod catalog;
 pub mod diagnostics;
+pub mod elevate;
 #[cfg(target_os = "macos")]
 pub mod macos;
 pub mod restore;
@@ -33,6 +34,14 @@ pub mod work;
 mod render;
 
 fn main() -> eframe::Result {
+    // Before anything draws. This process may not be the window at all: an
+    // installation the window may not write is prepared by a second copy of
+    // this binary that Windows started with the rights, and that copy has a
+    // pipe to call back on and no interface of its own.
+    if let Some(serving) = elevate::Serving::from_arguments(std::env::args()) {
+        std::process::exit(serving.serve());
+    }
+
     let options = eframe::NativeOptions {
         renderer: eframe::Renderer::Wgpu,
         viewport: eframe::egui::ViewportBuilder::default()

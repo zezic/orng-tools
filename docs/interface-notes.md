@@ -170,6 +170,16 @@ Two measurement traps, found the hard way:
   share `x` and width and differ in `y`. Take extremes across all matches rather
   than the first.
 
+  **This is egui's and cannot be switched off from here**, so do not go looking
+  for the setting. Nothing in egui 0.36 checks `Ui::is_sizing_pass` before
+  writing an accessibility node, and `Context::disable_accesskit` is no use
+  mid-frame: it sets a flag that `begin_pass` reads, while every write goes
+  through `Context::accesskit_node_builder`, which asks the *pass* state that
+  `begin_pass` already filled in. Wrapping `widget::measured`'s probe in
+  `disable_accesskit`/`enable_accesskit` was tried and the duplicates were still
+  two. The way out stays the same one: take the extreme away from wherever the
+  probe was laid out.
+
 And where a component states a grid, assert it against the bundle's own numbers
 in `widget.rs` rather than against a screenshot: `Columns`, `CatalogColumns`,
 the overflow menu and the inspector each have a test that is a list of the

@@ -765,6 +765,18 @@ dialog over the window, holding it still - the scrim takes the pointer as well a
 light - and what a press came to is a banner in the same place afterwards, dismissible,
 carrying `Copy details` when it failed.
 
+**Preparing confirms, and nothing else does.** The press that modifies the installation
+puts the design's plan over the window first - what is backed up and where, the archive
+written beside the original and moved into place once it verifies, which rows are
+registered and which forgotten, where the documents go, and the links - and runs on the
+dialog's own press or is put away by its `Cancel`. The lines are worked out as the dialog
+is drawn, from the same rows the press will write, so a drop that lands under the scrim is
+described rather than missed; only what the disk has to be asked is read once, when the
+press is made. The dialog holds the window still in both senses, a scrim that takes every
+click and egui's modal layer that keeps the keyboard out of the bars under it, and the
+progress dialog shares the skeleton. The words are the bundle's, with four exceptions the
+data forced; `design-review.md` round 3 item 8 records them.
+
 The catalog's detail panel, which a catalog row opens: who wrote the item, what it is
 for, whether this installation is new enough to load it, what it is licensed under, its
 keywords, the change that published it, its author's page and its identity. Two of those
@@ -954,7 +966,6 @@ Not built yet:
 - The `Show factory entries` toggle. Reading Bitwig's own 428 entries means parsing a class
   out of the archive, which takes about a second, so it needs a worker of its own; a toggle
   that did nothing would be worse than no toggle.
-- The plan confirmation the Prepare install mode is supposed to show before it runs.
 - The update modal.
 - `Licences` on the About screen. The plural is the point: what it would open is the
   licences of everything linked into the binary, and nothing generates or bundles them.

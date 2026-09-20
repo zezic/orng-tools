@@ -256,6 +256,19 @@ and Phosphor's icons live in the same range. An icon font added as a *fallback*
 behind Inter therefore renders Latin letters for half the set. Icons have a family
 of their own, with nothing in front of them.
 
+**`Sense::click_and_drag()` is focusable.** A rect allocated with it to swallow
+the clicks under a dialog is also the first thing Tab stops on. A scrim wants
+`Sense::CLICK | Sense::DRAG`, which is what egui's own `Modal` builds its
+backdrop from.
+
+**A scrim holds the pointer still and not the keyboard.** Hit testing goes by
+layer and consults no modal, so a rect on the dialog's layer absorbs every click;
+keyboard focus goes by `Memory::set_modal_layer` and consults no rect, so without
+it Tab walks the bars under the scrim and Enter presses what it finds - it opened
+Settings behind the plan confirmation. `widget::dialog` does both, every frame.
+The pass that measures a dialog lays its ghosts out on the background layer, and
+the modal layer puts them out of reach of either.
+
 **egui requests a repaint every pass while `hovered_files` is non-empty**
 (`InputState::wants_repaint_after`), because a drag is a gesture in progress. That is
 why the two drag snapshots use `run_steps` where every other state uses `run`, which

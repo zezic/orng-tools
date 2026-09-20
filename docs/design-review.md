@@ -227,7 +227,12 @@ next reader will see `\u{b7}` and wonder.
 
 - **Cancel, in the progress dialog.** Nothing can cancel a preparation yet. The
   dialog is drawn without the control rather than with a dead one - which is the
-  shape the bundle itself draws from the Activate step onwards.
+  shape the bundle itself draws from the Activate step onwards. Its foot is that
+  state's too: 12 around the percent with the bar centred on it, 37 tall against
+  the 52 the control gives the `progress` scenario (`ORNG Registry.dc.html:280-293`,
+  probed at both). The first pictures of it carried egui's own centring instead,
+  six pixels low in a row the theme had floored at 26, and were re-recorded when
+  the plan confirmation took the same skeleton.
 - ~~**A catalog row's status and `Install`.**~~ *Drawn.* All seven states and the
   control each offers, transcribed from `CatalogRow.dc.html:68-76` into a second
   table in `status.rs` beside the entry list's ten. **The claim in the earlier
@@ -438,4 +443,44 @@ long as the filter is empty. The summary keeps the warn tone that only that mode
 takes and the button still reads `Prepare installation`, so the mode is still
 stated - but if the cost should outrank the count there, it is one arm in
 `App::summary`.
+
+### 8. The plan confirmation: the lines are the bundle's, and four things in them are ours
+
+For the designer, and the largest of the three that are about words.
+`ORNG Registry.dc.html:223-252` draws the plan over one scenario - two documents
+staged, one removal queued, a stock installation with no backup, the link
+strategy - and the window draws the same dialog over whatever the press is about
+to do. Every line derives from the rows and the machine: the first names the
+backups directory for this build, the third and fourth count the rows that are
+ready and the rows that are queued, the fifth counts by kind and folder, and the
+sixth counts the links. A line about nothing is left out, as the action bar leaves
+out a part that is nothing. Four things are said that the scenario does not say,
+each because the data says it:
+
+- **A backup that already exists is kept**, and the line says so: `The archive
+  and the description bundles are already backed up in ..., and the patch is
+  built from that copy.` The library's `Plan` takes that decision - it patches the
+  pristine copy - and its `backup_exists` was written for this sentence. Reached
+  after a restore, which puts the archive back and leaves the copy where it was.
+- **A removal names what happens to its file**, in the words its own control
+  used: `1 entry removed: OLD REVERB. The document file is kept.` The bundle's
+  line stops at the name and the preference that decides the rest lives in
+  Settings. It is the one irreversible thing a press can do, on the one dialog
+  that exists to say what the press does.
+- **The links are counted.** The bundle writes `1 library link created`;
+  preparation links all three kinds whatever is registered (decision 6.3), so
+  the line reads `3 library links created inside the installation's Library
+  folder, once the archive is in place`, and `The installation's library folders
+  are already linked to the user library.` when a restore left them standing.
+  `after the transaction completes` became `once the archive is in place`, because
+  linking is the transaction's last step and not something after it.
+- **The entries already on record get no line.** The bundle's scenario has
+  registered rows under the pending ones and says nothing about them, so neither
+  does this. On a re-preparation the press also rewrites their description
+  bundles, which is what the action bar's `6 entries to restore` is about; if the
+  plan should say so, it is one line.
+
+And two pixels: the bundle's press carries a one-pixel accent outline on the
+accent fill, which makes it 34 where the action bar's is 32, and the dialog draws
+the action bar's control.
 

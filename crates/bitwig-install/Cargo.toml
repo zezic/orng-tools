@@ -9,3 +9,7 @@ repository.workspace = true
 [dependencies]
 thiserror.workspace = true
 sysinfo.workspace = true
+
+# Asking whether an installation can be written means building one that cannot.
+[dev-dependencies]
+tempfile.workspace = true

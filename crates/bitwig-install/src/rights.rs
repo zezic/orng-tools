@@ -131,6 +131,57 @@ mod tests {
         probe(&missing).expect_err("a directory that does not exist accepted a file");
     }
 
+    /// A directory that genuinely refuses is genuinely reported.
+    ///
+    /// The whole point of the module, and the one case the other tests cannot
+    /// reach: every directory on a developer's machine is writable by them.
+    /// Unix only, because taking the write bit off is how a directory is made
+    /// to refuse here - on Windows it takes an ACL, and the case arrives by
+    /// itself under `Program Files`.
+    #[cfg(unix)]
+    #[test]
+    fn a_directory_that_refuses_is_reported_with_its_path() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let root = tempfile::tempdir().expect("somewhere to build an installation");
+        let install = fake_installation(root.path());
+        assert!(rights(&install).are_held(), "a new directory refused a file");
+
+        // Readable and enterable, but not writable - which is what an
+        // installation somebody else owns looks like.
+        let shut = install.localization_dir();
+        let mut mode = std::fs::metadata(&shut).expect("it was just made").permissions();
+        mode.set_mode(0o555);
+        std::fs::set_permissions(&shut, mode).expect("could not close the directory");
+
+        let answer = rights(&install);
+        // Put it back before asserting, so a failure does not leave a directory
+        // the temporary directory cannot remove.
+        let mut mode = std::fs::metadata(&shut).expect("it is still there").permissions();
+        mode.set_mode(0o755);
+        std::fs::set_permissions(&shut, mode).expect("could not open it again");
+
+        match answer {
+            Rights::Held => panic!("a directory with no write bit accepted a file"),
+            Rights::Withheld { directory, .. } => assert_eq!(
+                directory, shut,
+                "the refusal named a directory other than the one that refused"
+            ),
+        }
+    }
+
+    /// An installation only as far as [`rights`] cares: the three directories a
+    /// modification writes into, and an archive to find them by.
+    #[cfg(unix)]
+    fn fake_installation(root: &Path) -> crate::Installation {
+        std::fs::create_dir_all(root.join("Contents/Java")).expect("the archive's directory");
+        std::fs::write(root.join("Contents/Java/bitwig.jar"), b"").expect("an archive");
+        std::fs::create_dir_all(root.join("Contents/Resources/Library")).expect("a library");
+        std::fs::create_dir_all(root.join("Contents/Resources/localization"))
+            .expect("the bundles");
+        crate::Installation::at(root).expect("what was just built is not an installation")
+    }
+
     fn count_probes(directory: &Path) -> usize {
         std::fs::read_dir(directory)
             .expect("the temporary directory cannot be listed")

@@ -611,6 +611,94 @@ fn documents_dropped_on_a_prepared_installation() {
     shot_staged("staged", Helper::Present, GuardState::Disarmed);
 }
 
+/// A document dropped while a run is going does not join the list it is
+/// running against.
+///
+/// A press builds its job out of the staged rows as they stand, and its own
+/// answer clears that list. A row that joined between the two is one nothing
+/// wrote and nothing kept: it would be counted in `N entries registered` and
+/// then thrown away, and the file would have to be found again to notice. So
+/// the drop is refused while work is in flight, which is the rule
+/// `App::write_words` states and every other press already follows.
+///
+/// **The second half is what makes the first mean anything.** The same drop on
+/// the same window with nothing running does reach the list, so what the first
+/// half proves is the guard rather than a drop that never arrived.
+#[test]
+fn a_document_dropped_while_a_run_is_going_is_refused() {
+    assert!(
+        !dropped_while("drop-mid-run", true),
+        "a document dropped during a run joined the list the run was built from"
+    );
+    assert!(
+        dropped_while("drop-when-idle", false),
+        "the drop this test relies on never reached the window"
+    );
+}
+
+/// A dropped file as the window's own input carries one.
+///
+/// egui takes these behind a trait because the integration owns the file
+/// handle - on the web a drop is a browser object with no path at all. The
+/// window reads the path and nothing else, so that is all this answers, and
+/// `bytes` reads the file the same way the real one does.
+#[derive(Debug)]
+struct Dropped(std::path::PathBuf);
+
+impl egui::DroppedFile for Dropped {
+    fn path(&self) -> &std::path::Path {
+        &self.0
+    }
+
+    fn bytes(&self) -> Result<Vec<u8>, String> {
+        std::fs::read(&self.0).map_err(|why| why.to_string())
+    }
+}
+
+/// Drop one document on a window, with or without a run already in flight, and
+/// answer whether it reached the list.
+fn dropped_while(name: &str, running: bool) -> bool {
+    const DROPPED: &str = "WAVESHAPER ALPHA";
+
+    let root = fixture(name);
+    let session = found(&root, Helper::Present, GuardState::Disarmed);
+    let drop = root.join("dropped");
+    std::fs::create_dir_all(&drop).expect("a place to drop from");
+    let path = drop.join(format!("{DROPPED}.bwdevice"));
+    let document = orng_tools::testing::document(
+        orng_tools::Kind::Device,
+        "1f6c85d4-9a02-47be-83c1-d5e70b14a629".parse().expect("a sample identity"),
+        DROPPED,
+    );
+    std::fs::write(&path, document.bytes()).expect("could not write the sample");
+
+    let mut harness = window(session, move |app, _| {
+        if running {
+            // Held still and never finishing: what matters is only that the
+            // window has work in flight when the drop lands. No steps, so no
+            // progress dialog is drawn over the list.
+            app.set_applying(Applying::frozen(None, Stage::Preparing, None));
+        }
+    });
+    harness.input_mut().dropped_files = vec![std::sync::Arc::new(Dropped(path))];
+    harness.run();
+    // Once. A drop is an event and not a state, and redelivering it every frame
+    // would start a fresh read each time and never let one land.
+    harness.input_mut().dropped_files.clear();
+
+    // The read is on a worker in both halves, so both get the same chances. A
+    // bound rather than an interval, as `settle` is: the loop draws first and
+    // looks after.
+    for _ in 0..200 {
+        harness.run();
+        if harness.query_by_label(DROPPED).is_some() {
+            return true;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(10));
+    }
+    false
+}
+
 /// The same drop onto an installation that has never been prepared. One press
 /// does both, and the action bar says which mode it is about to run.
 #[test]

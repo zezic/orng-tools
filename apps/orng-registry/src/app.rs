@@ -1667,7 +1667,15 @@ impl App {
         if self.catalog.poll() {
             self.refused.clear();
         }
-        if let Some(read) = self.reading.as_mut().and_then(Reading::take) {
+        // Not while a run is in flight. A press builds its job out of the list
+        // as it stands and clears that list when it reports, so a row folded in
+        // between the two was never part of the run and would be counted as
+        // registered and then thrown away. The reader holds it instead - the
+        // rows are still in its channel - and it is taken the frame after the
+        // run is over.
+        if self.applying.is_none()
+            && let Some(read) = self.reading.as_mut().and_then(Reading::take)
+        {
             self.staged.extend(read);
             self.reading = None;
         }
@@ -1747,6 +1755,11 @@ impl App {
                 // reason: those entries are gone from the list now, so a queue
                 // still naming them would strike through rows that do not
                 // exist.
+                //
+                // Everything staged is what this run was built from, which is
+                // what `App::read` and the reader below are between them
+                // holding to: nothing joins the list while a run is in flight,
+                // so there is nothing here that the run did not consider.
                 self.staged.clear();
                 self.removing.clear();
                 let in_effect = entries.entries().len();
@@ -1816,9 +1829,16 @@ impl App {
     }
 
     /// Start reading dropped or chosen files.
+    ///
+    /// **Nothing starts on top of something already running**, the rule
+    /// `write_words` states and `install` and `relocate` follow. Here it is
+    /// about the list rather than the worker: a press takes the staged rows as
+    /// they stand, so a row read while it runs is one the press did not write
+    /// and the press's own answer would clear. Refused, and a second reader
+    /// would in any case displace the one already holding rows.
     fn read(&mut self, paths: Vec<PathBuf>, ctx: &egui::Context) {
         let Session::Found(found) = &self.session else { return };
-        if paths.is_empty() {
+        if paths.is_empty() || self.applying.is_some() {
             return;
         }
         // What is already staged goes with it, so a second drop collides with

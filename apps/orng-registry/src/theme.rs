@@ -596,6 +596,11 @@ pub mod metric {
     /// is the design saying which of the pair is the point.
     pub const CANCEL: f32 = 29.0;
     pub const CANCEL_PAD_X: f32 = 12.0;
+    /// The same control at the foot of a dialog, where the design draws it a
+    /// pixel taller and a pixel wider each side, and rounds it as a control
+    /// rather than as a field - `ORNG Registry.dc.html:246`.
+    pub const DIALOG_CANCEL: f32 = 30.0;
+    pub const DIALOG_CANCEL_PAD_X: f32 = 13.0;
     /// A screen's primary action. One shorter than the action bar's 32 and
     /// padded four wider, and outlined rather than filled where what it does
     /// cannot be undone.
@@ -781,6 +786,10 @@ pub mod font {
         /// The diagnostics block, looser still, so that a column of monospaced
         /// lines reads across as well as down.
         Reporting,
+        /// A line of the plan a preparation confirms with, and the note under
+        /// the plan. Set as a notice is, and kept apart from it because a plan
+        /// is read down as a list where a notice is read as a sentence.
+        Planning,
     }
 
     impl Leading {
@@ -797,6 +806,8 @@ pub mod font {
                 Leading::Introducing => 1.6,
                 // `SettingsScreen.dc.html`, the report block.
                 Leading::Reporting => 1.65,
+                // `ORNG Registry.dc.html:237` and `:241`.
+                Leading::Planning => 1.5,
             }
         }
 
@@ -1133,6 +1144,8 @@ mod tests {
             "EmptyState.dc.html:34"
         );
         assert_eq!(Leading::Reporting.over(font::MONO_TIGHT), 10.0 * 1.65);
+        assert_eq!(Leading::Planning.over(font::CHIP), 11.0 * 1.5, "ORNG Registry.dc.html:237");
+        assert_eq!(Leading::Planning.over(font::NOTE), 10.5 * 1.5, "ORNG Registry.dc.html:241");
 
         // The three the design deliberately sets apart, in the order it opens
         // them out: the sentence inside a notice, an author's own prose, and the

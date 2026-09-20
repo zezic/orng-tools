@@ -222,18 +222,36 @@ pub fn ensure_all_links(install: &Installation, library: &UserLibrary) -> Result
         .collect()
 }
 
+/// Whether the installation's folder for `kind` already leads to the user
+/// library's, which is the state [`ensure_link`] leaves it in.
+///
+/// Read-only, so that what a preparation will create can be said before it
+/// runs. Anything that is not that link - nothing there, a link elsewhere, a
+/// real directory - answers `false`; what `ensure_link` then does about it is
+/// its own decision.
+pub fn is_linked(install: &Installation, library: &UserLibrary, kind: Kind) -> bool {
+    let (link, target) = ends(install, library, kind);
+    link.symlink_metadata().is_ok_and(|metadata| metadata.file_type().is_symlink())
+        && resolves_to(&link, &target)
+}
+
+/// The two ends of a kind's link: where it stands in the installation, and the
+/// user library folder it leads to.
+fn ends(install: &Installation, library: &UserLibrary, kind: Kind) -> (PathBuf, PathBuf) {
+    let link = install
+        .library_dir()
+        .join(kind.library_subdir())
+        .join(kind.user_folder());
+    (link, library.folder(kind.user_folder()))
+}
+
 /// Link the installation's folder for `kind` to the user library's.
 ///
 /// Refuses to replace anything that is not already this link, so a real folder
 /// of Bitwig's is never destroyed. Returns whether a link was created.
 pub fn ensure_link(install: &Installation, library: &UserLibrary, kind: Kind) -> Result<bool> {
-    let target = library.folder(kind.user_folder());
+    let (link, target) = ends(install, library, kind);
     fs::create_dir_all(&target)?;
-
-    let link = install
-        .library_dir()
-        .join(kind.library_subdir())
-        .join(kind.user_folder());
 
     if let Ok(metadata) = link.symlink_metadata() {
         if !metadata.file_type().is_symlink() {

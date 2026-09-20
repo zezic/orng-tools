@@ -23,18 +23,18 @@ use std::path::PathBuf;
 use eframe::egui::{self, Align, Layout, vec2};
 use orng_catalog::Index;
 use orng_tools::{
-    Content, Document, Kind, Placement, Provenance, Registration, RunState, Step, Strategy,
-    TheDocument, Update, Uuid,
+    Backup, Content, Document, Kind, Placement, Provenance, Registration, RunState, Step,
+    Strategy, TheDocument, Update, Uuid, placement,
 };
 
 use crate::about::About;
 use crate::catalog::{self, Fetching, Install};
-use crate::diagnostics::Diagnostics;
+use crate::diagnostics::{self, Diagnostics};
 use crate::restore::Backups;
 use crate::session::{Badge, Found, Session};
 use crate::settings::{Appearance, Preferences, Settings};
 use crate::staging::{self, Reading, Staged};
-use crate::status::{Action, Offer, Published, Status};
+use crate::status::{Action, Offer, Published, Status, removal_consequence};
 use crate::theme::{self, Palette, font, metric};
 use crate::widget::{self, Emphasis, Fact, Measure, Padding, Tone, icon};
 use crate::work::{Applying, Errand, Stage, Work};
@@ -299,6 +299,16 @@ pub struct App {
     /// Set while work is in flight, and only while it is in flight: the moment
     /// it reports, what it did becomes an [`Outcome`] and the work is over.
     applying: Option<Applying>,
+    /// The plan, while it is up: from the press of `Prepare installation` on
+    /// the bar until the dialog's own press or its `Cancel`.
+    ///
+    /// The one press in the window that confirms before it runs, because it is
+    /// the one that modifies Bitwig Studio itself - README, section 6. What the
+    /// plan says is worked out as it is drawn, from the same rows the press
+    /// will write: a drop can still land under the scrim, and a plan copied
+    /// out at the press would then describe a press that no longer exists.
+    /// What is held is only what the disk has to be asked about.
+    confirming: Option<Confirming>,
     /// What the last press came to. Stated as a banner until the user puts it
     /// away, because nothing else will stop being true and take it off screen.
     outcome: Option<Outcome>,
@@ -377,6 +387,7 @@ impl App {
             awaiting_restart: BTreeSet::new(),
             reading: None,
             applying: None,
+            confirming: None,
             outcome: None,
             inspecting: None,
             detailing: None,
@@ -464,6 +475,12 @@ impl App {
     #[cfg(test)]
     pub fn set_applying(&mut self, applying: Applying) {
         self.applying = Some(applying);
+    }
+
+    /// Whether the plan is up. Tests only.
+    #[cfg(test)]
+    pub fn is_confirming(&self) -> bool {
+        self.confirming.is_some()
     }
 
     /// The list as this window has it, so a test can hand it back to a run that
@@ -582,6 +599,13 @@ impl App {
             Screen::Settings(_) => self.settings(ui),
             Screen::Restore(_) => self.restore(ui),
             Screen::About(_) => self.about(ui),
+        }
+
+        // The plan, before the work: it can only be up while the list is
+        // showing, because the press that opens it is on the list's bar, and
+        // its scrim is what keeps every other press from being made.
+        if self.confirming.is_some() {
+            self.confirm(ui);
         }
 
         // Last, and over everything - including a screen. Work can only be
@@ -988,7 +1012,8 @@ impl App {
                         {
                             pressed = Restoring::Restore;
                         }
-                        if widget::cancel_button(ui, palette, "Cancel").clicked() {
+                        let foot = widget::Foot::Screen;
+                        if widget::cancel_button(ui, palette, "Cancel", foot).clicked() {
                             pressed = Restoring::Back;
                         }
                         ui.with_layout(Layout::left_to_right(Align::Center), |ui| {
@@ -3504,8 +3529,154 @@ impl App {
             return;
         }
         if widget::primary_button(ui, palette, &label, mark, true, "").clicked() {
-            self.start(work, ui.ctx());
+            match work {
+                // The one press that confirms. Everything the plan says is
+                // worked out as it is drawn; what the disk has to be asked is
+                // asked now, once.
+                Work::PrepareThenEntries => self.confirming = Some(Confirming::read(found)),
+                Work::Entries => self.start(work, ui.ctx()),
+            }
         }
+    }
+
+    /// The plan, over the window, until it is answered.
+    fn confirm(&mut self, ui: &mut egui::Ui) {
+        let (Session::Found(found), Some(confirming)) = (&self.session, &self.confirming) else {
+            return;
+        };
+        let plan = self.plan(found, confirming);
+        let answer = widget::confirmation_dialog(
+            ui,
+            self.palette,
+            &widget::Confirmation {
+                title: "Prepare this installation",
+                tag: "Plan",
+                lead: "This is the one operation that modifies Bitwig Studio itself.",
+                plan: &plan,
+                note: "A Bitwig update resets the installation. Prepare it again afterwards. \
+                       Your registered devices are kept.",
+                cancel: "Cancel",
+                primary: PREPARE,
+                icon: icon::PREPARE,
+            },
+        );
+        match answer {
+            Some(widget::Answer::Proceed) => {
+                self.confirming = None;
+                self.start(Work::PrepareThenEntries, ui.ctx());
+            }
+            Some(widget::Answer::Cancel) => self.confirming = None,
+            None => {}
+        }
+    }
+
+    /// The plan, line by line, as the design numbers it -
+    /// `ORNG Registry.dc.html:386`.
+    ///
+    /// Six lines at most, and never a count of zero: a line about nothing is
+    /// left out, as the action bar leaves out a part that is nothing. The order
+    /// is the design's - the backup, the archive, what is registered, what is
+    /// removed, where the documents go, and the links - which is the order the
+    /// press runs in, less the description bundles, which every press rewrites
+    /// whatever else it does and the design draws no line for.
+    ///
+    /// Three things are said here that the bundle's one scenario does not say,
+    /// each because the data says it: a backup that already exists is kept
+    /// rather than written, a removal names whether the file goes with it in
+    /// the words its own control used, and the links are counted rather than
+    /// assumed to be one. `design-review.md` round 3 item 8.
+    fn plan(&self, found: &Found, confirming: &Confirming) -> Vec<widget::PlanLine> {
+        let plain = |text: String| widget::PlanLine { text, modifies_the_installation: false };
+        let mut lines = Vec::new();
+
+        // Where the pristine copy is, or goes. A build that could not be named
+        // has no directory of its own, and the press will refuse before it
+        // writes one; the root is what there is to say.
+        let backups = match &found.condition.build {
+            Some(build) => Backup::location(&found.to.home, build).directory().to_path_buf(),
+            None => found.to.home.backups(),
+        };
+        let backups = format!("{}/", diagnostics::under_home(found, &backups));
+        lines.push(plain(if confirming.backup_exists {
+            format!(
+                "The archive and the description bundles are already backed up in {backups}, \
+                 and the patch is built from that copy."
+            )
+        } else {
+            format!("The archive and the description bundles are backed up first to {backups}.")
+        }));
+
+        lines.push(widget::PlanLine {
+            text: "The patched archive is written beside the original, verified under \
+                   Bitwig's own JVM, then moved into place by a single rename. Nothing in \
+                   the installation changes until it verifies."
+                .to_owned(),
+            modifies_the_installation: true,
+        });
+
+        let registered: Vec<&str> =
+            self.ready().filter_map(Staged::registration).map(|row| row.name.as_str()).collect();
+        match registered.len() {
+            0 => {}
+            1 => lines.push(plain(format!("1 entry registered: {}.", registered[0]))),
+            many => {
+                lines.push(plain(format!("{many} entries registered: {}.", registered.join(", "))))
+            }
+        }
+
+        let removed: Vec<&str> = self
+            .removals(found)
+            .filter_map(|uuid| found.entries().get(uuid))
+            .map(|entry| entry.name.as_str())
+            .collect();
+        if !removed.is_empty() {
+            let what = match removed.len() {
+                1 => format!("1 entry removed: {}.", removed[0]),
+                many => format!("{many} entries removed: {}.", removed.join(", ")),
+            };
+            lines.push(plain(format!("{what} {}.", removal_consequence(self.deleting()))));
+        }
+
+        // Per kind, because one kind's folder cannot hold another's documents,
+        // and in the order the kinds are always listed in.
+        let folders: Vec<String> = Kind::ALL
+            .into_iter()
+            .filter_map(|kind| {
+                let count = self
+                    .ready()
+                    .filter_map(Staged::registration)
+                    .filter(|row| row.kind == kind)
+                    .count();
+                (count > 0).then(|| {
+                    format!("{count} to {}/{}", kind.library_subdir(), kind.user_folder())
+                })
+            })
+            .collect();
+        if !folders.is_empty() {
+            let placed = match found.to.placement {
+                Strategy::Link => "Placed in the user library",
+                Strategy::Copy => "Copied into the installation",
+            };
+            lines.push(plain(format!("{placed}: {}.", folders.join(", "))));
+        }
+
+        // The step the copy strategy rules out has no line under it, as it has
+        // no number in the progress list.
+        if found.to.placement == Strategy::Link {
+            lines.push(plain(match confirming.links_to_create {
+                0 => "The installation's library folders are already linked to the user \
+                      library."
+                    .to_owned(),
+                1 => "1 library link created inside the installation's Library folder, once \
+                      the archive is in place."
+                    .to_owned(),
+                many => format!(
+                    "{many} library links created inside the installation's Library folder, \
+                     once the archive is in place."
+                ),
+            }));
+        }
+        lines
     }
 
     /// Hand the pending work to a thread that is not this one.
@@ -3536,6 +3707,36 @@ impl App {
         self.outcome = None;
         self.applying =
             Some(Applying::start(work.into(), found.to.clone(), update, ctx.clone()));
+    }
+}
+
+/// What the plan says that the disk has to be asked about, read once when the
+/// confirmation opens rather than on every frame it is drawn - the rule the
+/// Restore screen's list already follows.
+struct Confirming {
+    /// Whether `~/.orng/backups` already holds this build's pristine copy. The
+    /// preparation then keeps it and patches from it rather than writing one -
+    /// the decision is [`orng_tools::Plan`]'s, and the confirmation is where it
+    /// is said in advance.
+    backup_exists: bool,
+    /// How many of the three library links the preparation will create. Fewer
+    /// than three after a restore, which puts the archive back and leaves the
+    /// links standing.
+    links_to_create: usize,
+}
+
+impl Confirming {
+    fn read(found: &Found) -> Confirming {
+        let backup_exists = found
+            .condition
+            .build
+            .as_ref()
+            .is_some_and(|build| Backup::location(&found.to.home, build).exists());
+        let links_to_create = Kind::ALL
+            .into_iter()
+            .filter(|kind| !placement::is_linked(&found.to.install, &found.to.library, *kind))
+            .count();
+        Confirming { backup_exists, links_to_create }
     }
 }
 

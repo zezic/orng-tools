@@ -282,6 +282,16 @@ fn report(lines: &[(&str, String)]) -> String {
 /// seven-letter word and its `placement` is two past a nine-letter one.
 const BESIDE_A_LABEL: &str = "  ";
 
+/// A path under this installation's home, as the design draws one.
+///
+/// The home is the directory the application's own sits under, which is what
+/// `~` means on this machine. Not the report's alone: the plan a preparation
+/// confirms with names the backups directory the same way.
+pub(crate) fn under_home(found: &Found, path: &Path) -> String {
+    let root = found.to.home.root();
+    shortened(path, root.parent())
+}
+
 /// A path with the user's home directory written as `~`.
 ///
 /// What the design draws - `~/.orng/entries.tsv`, `~/Documents/Bitwig

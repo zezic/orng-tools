@@ -1454,6 +1454,194 @@ fn anywhere<S>(harness: &Harness<'_, S>, label: &str) -> bool {
     harness.query_all_by_label(label).next().is_some()
 }
 
+/// The bundle's own width for the plan confirmation, `ORNG Registry.dc.html:225`.
+const CONFIRMATION_WIDTH: f32 = 476.0;
+
+/// A control of the dialog over the window - not the bar's of the same name
+/// under the scrim, and not the one the dialog measured itself with.
+///
+/// A dialog is laid out twice, into a sizing pass at the window's top left
+/// corner and then for real in its middle, so every label on it is two nodes;
+/// and the bar under it goes on carrying the word the dialog's press repeats.
+/// The bar's is the one that runs past the dialog's right edge, and of the
+/// other two the drawn one is the lower.
+fn in_the_dialog<'t>(
+    harness: &'t Harness<'static, App>,
+    label: &'t str,
+) -> egui_kittest::Node<'t> {
+    let edge = (metric::WINDOW[0] + CONFIRMATION_WIDTH) / 2.0;
+    harness
+        .get_all_by_label_contains(label)
+        .filter(|node| node.rect().right() <= edge)
+        .max_by(|a, b| a.rect().top().total_cmp(&b.rect().top()))
+        .expect("the dialog has no such control")
+}
+
+/// The primary action, which carries its glyph in its label.
+fn the_primary_action<'t>(harness: &'t Harness<'static, App>) -> egui_kittest::Node<'t> {
+    harness
+        .get_all_by_label_contains("Prepare installation")
+        .max_by(|a, b| a.rect().right().total_cmp(&b.rect().right()))
+        .expect("the bar offers no press")
+}
+
+/// The one press that confirms before it runs, and what it says.
+///
+/// `ORNG Registry.dc.html:223-252`, on the bundle's own `confirm` scenario:
+/// documents staged on an installation that has never been prepared, and a
+/// removal queued. Three claims the picture cannot hold are asked of the tree:
+/// that the press on the bar opens the plan and starts nothing; that the
+/// dialog is the bundle's 476 wide, padded 14, and centred in the whole window
+/// rather than in the working area; and that its two controls stand where the
+/// bundle stands them, 8 apart, the press at the right edge. Then that `Cancel`
+/// puts it away with nothing started, and that the dialog's own press hands the
+/// work over - which fails at once against a fixture with an empty archive and
+/// says so in the banner, which is the proof that it ran.
+#[test]
+fn the_prepare_press_confirms_with_the_plan_before_it_runs() {
+    let root = fixture("confirming");
+    let to = destination(&root);
+    let entries = entries();
+    let staged = dropped(&root, &to, &entries);
+    let session = found_with(&root, Helper::Absent, GuardState::Armed, entries);
+
+    let mut session = Some(session);
+    let mut staged = Some(staged);
+    let mut harness = Harness::builder().with_size(SIZE).build_eframe(move |cc| {
+        let mut app = App::with(&cc.egui_ctx, session.take().expect("built once"));
+        app.set_staged(staged.take().expect("built once"));
+        app
+    });
+    harness.run();
+
+    // A removal queued, so the plan has a line for it too.
+    harness.get_by_label("SHAPER").hover();
+    harness.run();
+    harness.get_by_label_contains("Remove entry").click();
+    harness.run();
+
+    the_primary_action(&harness).click();
+    harness.run();
+    assert!(harness.state().is_confirming(), "the press did not open the plan");
+    assert!(!harness.state().is_working(), "the press ran without confirming");
+    look(&mut harness, "confirming");
+
+    // Every line derives from the rows and the machine: the backup directory
+    // named for the build, the one row that is ready and not the two that are
+    // not, the removal and what happens to its file, the kind folder, and the
+    // three links a fixture with none of them will get.
+    for line in [
+        "The archive and the description bundles are backed up first to \
+         ~/.orng/backups/6.1-94a90411/.",
+        "1 entry registered: WAVESHAPER ALPHA.",
+        "1 entry removed: SHAPER. The document file is kept.",
+        "Placed in the user library: 1 to devices/My Devices.",
+        "3 library links created inside the installation's Library folder, once the \
+         archive is in place.",
+    ] {
+        assert!(anywhere(&harness, line), "the plan does not say: {line}");
+    }
+    assert!(
+        !anywhere(&harness, "2 entries registered: WAVESHAPER ALPHA, DISPERSER."),
+        "the plan counts a conflict as a registration"
+    );
+
+    // The bundle's own boxes, probed: 14 in from either edge, 12 under the
+    // heading and 13 over the plan, 11 between its blocks, every line padded
+    // 5 with its number a pixel down and 10 before the words, 14 under the
+    // note, and the pair 12 into the foot and 8 apart. egui rounds the 16.5
+    // line box to 17, which is the half pixel these tolerate.
+    let title = in_the_dialog(&harness, "Prepare this installation").rect();
+    let tag = in_the_dialog(&harness, "Plan").rect();
+    let lead = in_the_dialog(&harness, "This is the one operation").rect();
+    let first = in_the_dialog(&harness, "The archive and the description bundles").rect();
+    let registered = in_the_dialog(&harness, "1 entry registered").rect();
+    let removed = in_the_dialog(&harness, "1 entry removed").rect();
+    let last = in_the_dialog(&harness, "3 library links").rect();
+    let note = in_the_dialog(&harness, "A Bitwig update resets").rect();
+    let cancel = in_the_dialog(&harness, "Cancel").rect();
+    let press = in_the_dialog(&harness, "Prepare installation").rect();
+    let edge = (metric::WINDOW[0] + CONFIRMATION_WIDTH) / 2.0;
+    let number = harness
+        .get_all_by_label("1")
+        .filter(|node| {
+            node.rect().right() <= edge && node.rect().left() > edge - CONFIRMATION_WIDTH
+        })
+        .max_by(|a, b| a.rect().top().total_cmp(&b.rect().top()))
+        .expect("the first line has no number")
+        .rect();
+    let left = edge - CONFIRMATION_WIDTH;
+    assert_eq!(title.left(), left + 14.0, "the title is not on the dialog's padding");
+    assert_eq!(tag.right(), edge - 14.0, "the tag is not on the dialog's padding");
+    assert_eq!(lead.top() - title.bottom(), 12.0 + 13.0, "the lead is not 12 + 13 under the title");
+    assert_eq!(first.top() - lead.bottom(), 11.0 + 5.0, "the plan is not 11 under the lead");
+    assert_eq!(number.top(), first.top() + 1.0, "the number is not a pixel under its words");
+    assert_eq!(first.left() - number.right(), 10.0, "the number is not 10 before its words");
+    assert_eq!(removed.top() - registered.bottom(), 5.0 + 5.0, "the lines are not padded 5");
+    assert_eq!(note.top() - last.bottom(), 5.0 + 11.0, "the note is not 11 under the plan");
+    assert_eq!(press.top() - 12.0, note.bottom() + 14.0, "the foot is not 14 under the note");
+    assert_eq!(press.right(), edge - 14.0, "the press is not at the right edge");
+    assert_eq!(cancel.right() + 8.0, press.left(), "the pair is not 8 apart");
+    assert_eq!(cancel.height(), 30.0, "Cancel is not the dialog's 30");
+    assert_eq!(press.height(), 32.0, "the press is not the bar's 32");
+    assert_eq!(cancel.center().y, press.center().y, "the pair is not centred on one line");
+    // Centred in the window as a whole, which is a subtraction and not a look.
+    let top = title.top() - 14.0;
+    let bottom = press.bottom() + 12.0;
+    assert!(
+        ((top + bottom) - metric::WINDOW[1]).abs() <= 1.0,
+        "the dialog is not centred in the window: {top} to {bottom}"
+    );
+
+    // The keyboard is held still too. Tab has exactly two stops while the
+    // plan is up - the press, then the drawn Cancel, then round again - which
+    // says two things a picture cannot: nothing under the scrim is in the ring,
+    // and neither is the ghost of either control from the pass that measured
+    // the dialog, which egui would otherwise stop on first.
+    let focused = |harness: &Harness<'static, App>| {
+        harness
+            .ctx
+            .memory(|memory| memory.focused())
+            .and_then(|id| harness.ctx.read_response(id))
+            .map(|response| response.rect)
+    };
+    harness.key_press(egui::Key::Tab);
+    harness.run();
+    assert_eq!(focused(&harness), Some(press), "Tab did not stop first on the drawn press");
+    harness.key_press(egui::Key::Tab);
+    harness.run();
+    assert_eq!(focused(&harness), Some(cancel), "Tab did not stop next on the drawn Cancel");
+    harness.key_press(egui::Key::Tab);
+    harness.run();
+    assert_eq!(focused(&harness), Some(press), "Tab found a third stop under the scrim");
+
+    // The scrim takes the pointer: a press on the bar under it is not a press,
+    // and the bar goes on counting the Local list rather than the catalog.
+    on_the_bar(&harness, "Catalog").click();
+    harness.run();
+    assert!(
+        anywhere(&harness, "1 to add, 1 to remove, 2 to fix"),
+        "a press reached the bar under the scrim"
+    );
+
+    in_the_dialog(&harness, "Cancel").click();
+    harness.run();
+    assert!(!harness.state().is_confirming(), "Cancel did not put the plan away");
+    assert!(!harness.state().is_working(), "Cancel started the work");
+    assert!(!anywhere(&harness, "Prepare this installation"), "the plan is still drawn");
+
+    the_primary_action(&harness).click();
+    harness.run();
+    in_the_dialog(&harness, "Prepare installation").click();
+    harness.run();
+    assert!(!harness.state().is_confirming(), "the plan stayed up after its press");
+    settle(&mut harness);
+    assert!(
+        anywhere(&harness, "The preparation stopped, and your installation was not changed."),
+        "the dialog's press did not hand the work over"
+    );
+}
+
 /// The catalog toolbar, measured against `CatalogToolbar.dc.html` at both the
 /// widths the bundle was probed at.
 ///
@@ -2844,6 +3032,3 @@ fn a_catalog_that_does_not_verify() {
         Fetching::frozen(Err("the signature does not match this index under this key".to_owned())),
     );
 }
-
-
-

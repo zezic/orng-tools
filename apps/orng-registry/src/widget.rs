@@ -3240,14 +3240,30 @@ fn latest_mark(ui: &mut Ui, palette: Palette) {
 
 const LATEST: &str = "Latest";
 
+/// Which foot a way out stands on.
+///
+/// The design draws the control twice and not the same way: a screen's is 29
+/// tall, padded 12 and rounded as a field is, and a dialog's is 30, padded 13
+/// and rounded as a control is - `RestoreScreen.dc.html:79` against
+/// `ORNG Registry.dc.html:246`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Foot {
+    Screen,
+    Dialog,
+}
+
 /// The way out of a decision, beside the press that makes it.
-pub fn cancel_button(ui: &mut Ui, palette: Palette, label: &str) -> Response {
+pub fn cancel_button(ui: &mut Ui, palette: Palette, label: &str, foot: Foot) -> Response {
+    let (height, pad_x, radius) = match foot {
+        Foot::Screen => (metric::CANCEL, metric::CANCEL_PAD_X, metric::FIELD_RADIUS),
+        Foot::Dialog => (metric::DIALOG_CANCEL, metric::DIALOG_CANCEL_PAD_X, metric::RADIUS),
+    };
     let button = egui::Button::new(font::run(label, font::plain(font::CONTROL)).color(palette.ink_2))
         .stroke(Stroke::NONE)
-        .corner_radius(CornerRadius::same(metric::FIELD_RADIUS))
-        .min_size(vec2(0.0, metric::CANCEL));
+        .corner_radius(CornerRadius::same(radius))
+        .min_size(vec2(0.0, height));
     ui.scope(|ui| {
-        ui.spacing_mut().button_padding = vec2(metric::CANCEL_PAD_X, 0.0);
+        ui.spacing_mut().button_padding = vec2(pad_x, 0.0);
         filled_button(ui, palette.btn, palette.btn_hover, button)
             .on_hover_cursor(egui::CursorIcon::PointingHand)
     })
@@ -3879,9 +3895,47 @@ pub struct Progress<'a> {
     pub through: f32,
 }
 
-/// How wide the dialog is, and how its corners are cut. The design gives this
-/// one a softer corner than a control: it is a surface, not a button.
-const DIALOG_WIDTH: f32 = 436.0;
+/// What a preparation asks before it starts: the plan, and the pair of
+/// controls that answer it.
+///
+/// The one press in the window that confirms, and the design says why in the
+/// sentence it leads with - it is the one operation that modifies Bitwig Studio
+/// itself. Every word here is the caller's, as [`Progress`]'s are: this draws a
+/// plan and does not compose one.
+pub struct Confirmation<'a> {
+    pub title: &'a str,
+    /// The small word at the right of the heading, saying what the body is.
+    pub tag: &'a str,
+    pub lead: &'a str,
+    pub plan: &'a [PlanLine],
+    /// What is true afterwards, under the plan.
+    pub note: &'a str,
+    pub cancel: &'a str,
+    pub primary: &'a str,
+    /// The glyph after the primary's words.
+    pub icon: &'a str,
+}
+
+/// One numbered line of a plan.
+pub struct PlanLine {
+    pub text: String,
+    /// Whether this is the line that changes the installation. The design
+    /// numbers that one in the accent and every other in the tertiary ink, so
+    /// that a reader skimming the list finds the line that matters.
+    pub modifies_the_installation: bool,
+}
+
+/// What a confirmation was answered with, on the frame it was answered.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Answer {
+    Cancel,
+    Proceed,
+}
+
+/// How wide each dialog is, and how their corners are cut. The design gives
+/// them a softer corner than a control: they are surfaces, not buttons.
+const PROGRESS_WIDTH: f32 = 436.0;
+const CONFIRMATION_WIDTH: f32 = 476.0;
 const DIALOG_RADIUS: u8 = 8;
 /// The dialog's own padding, which is not the window's: 14 across, and a little
 /// less under a heading than over it.
@@ -3896,56 +3950,149 @@ const STEP_DOT: f32 = 5.0;
 const UNDER_A_TITLE: f32 = 2.0;
 /// The bar across the foot, which is a line rather than a trough.
 const PROGRESS_BAR: f32 = 2.0;
+/// The plan, `ORNG Registry.dc.html:231-241`: a pixel more over it than over
+/// the step list, eleven between the sentence, the list and the note, each line
+/// padded five above and below, and its number a pixel down from its words and
+/// ten before them.
+const ABOVE_A_PLAN: f32 = 13.0;
+const BETWEEN_PLAN_BLOCKS: f32 = 11.0;
+const PLAN_LINE_PAD: f32 = 5.0;
+const ALONG_A_PLAN_LINE: f32 = 10.0;
+const UNDER_A_PLAN_NUMBER: f32 = 1.0;
+/// Between the two controls at a dialog's foot.
+const ALONG_A_DIALOG_FOOT: f32 = 8.0;
 
-pub fn progress_dialog(ui: &mut Ui, palette: Palette, progress: &Progress<'_>) {
+/// A dialog over the window, holding it still.
+///
+/// Drawn twice, like every block the design centres: once into a sizing pass
+/// to learn how tall it is, then for real in the middle of the window. The
+/// contents are the caller's; the scrim, the surface and the centring are the
+/// same for every dialog, and are here so that no dialog can be centred in the
+/// working area by mistake - it is about the window, and the bars are behind
+/// the same scrim.
+fn dialog<R>(
+    ui: &mut Ui,
+    palette: Palette,
+    name: &str,
+    width: f32,
+    contents: impl Fn(&mut Ui) -> R,
+) -> R {
     // Over everything, bars included: the window is holding still, and a scrim
     // that stopped at the working area would say that the bars are not.
     let window = ui.ctx().viewport_rect();
-    let layer = egui::LayerId::new(egui::Order::Foreground, egui::Id::new("progress-dialog"));
+    let layer = egui::LayerId::new(egui::Order::Foreground, egui::Id::new(name));
     let painter = ui.ctx().layer_painter(layer);
     painter.rect_filled(window, CornerRadius::ZERO, palette.scrim);
 
-    // The scrim takes the pointer as well as the light. Everything behind it is
-    // still drawn - the work is being done to that list - but a control under a
-    // scrim that still answered would be a window saying one thing and doing
-    // another. Hit testing goes by layer, so a rect on this one absorbs what
-    // would otherwise reach the bars.
+    // The scrim takes the pointer and the keyboard as well as the light.
+    // Everything behind it is still drawn - the work is being done to that
+    // list - but a control under a scrim that still answered would be a window
+    // saying one thing and doing another. Two things do it, and egui's own
+    // `Modal` needs the same two. Hit testing goes by layer and consults no
+    // modal, so a rect on this one absorbs every click that would otherwise
+    // reach the bars. Keyboard focus goes by the modal layer and consults no
+    // rect: without it, Tab walked the bar under the scrim and Enter pressed
+    // what it found there, which opened Settings behind a dialog saying the
+    // window was holding still.
     let mut sink = Ui::new(
         ui.ctx().clone(),
-        egui::Id::new("progress-dialog-scrim"),
+        egui::Id::new(name).with("scrim"),
         egui::UiBuilder::new().layer_id(layer).max_rect(window),
     );
-    sink.allocate_rect(window, Sense::click_and_drag());
+    // The two flags and not `click_and_drag()`, which is also focusable: the
+    // scrim is not a control, and Tab must not stop on it.
+    sink.allocate_rect(window, Sense::CLICK | Sense::DRAG);
+    ui.ctx().memory_mut(|memory| memory.set_modal_layer(layer));
 
     let contents = |ui: &mut Ui| {
         ui.spacing_mut().item_spacing.y = 0.0;
-        let rounded = |top: bool| CornerRadius {
-            nw: if top { DIALOG_RADIUS } else { 0 },
-            ne: if top { DIALOG_RADIUS } else { 0 },
-            sw: if top { 0 } else { DIALOG_RADIUS },
-            se: if top { 0 } else { DIALOG_RADIUS },
-        };
+        // Nothing in a dialog is a bar control, and the theme's floor under a
+        // row would put nine pixels into its heading and ten into every line
+        // of a plan. Rows that have a height say so.
+        ui.spacing_mut().interact_size.y = 0.0;
+        contents(ui)
+    };
 
-        Frame::new()
-            .fill(palette.bg)
-            .corner_radius(rounded(true))
-            .inner_margin(Margin {
-                left: DIALOG_PAD as i8,
-                right: DIALOG_PAD as i8,
-                top: DIALOG_PAD as i8,
-                bottom: UNDER_A_HEADING as i8,
-            })
-            .show(ui, |ui| {
-                ui.set_width(ui.available_width());
-                ui.label(
-                    font::run(progress.title, font::emphasis(ui.ctx(), font::DIALOG_TITLE))
-                        .color(palette.ink),
-                );
-                ui.add_space(UNDER_A_TITLE);
-                ui.label(
-                    font::run(progress.step, font::plain(font::NOTE)).color(palette.ink_3),
-                );
-            });
+    let mut probe = Ui::new(
+        ui.ctx().clone(),
+        egui::Id::new(name).with("measure"),
+        egui::UiBuilder::new().sizing_pass().invisible().max_rect(Rect::from_min_size(
+            window.min,
+            vec2(width, window.height()),
+        )),
+    );
+    // egui lays a sizing pass out with every widget in it live, so the
+    // controls it measures are ghosts that could be pressed or focused. They
+    // are not, because the pass is on the background layer and the modal layer
+    // above puts it out of reach of both - which the confirmation's own test
+    // holds, by counting the stops Tab makes.
+    contents(&mut probe);
+
+    let rect = Rect::from_center_size(window.center(), vec2(width, probe.min_rect().height()));
+    painter.rect_filled(rect, CornerRadius::same(DIALOG_RADIUS), palette.panel_2);
+    let mut dialog = Ui::new(
+        ui.ctx().clone(),
+        egui::Id::new(name).with("contents"),
+        egui::UiBuilder::new().layer_id(layer).max_rect(rect),
+    );
+    contents(&mut dialog)
+}
+
+/// Which edge of the dialog a band meets, and so which of its corners are cut.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Edge {
+    Top,
+    Bottom,
+}
+
+/// A dialog's heading, or its foot: the page colour across the dialog, rounded
+/// on the side that meets its edge and square where it meets the body.
+fn dialog_band<R>(
+    ui: &mut Ui,
+    palette: Palette,
+    edge: Edge,
+    margin: Margin,
+    contents: impl FnOnce(&mut Ui) -> R,
+) -> R {
+    let top = edge == Edge::Top;
+    let rounded = CornerRadius {
+        nw: if top { DIALOG_RADIUS } else { 0 },
+        ne: if top { DIALOG_RADIUS } else { 0 },
+        sw: if top { 0 } else { DIALOG_RADIUS },
+        se: if top { 0 } else { DIALOG_RADIUS },
+    };
+    Frame::new()
+        .fill(palette.bg)
+        .corner_radius(rounded)
+        .inner_margin(margin)
+        .show(ui, |ui| {
+            ui.set_width(ui.available_width());
+            contents(ui)
+        })
+        .inner
+}
+
+/// The band over a dialog's body: the design's 14 above a heading and 12 under
+/// it.
+fn heading_margin() -> Margin {
+    Margin {
+        left: DIALOG_PAD as i8,
+        right: DIALOG_PAD as i8,
+        top: DIALOG_PAD as i8,
+        bottom: UNDER_A_HEADING as i8,
+    }
+}
+
+pub fn progress_dialog(ui: &mut Ui, palette: Palette, progress: &Progress<'_>) {
+    dialog(ui, palette, "progress-dialog", PROGRESS_WIDTH, |ui| {
+        dialog_band(ui, palette, Edge::Top, heading_margin(), |ui| {
+            ui.label(
+                font::run(progress.title, font::emphasis(ui.ctx(), font::DIALOG_TITLE))
+                    .color(palette.ink),
+            );
+            ui.add_space(UNDER_A_TITLE);
+            ui.label(font::run(progress.step, font::plain(font::NOTE)).color(palette.ink_3));
+        });
 
         Frame::new()
             .inner_margin(Margin {
@@ -3975,56 +4122,150 @@ pub fn progress_dialog(ui: &mut Ui, palette: Palette, progress: &Progress<'_>) {
                 );
             });
 
-        Frame::new()
-            .fill(palette.bg)
-            .corner_radius(rounded(false))
-            .inner_margin(Margin::symmetric(DIALOG_PAD as i8, UNDER_A_HEADING as i8))
-            .show(ui, |ui| {
-                ui.set_width(ui.available_width());
-                ui.horizontal(|ui| {
-                    ui.spacing_mut().item_spacing.x = 0.0;
-                    let percent = format!("{}%", (progress.through * 100.0).round());
-                    ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                        ui.label(
-                            font::run(percent, font::mono(font::MONO_TIGHT))
-                                .color(palette.ink_3),
-                        );
-                        ui.add_space(ALONG_A_STEP);
-                        let (bar, _) = ui.allocate_exact_size(
-                            vec2(ui.available_width(), PROGRESS_BAR),
-                            Sense::hover(),
-                        );
-                        ui.painter().rect_filled(bar, CornerRadius::ZERO, palette.line);
-                        let mut through = bar;
-                        through.set_right(bar.left() + bar.width() * progress.through);
-                        ui.painter().rect_filled(through, CornerRadius::ZERO, palette.accent);
-                    });
+        let foot = Margin::symmetric(DIALOG_PAD as i8, UNDER_A_HEADING as i8);
+        dialog_band(ui, palette, Edge::Bottom, foot, |ui| {
+            ui.horizontal(|ui| {
+                ui.spacing_mut().item_spacing.x = 0.0;
+                let percent = format!("{}%", (progress.through * 100.0).round());
+                ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                    ui.label(
+                        font::run(percent, font::mono(font::MONO_TIGHT)).color(palette.ink_3),
+                    );
+                    ui.add_space(ALONG_A_STEP);
+                    let (bar, _) = ui.allocate_exact_size(
+                        vec2(ui.available_width(), PROGRESS_BAR),
+                        Sense::hover(),
+                    );
+                    ui.painter().rect_filled(bar, CornerRadius::ZERO, palette.line);
+                    let mut through = bar;
+                    through.set_right(bar.left() + bar.width() * progress.through);
+                    ui.painter().rect_filled(through, CornerRadius::ZERO, palette.accent);
                 });
             });
-    };
+        });
+    });
+}
 
-    // As tall as its contents, and centred in the window as a whole rather than
-    // in the working area: it is about the window, and the bars are behind the
-    // same scrim.
-    let mut probe = Ui::new(
-        ui.ctx().clone(),
-        egui::Id::new("progress-dialog-measure"),
-        egui::UiBuilder::new().sizing_pass().invisible().max_rect(Rect::from_min_size(
-            window.min,
-            vec2(DIALOG_WIDTH, window.height()),
-        )),
-    );
-    contents(&mut probe);
+/// The plan a preparation confirms with, over the window, and what it was
+/// answered with.
+///
+/// `ORNG Registry.dc.html:223-252`. The heading carries the title and, at its
+/// right, the word for what the body is; the body is the sentence that says why
+/// this confirms, the numbered plan, and the note under it; the foot is the way
+/// out and the press, the press at the right. The primary is the action bar's
+/// own control - the design draws it the same 32 tall with the same words and
+/// the same arrow, one pixel of accent outline apart - so a reader sees the
+/// press they made a moment ago, asked again.
+pub fn confirmation_dialog(
+    ui: &mut Ui,
+    palette: Palette,
+    confirmation: &Confirmation<'_>,
+) -> Option<Answer> {
+    dialog(ui, palette, "confirmation-dialog", CONFIRMATION_WIDTH, |ui| {
+        dialog_band(ui, palette, Edge::Top, heading_margin(), |ui| {
+            // One row, as tall as the title, with the tag centred on it.
+            let title = font::emphasis(ui.ctx(), font::DIALOG_TITLE);
+            let height = ui.fonts_mut(|fonts| fonts.row_height(&title));
+            ui.allocate_ui_with_layout(
+                vec2(ui.available_width(), height),
+                Layout::left_to_right(Align::Center),
+                |ui| {
+                    ui.spacing_mut().item_spacing.x = 0.0;
+                    ui.label(font::run(confirmation.title, title).color(palette.ink));
+                    ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                        ui.label(
+                            font::run(confirmation.tag, font::plain(font::NOTE))
+                                .color(palette.ink_3),
+                        );
+                    });
+                },
+            );
+        });
 
-    let rect =
-        Rect::from_center_size(window.center(), vec2(DIALOG_WIDTH, probe.min_rect().height()));
-    painter.rect_filled(rect, CornerRadius::same(DIALOG_RADIUS), palette.panel_2);
-    let mut dialog = Ui::new(
-        ui.ctx().clone(),
-        egui::Id::new("progress-dialog-contents"),
-        egui::UiBuilder::new().layer_id(layer).max_rect(rect),
-    );
-    contents(&mut dialog);
+        Frame::new()
+            .inner_margin(Margin {
+                left: DIALOG_PAD as i8,
+                right: DIALOG_PAD as i8,
+                top: ABOVE_A_PLAN as i8,
+                bottom: DIALOG_PAD as i8,
+            })
+            .show(ui, |ui| {
+                ui.set_width(ui.available_width());
+                ui.label(
+                    font::wrapping(confirmation.lead, font::CONTROL, font::Leading::Describing)
+                        .color(palette.ink_2),
+                );
+                ui.add_space(BETWEEN_PLAN_BLOCKS);
+                for (at, line) in confirmation.plan.iter().enumerate() {
+                    plan_line(ui, palette, at, line);
+                }
+                ui.add_space(BETWEEN_PLAN_BLOCKS);
+                ui.label(
+                    font::wrapping(confirmation.note, font::NOTE, font::Leading::Planning)
+                        .color(palette.ink_3),
+                );
+            });
+
+        let foot = Margin::symmetric(DIALOG_PAD as i8, UNDER_A_HEADING as i8);
+        dialog_band(ui, palette, Edge::Bottom, foot, |ui| {
+            // As tall as the press, so the way out beside it is centred on it
+            // rather than hung from the top of a row the theme sized.
+            ui.allocate_ui_with_layout(
+                vec2(ui.available_width(), metric::ACTION),
+                Layout::right_to_left(Align::Center),
+                |ui| {
+                    ui.spacing_mut().item_spacing.x = 0.0;
+                    let pressed = primary_button(
+                        ui,
+                        palette,
+                        confirmation.primary,
+                        confirmation.icon,
+                        true,
+                        "",
+                    );
+                    ui.add_space(ALONG_A_DIALOG_FOOT);
+                    let way_out = cancel_button(ui, palette, confirmation.cancel, Foot::Dialog);
+                    if pressed.clicked() {
+                        Some(Answer::Proceed)
+                    } else if way_out.clicked() {
+                        Some(Answer::Cancel)
+                    } else {
+                        None
+                    }
+                },
+            )
+            .inner
+        })
+    })
+}
+
+/// One line of the plan: its number, and its words wrapped beside it.
+///
+/// The number is a pixel lower than the words and set in the tertiary ink, or
+/// in the accent for the one line that changes the installation. A line that
+/// wraps keeps its number at the top, as the design has it.
+fn plan_line(ui: &mut Ui, palette: Palette, at: usize, line: &PlanLine) {
+    let number_ink =
+        if line.modifies_the_installation { palette.accent_text } else { palette.ink_3 };
+    ui.add_space(PLAN_LINE_PAD);
+    ui.with_layout(Layout::left_to_right(Align::Min), |ui| {
+        ui.spacing_mut().item_spacing.x = 0.0;
+        ui.vertical(|ui| {
+            ui.add_space(UNDER_A_PLAN_NUMBER);
+            ui.label(
+                font::run((at + 1).to_string(), font::mono(font::MONO_TIGHT)).color(number_ink),
+            );
+        });
+        ui.add_space(ALONG_A_PLAN_LINE);
+        ui.add(
+            egui::Label::new(
+                font::wrapping(line.text.as_str(), font::CHIP, font::Leading::Planning)
+                    .color(palette.ink),
+            )
+            .wrap(),
+        );
+    });
+    ui.add_space(PLAN_LINE_PAD);
 }
 
 /// One step of a preparation, as a row of the progress list.

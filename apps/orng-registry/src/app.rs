@@ -1200,6 +1200,10 @@ impl App {
                 elevate::run(
                     &elevate::Task::Restore { from: from.to_path_buf() },
                     &found.to.install,
+                    // The copies the child holds `from` against are the ones
+                    // under this account's home, which it cannot discover for
+                    // itself if it was elevated as somebody else.
+                    &found.to.home,
                     &|_| {},
                 )
                 .map(drop)

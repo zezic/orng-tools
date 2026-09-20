@@ -36,14 +36,25 @@
 //! file pointed, elevated. A command line is set by the parent at
 //! `ShellExecuteEx` and read by the child out of its own process; nothing
 //! between them can rewrite it.
+//!
+//! # What is deliberately not discovered by the child
+//!
+//! **The user's home is on the command line too, and for the opposite reason.**
+//! Windows does not necessarily elevate as the same account: a user who is not
+//! an administrator answers the consent dialog with an administrator's
+//! credentials, and the child then runs as *that* account, with that account's
+//! `USERPROFILE`. A child that called [`orng_tools::OrngHome::discover`] would
+//! write the entry list and the backup under the administrator's profile, where
+//! the JVM Bitwig starts - running as the user - never looks. So the home the
+//! window resolved is carried across, exactly as the installation is.
 
 use std::collections::BTreeMap;
 use std::io::{BufRead, BufReader, Read, Write};
 use std::path::PathBuf;
 
 use orng_tools::{
-    Destination, Document, Installation, Kind, Manifest, Registration, Strategy, TheDocument,
-    Update, UserLibrary, Uuid,
+    Destination, Document, Installation, Kind, Manifest, OrngHome, Registration, Strategy,
+    TheDocument, Update, UserLibrary, Uuid,
 };
 use serde::{Deserialize, Serialize};
 
@@ -126,9 +137,9 @@ mod list {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Placing {
     pub uuid: Uuid,
-    /// The kind, as the extension that names it - the one spelling of a [`Kind`]
-    /// that already converts both ways.
-    pub kind: String,
+    /// What the bytes are to be read as.
+    #[serde(with = "kind")]
+    pub kind: Kind,
     /// The document itself.
     ///
     /// The bytes cross rather than a path to them. A path would be a file the
@@ -141,7 +152,59 @@ pub struct Placing {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Removal {
     pub uuid: Uuid,
-    pub delete_document: bool,
+    #[serde(with = "outcome")]
+    pub document: TheDocument,
+}
+
+/// A [`Kind`] as the extension that names it, which is the one spelling of one
+/// that already converts both ways.
+///
+/// The same choice [`list`] and `settings::placement` make: the type stays a
+/// type on both sides of the wire, and a kind that is not one is refused as the
+/// message is read rather than carried as a `String` that has to be checked
+/// again wherever it is used.
+mod kind {
+    use orng_tools::Kind;
+    use serde::{Deserialize, Deserializer, Serialize, Serializer};
+
+    pub fn serialize<S: Serializer>(value: &Kind, to: S) -> Result<S::Ok, S::Error> {
+        value.extension().serialize(to)
+    }
+
+    pub fn deserialize<'de, D: Deserializer<'de>>(from: D) -> Result<Kind, D::Error> {
+        let text = String::deserialize(from)?;
+        Kind::from_extension(&text)
+            .ok_or_else(|| serde::de::Error::custom(format!("{text} is not a kind of document")))
+    }
+}
+
+/// What becomes of a removed entry's file, as the word the setting is named by.
+///
+/// A [`TheDocument`] and not a `bool`, for the reason that type exists at all:
+/// the two answers differ by whether work the user cannot get back survives,
+/// and `delete_document: true` says that in a form no call site has to be right
+/// about twice.
+mod outcome {
+    use orng_tools::TheDocument;
+    use serde::{Deserialize, Deserializer, Serialize, Serializer};
+
+    pub fn serialize<S: Serializer>(value: &TheDocument, to: S) -> Result<S::Ok, S::Error> {
+        match value {
+            TheDocument::Kept => "kept",
+            TheDocument::Deleted => "deleted",
+        }
+        .serialize(to)
+    }
+
+    pub fn deserialize<'de, D: Deserializer<'de>>(from: D) -> Result<TheDocument, D::Error> {
+        match String::deserialize(from)?.as_str() {
+            "kept" => Ok(TheDocument::Kept),
+            "deleted" => Ok(TheDocument::Deleted),
+            other => Err(serde::de::Error::custom(format!(
+                "{other} is not what becomes of a document"
+            ))),
+        }
+    }
 }
 
 impl Job {
@@ -171,7 +234,7 @@ impl Job {
     pub fn add(&mut self, registration: Registration, document: &Document) {
         self.documents.push(Placing {
             uuid: registration.uuid,
-            kind: document.kind().extension().to_owned(),
+            kind: document.kind(),
             bytes: document.bytes().to_vec(),
         });
         self.written.insert(registration);
@@ -184,7 +247,7 @@ impl Job {
 
     /// Take an identity out of the list, and say what becomes of its document.
     pub fn remove(&mut self, uuid: Uuid, document: TheDocument) {
-        self.removed.push(Removal { uuid, delete_document: document == TheDocument::Deleted });
+        self.removed.push(Removal { uuid, document });
     }
 
     /// Whether this would change anything, which is what decides if it is worth
@@ -209,19 +272,20 @@ impl Job {
             }
         }
         for removal in &self.removed {
-            update.remove(removal.uuid, removal.document());
+            update.remove(removal.uuid, removal.document);
         }
         Ok(update)
     }
 
-    /// Where this writes, resolved against the installation the caller names.
+    /// Where this writes, resolved against the installation and the home the
+    /// caller names.
     ///
-    /// The installation is a parameter and not a field for the reason the module
-    /// states: in a child it comes off the command line, and nothing a job says
-    /// may decide which JVM runs.
-    pub fn destination(&self, install: Installation) -> Result<Destination, String> {
-        Destination::at(install, UserLibrary::at(&self.library), self.placement)
-            .map_err(|e| e.to_string())
+    /// Both are parameters and not fields for the reasons the module states: in
+    /// a child the installation comes off the command line because nothing a
+    /// job says may decide which JVM runs, and the home comes off it because a
+    /// child may be running as an account whose own home is the wrong one.
+    pub fn destination(&self, install: Installation, home: OrngHome) -> Destination {
+        Destination::under(install, UserLibrary::at(&self.library), home, self.placement)
     }
 }
 
@@ -231,18 +295,11 @@ impl Placing {
     /// Parsed rather than trusted. The bytes arrive from another process and end
     /// up written into somebody's library under an identity the same message
     /// chose; reading them as the kind they claim to be is what says the two
-    /// agree before anything is placed.
+    /// agree before anything is placed. The kind itself was refused earlier, as
+    /// the message was read - see [`kind`].
     fn document(&self) -> Result<Document, String> {
-        let kind = Kind::from_extension(&self.kind)
-            .ok_or_else(|| format!("{} is not a kind of document", self.kind))?;
-        Document::parse(kind, self.bytes.clone())
+        Document::parse(self.kind, self.bytes.clone())
             .map_err(|e| format!("the document for {}: {e}", self.uuid))
-    }
-}
-
-impl Removal {
-    fn document(self) -> TheDocument {
-        if self.delete_document { TheDocument::Deleted } else { TheDocument::Kept }
     }
 }
 
@@ -319,6 +376,9 @@ fn send(to: &mut impl Write, what: &impl Serialize) -> std::io::Result<()> {
 pub const SERVE: &str = "--orng-elevated-apply";
 /// The installation the child is to work on, which never travels in the job.
 pub const INSTALL: &str = "--orng-install";
+/// The home of the account that asked, which the child must not look up for
+/// itself - see the module note on what it does not discover.
+pub const HOME: &str = "--orng-home";
 
 /// Whether this platform gives an application any way to ask for more rights.
 ///
@@ -343,11 +403,12 @@ pub const fn can_ask() -> bool {
 pub fn run(
     task: &Task,
     install: &Installation,
+    home: &OrngHome,
     say: &impl Fn(Report),
 ) -> Result<Manifest, String> {
     #[cfg(windows)]
     {
-        self::windows::run(task, install, say)
+        self::windows::run(task, install, home, say)
     }
     #[cfg(not(windows))]
     {
@@ -356,7 +417,7 @@ pub fn run(
         // here would be the installation's permissions having changed between
         // the session being read and the press being made, and that is the
         // machine's doing rather than a fault in this code.
-        let _ = (task, install, say);
+        let _ = (task, install, home, say);
         Err("this installation is not writable by this account, and this platform has no \
              way for an application to ask for more rights"
             .to_owned())
@@ -415,6 +476,9 @@ pub struct Serving {
     /// The installation to work on. Never taken from the job - see the module
     /// note on why this one is on the command line.
     install: PathBuf,
+    /// The home of the account that asked. Never discovered here - see the
+    /// module note on why an elevated process must not look it up.
+    home: PathBuf,
 }
 
 impl Serving {
@@ -424,18 +488,20 @@ impl Serving {
     pub fn from_arguments(arguments: impl Iterator<Item = String>) -> Option<Serving> {
         let mut pipe = None;
         let mut install = None;
+        let mut home = None;
         let mut arguments = arguments.skip(1);
         while let Some(argument) = arguments.next() {
             match argument.as_str() {
                 SERVE => pipe = arguments.next(),
                 INSTALL => install = arguments.next().map(PathBuf::from),
+                HOME => home = arguments.next().map(PathBuf::from),
                 _ => {}
             }
         }
-        // Both or neither. One alone is this application having been started
-        // with something it does not understand, and the window is the right
-        // answer to that.
-        Some(Serving { pipe: pipe?, install: install? })
+        // All three or none. Any short of that is this application having been
+        // started with something it does not understand, and the window is the
+        // right answer to that.
+        Some(Serving { pipe: pipe?, install: install?, home: home? })
     }
 
     /// Hold the conversation, and answer with this process's exit code.
@@ -452,7 +518,7 @@ impl Serving {
 
         match Installation::at(&self.install) {
             Ok(install) => {
-                if serve(input, output, install).is_err() {
+                if serve(input, output, install, OrngHome::at(&self.home)).is_err() {
                     return 3;
                 }
             }
@@ -484,11 +550,13 @@ impl Serving {
 /// piece that is genuinely Windows' (the pipe, and the elevation that created
 /// this process) is the only piece that cannot be.
 ///
-/// The installation is the caller's, off the command line. See the module note.
+/// The installation and the home are the caller's, off the command line. See
+/// the module's two notes on why neither is the child's to choose.
 pub fn serve(
     input: impl Read,
     mut output: impl Write,
     install: Installation,
+    home: OrngHome,
 ) -> std::io::Result<()> {
     let mut lines = BufReader::new(input).lines();
     let line = match lines.next() {
@@ -498,7 +566,7 @@ pub fn serve(
         None => return Ok(()),
     };
 
-    let outcome = run_job(&line, install, &mut output);
+    let outcome = run_job(&line, install, home, &mut output);
     send(&mut output, &Report::Finished(outcome))
 }
 
@@ -506,13 +574,14 @@ pub fn serve(
 fn run_job(
     line: &str,
     install: Installation,
+    home: OrngHome,
     output: &mut impl Write,
 ) -> Result<String, String> {
     let task: Task =
         serde_json::from_str(line).map_err(|e| format!("the job did not read: {e}"))?;
     match task {
-        Task::Apply(job) => apply(job, install, output),
-        Task::Restore { from } => restore(&from, &install),
+        Task::Apply(job) => apply(job, install, home, output),
+        Task::Restore { from } => restore(&from, &install, &home),
     }
 }
 
@@ -524,9 +593,10 @@ fn run_job(
 fn apply(
     job: Job,
     install: Installation,
+    home: OrngHome,
     output: &mut impl Write,
 ) -> Result<String, String> {
-    let to = job.destination(install)?;
+    let to = job.destination(install, home);
     let update = job.update()?;
 
     if job.work == Work::PrepareThenEntries {
@@ -553,9 +623,16 @@ fn apply(
 ///
 /// The entry list is deliberately untouched, which is what leaves the
 /// installation in the `Needs re-apply` state the window already says.
-fn restore(from: &std::path::Path, install: &Installation) -> Result<String, String> {
-    let home = orng_tools::OrngHome::discover().map_err(|e| e.to_string())?;
-    let backups = orng_tools::Backup::list(&home).map_err(|e| e.to_string())?;
+///
+/// The home is the caller's and is never discovered here: the copies to hold
+/// `from` against are the ones under the *asking* account's home, and an
+/// elevated process may not be running as that account at all.
+fn restore(
+    from: &std::path::Path,
+    install: &Installation,
+    home: &OrngHome,
+) -> Result<String, String> {
+    let backups = orng_tools::Backup::list(home).map_err(|e| e.to_string())?;
     let backup = backups
         .into_iter()
         .find(|backup| backup.directory() == from)
@@ -576,31 +653,31 @@ fn restore(from: &std::path::Path, install: &Installation) -> Result<String, Str
 /// be made here.
 #[cfg(windows)]
 mod windows {
-    use std::ffi::OsStr;
+    use std::ffi::{OsStr, OsString};
     use std::io::{Read, Write};
     use std::os::windows::ffi::OsStrExt;
     use std::os::windows::io::{FromRawHandle, OwnedHandle};
 
-    use orng_tools::{Installation, Manifest};
+    use orng_tools::{Installation, Manifest, OrngHome};
     use windows_sys::Win32::Foundation::{
         ERROR_CANCELLED, ERROR_IO_PENDING, GetLastError, HANDLE, WAIT_OBJECT_0,
     };
     use windows_sys::Win32::Storage::FileSystem::{
         FILE_FLAG_FIRST_PIPE_INSTANCE, FILE_FLAG_OVERLAPPED, PIPE_ACCESS_DUPLEX,
     };
-    use windows_sys::Win32::System::IO::{GetOverlappedResult, OVERLAPPED};
+    use windows_sys::Win32::System::IO::{CancelIo, GetOverlappedResult, OVERLAPPED};
     use windows_sys::Win32::System::Pipes::{
         ConnectNamedPipe, CreateNamedPipeW, PIPE_READMODE_BYTE, PIPE_TYPE_BYTE, PIPE_WAIT,
     };
     use windows_sys::Win32::System::Threading::{
-        CreateEventW, GetExitCodeProcess, INFINITE, WaitForMultipleObjects,
+        CreateEventW, GetExitCodeProcess, INFINITE, ResetEvent, WaitForMultipleObjects,
     };
     use windows_sys::Win32::UI::Shell::{
         SEE_MASK_NOASYNC, SEE_MASK_NOCLOSEPROCESS, SHELLEXECUTEINFOW, ShellExecuteExW,
     };
     use windows_sys::Win32::UI::WindowsAndMessaging::SW_HIDE;
 
-    use super::{INSTALL, Report, SERVE, Task, listen, send};
+    use super::{HOME, INSTALL, Report, SERVE, Task, listen, send};
 
     /// How much the pipe holds before a writer has to wait for a reader.
     ///
@@ -613,6 +690,7 @@ mod windows {
     pub fn run(
         task: &Task,
         install: &Installation,
+        home: &OrngHome,
         say: &impl Fn(Report),
     ) -> Result<Manifest, String> {
         // Named before the child is launched, because the name is what the
@@ -623,20 +701,33 @@ mod windows {
         // quick enough to call back first would find nothing listening.
         let connecting = pipe.arm_connect()?;
 
-        let child = launch(&name, install)?;
+        let child = launch(&name, install, home)?;
 
         // Whichever happens first: the child calls back, or it dies without
         // doing so. Waiting only on the connect is what would hang the run for
         // ever on a child that failed before it opened the pipe.
+        //
+        // Every way out from here but the first takes the connect back before
+        // it returns: it is still in flight, and the kernel holds a pointer
+        // into `connecting` until it is told to stop.
         let ready = unsafe {
             WaitForMultipleObjects(2, [connecting.event(), child.handle()].as_ptr(), 0, INFINITE)
         };
-        if ready != WAIT_OBJECT_0 {
+        if ready == WAIT_OBJECT_0 + 1 {
+            connecting.abandon(&pipe);
             return Err(child.why_it_gave_up());
+        }
+        if ready != WAIT_OBJECT_0 {
+            // Neither handle: the wait itself failed. The child may well still
+            // be running, and still be writing into the installation, so this
+            // must not be reported as a process that ended - its exit code
+            // would read `STILL_ACTIVE` and be drawn as the reason it stopped.
+            connecting.abandon(&pipe);
+            return Err(format!("could not wait for an elevated run: {}", last()));
         }
         connecting.finish(&pipe)?;
 
-        let mut channel = pipe.stream();
+        let mut channel = pipe.stream()?;
         send(&mut channel, task)
             .map_err(|e| format!("the elevated run could not be told: {e}"))?;
         listen(channel, say)
@@ -657,8 +748,13 @@ mod windows {
     }
 
     /// A UTF-16 string with the terminator Windows expects.
-    fn wide(text: &str) -> Vec<u16> {
-        OsStr::new(text).encode_wide().chain(std::iter::once(0)).collect()
+    ///
+    /// Takes an `OsStr` rather than a `&str` so that a path goes across as the
+    /// UTF-16 Windows gave it. `to_string_lossy` would rewrite an unpaired
+    /// surrogate - legal in a Windows path - as U+FFFD, and the binary or the
+    /// installation named after that is one that does not exist.
+    fn wide(text: impl AsRef<OsStr>) -> Vec<u16> {
+        text.as_ref().encode_wide().chain(std::iter::once(0)).collect()
     }
 
     /// The pipe this process listens on, closed when it goes out of scope.
@@ -704,8 +800,12 @@ mod windows {
         }
 
         /// The pipe as something that reads and writes.
-        fn stream(&self) -> Stream<'_> {
-            Stream(self)
+        ///
+        /// Fallible because the stream keeps one transfer structure for its
+        /// whole life rather than building one per call, and creating it is a
+        /// call that can fail.
+        fn stream(&self) -> Result<Stream<'_>, String> {
+            Ok(Stream { pipe: self, transfer: Connecting::new()? })
         }
     }
 
@@ -752,31 +852,75 @@ mod windows {
             }
             Ok(())
         }
+
+        /// Take back an operation that is never going to land.
+        ///
+        /// **Not optional, and not tidiness.** The kernel writes status into
+        /// this structure and signals this event whenever the operation ends,
+        /// and both are freed the moment `self` is dropped. Returning from a
+        /// failed wait without this leaves an in-flight `ConnectNamedPipe`
+        /// pointing at a box that is about to go, and closing the pipe a moment
+        /// later is what makes it end - into freed memory.
+        ///
+        /// Waited for rather than checked: a cancelled operation reports
+        /// failure, which is the expected answer. What is needed is that it has
+        /// finished, not how.
+        fn abandon(&self, pipe: &Pipe) {
+            let mut moved = 0u32;
+            unsafe {
+                CancelIo(pipe.raw());
+                GetOverlappedResult(pipe.raw(), self.overlapped(), &mut moved, 1);
+            }
+        }
+
+        /// Put it back, ready for another transfer over the same handle.
+        ///
+        /// The structure carries the last transfer's status and the event is
+        /// still signalled from it, so both have to be cleared before the next
+        /// one starts - otherwise a wait would return immediately on the answer
+        /// before it.
+        fn reset(&mut self) {
+            let event = raw_of(&self.event);
+            *self.overlapped = unsafe { std::mem::zeroed() };
+            self.overlapped.hEvent = event;
+            unsafe { ResetEvent(event) };
+        }
     }
 
     /// The pipe, as `std::io`.
     ///
     /// The handle is overlapped, so neither `ReadFile` nor `WriteFile` may be
-    /// left to finish by itself: each is started with its own structure and
-    /// then waited for. That is what `std::fs::File` would not do - it assumes
-    /// a synchronous handle and would report a transfer of nothing every time.
-    struct Stream<'a>(&'a Pipe);
+    /// left to finish by itself: each is started with a structure and then
+    /// waited for. That is what `std::fs::File` would not do - it assumes a
+    /// synchronous handle and would report a transfer of nothing every time.
+    struct Stream<'a> {
+        pipe: &'a Pipe,
+        /// The one structure every transfer here runs through, put back between
+        /// them by [`Connecting::reset`].
+        ///
+        /// One rather than one per call: a job with documents in it crosses in
+        /// several writes and the reply comes back in `BufReader`-sized reads,
+        /// and building a structure and a kernel event for each was an event
+        /// created and closed per few kilobytes. Only ever one is in flight,
+        /// because both `Read` and `Write` take `&mut self`.
+        transfer: Connecting,
+    }
 
     impl Stream<'_> {
         /// Run one overlapped transfer to completion.
         fn transfer(
-            &self,
+            &mut self,
             start: impl FnOnce(HANDLE, *mut OVERLAPPED) -> i32,
         ) -> std::io::Result<usize> {
-            let connecting = Connecting::new().map_err(std::io::Error::other)?;
-            let started = start(self.0.raw(), connecting.overlapped());
+            self.transfer.reset();
+            let started = start(self.pipe.raw(), self.transfer.overlapped());
             if started == 0 && unsafe { GetLastError() } != ERROR_IO_PENDING {
                 return Err(std::io::Error::last_os_error());
             }
             let mut moved = 0u32;
             // Wait for it: the last argument is what says "block until done".
             let ok = unsafe {
-                GetOverlappedResult(self.0.raw(), connecting.overlapped(), &mut moved, 1)
+                GetOverlappedResult(self.pipe.raw(), self.transfer.overlapped(), &mut moved, 1)
             };
             if ok == 0 {
                 return Err(std::io::Error::last_os_error());
@@ -854,18 +998,30 @@ mod windows {
     /// `runas` is the verb that raises the consent dialog. The dialog is the
     /// system's own and cannot be drawn, suppressed or answered from here,
     /// which is the property that makes it worth anything.
-    fn launch(pipe: &str, install: &Installation) -> Result<Child, String> {
+    fn launch(pipe: &str, install: &Installation, home: &OrngHome) -> Result<Child, String> {
         let exe = std::env::current_exe()
             .map_err(|e| format!("this application cannot find its own binary: {e}"))?;
-        // Quoted, because both a pipe name and an installation path may hold
-        // spaces and this is one string by the time Windows reads it.
-        let arguments = format!(
-            "{SERVE} \"{pipe}\" {INSTALL} \"{}\"",
-            install.root().display()
-        );
+        // Built as an `OsString` and never through `format!`: two of the three
+        // values are paths, and `Display` on a path is lossy. Quoted, because a
+        // pipe name, an installation path and a home may all hold spaces and
+        // this is one string by the time Windows reads it.
+        let mut arguments = OsString::new();
+        for (flag, value) in [
+            (SERVE, OsStr::new(pipe)),
+            (INSTALL, install.root().as_os_str()),
+            (HOME, home.user_home().as_os_str()),
+        ] {
+            if !arguments.is_empty() {
+                arguments.push(" ");
+            }
+            arguments.push(flag);
+            arguments.push(" \"");
+            arguments.push(value);
+            arguments.push("\"");
+        }
 
         let verb = wide("runas");
-        let file = wide(&exe.to_string_lossy());
+        let file = wide(&exe);
         let parameters = wide(&arguments);
         let mut info: SHELLEXECUTEINFOW = unsafe { std::mem::zeroed() };
         info.cbSize = size_of::<SHELLEXECUTEINFOW>() as u32;
@@ -963,12 +1119,32 @@ mod tests {
 
     /// And a kind that is not one at all, which is the other half of the same
     /// message being untrusted.
+    ///
+    /// Refused as the message is read rather than when the document is built:
+    /// the kind is a [`Kind`] on both sides of the wire now, so there is no
+    /// point after this at which a job could be holding a kind that is not one.
     #[test]
     fn a_placing_whose_kind_is_not_one_is_refused() {
-        let mut job = a_job();
-        job.documents[0].kind = "bwexploit".to_owned();
+        let line = serde_json::to_string(&a_job()).expect("a job did not serialise");
+        let tampered = line.replace("\"bwdevice\"", "\"bwexploit\"");
+        assert_ne!(tampered, line, "the kind this test rewrites is not in a job any more");
 
-        job.update().expect_err("a document of no known kind was placed anyway");
+        serde_json::from_str::<Job>(&tampered)
+            .expect_err("a document of no known kind crossed anyway");
+    }
+
+    /// And so is a removal that says something other than what becomes of a
+    /// document, for the same reason: the answer decides whether work the user
+    /// cannot get back survives.
+    #[test]
+    fn a_removal_that_does_not_say_what_becomes_of_the_document_is_refused() {
+        let mut job = a_job();
+        job.remove(Uuid::new_v4(), TheDocument::Deleted);
+        let line = serde_json::to_string(&job).expect("a job did not serialise");
+        let tampered = line.replace("\"deleted\"", "\"maybe\"");
+        assert_ne!(tampered, line, "the outcome this test rewrites is not in a job any more");
+
+        serde_json::from_str::<Job>(&tampered).expect_err("a removal of no known kind crossed");
     }
 
     /// Both tasks cross, and cross as different things.
@@ -1076,36 +1252,47 @@ mod tests {
             "the window was mistaken for an elevated child"
         );
 
-        let child = [
+        let serving = Serving::from_arguments(orders().into_iter())
+            .expect("a child did not read its orders");
+        assert_eq!(serving.pipe, r"\\.\pipe\orng-registry-1-abc");
+        assert_eq!(serving.install, PathBuf::from(r"C:\Program Files\Bitwig Studio"));
+        // The home the *window* resolved, and not one this process could have
+        // looked up: an elevated child may be running as an administrator whose
+        // profile is not the one Bitwig will read.
+        assert_eq!(serving.home, PathBuf::from(r"C:\Users\someone"));
+    }
+
+    /// Anything short of all three is not orders.
+    ///
+    /// A child told where to call back but not what to work on would have to
+    /// discover an installation for itself, and one told nothing about a home
+    /// would take its own - both of which are what the module exists to stop.
+    #[test]
+    fn part_of_the_orders_is_not_orders() {
+        for missing in [SERVE, INSTALL, HOME] {
+            let mut short = orders();
+            let flag = short.iter().position(|argument| argument == missing).expect("the flag");
+            // The flag and the value behind it, which is how it is given.
+            short.drain(flag..=flag + 1);
+            assert_eq!(
+                Serving::from_arguments(short.into_iter()),
+                None,
+                "a child with no {missing} went looking for one"
+            );
+        }
+    }
+
+    /// A child's whole command line, as the window builds it.
+    fn orders() -> Vec<String> {
+        vec![
             "orng-registry".to_owned(),
             SERVE.to_owned(),
             r"\\.\pipe\orng-registry-1-abc".to_owned(),
             INSTALL.to_owned(),
             r"C:\Program Files\Bitwig Studio".to_owned(),
-        ];
-        let serving =
-            Serving::from_arguments(child.into_iter()).expect("a child did not read its orders");
-        assert_eq!(serving.pipe, r"\\.\pipe\orng-registry-1-abc");
-        assert_eq!(serving.install, PathBuf::from(r"C:\Program Files\Bitwig Studio"));
-    }
-
-    /// One of the two alone is not orders.
-    ///
-    /// A child told where to call back but not what to work on would have to
-    /// discover an installation for itself, which is the one thing the module
-    /// exists to stop it doing.
-    #[test]
-    fn half_the_orders_are_not_orders() {
-        let half = [
-            "orng-registry".to_owned(),
-            SERVE.to_owned(),
-            r"\\.\pipe\orng-registry-1-abc".to_owned(),
-        ];
-        assert_eq!(
-            Serving::from_arguments(half.into_iter()),
-            None,
-            "a child with no installation named went looking for one"
-        );
+            HOME.to_owned(),
+            r"C:\Users\someone".to_owned(),
+        ]
     }
 
     /// A job the child cannot read is reported rather than died on.
@@ -1118,7 +1305,8 @@ mod tests {
         let install = orng_tools::testing::install(root.path());
         let mut wire = Vec::new();
 
-        serve("{not a job}\n".as_bytes(), &mut wire, install).expect("the child could not report");
+        serve("{not a job}\n".as_bytes(), &mut wire, install, OrngHome::at(root.path()))
+            .expect("the child could not report");
 
         let line = String::from_utf8(wire).expect("the child said something that is not text");
         let report: Report =
@@ -1151,7 +1339,7 @@ mod tests {
         let root = tempfile::tempdir().expect("somewhere to put an installation");
         let install = orng_tools::testing::install(root.path());
 
-        let why = run(&Task::Apply(a_job()), &install, &|_| {})
+        let why = run(&Task::Apply(a_job()), &install, &OrngHome::at(root.path()), &|_| {})
             .expect_err("a child that never called back was read as a success");
 
         // The exact answer on a machine where `runas` is silent. A consent

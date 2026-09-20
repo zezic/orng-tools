@@ -211,8 +211,11 @@ impl Applying {
                 // is carried rather than made. What comes back is the same
                 // conversation a worker here would have had, which is why the
                 // reports map straight onto the progress the dialog draws.
+                // The home goes with it: an elevated child may be running as
+                // another account entirely, and the entry list has to be
+                // written where the JVM Bitwig starts will read it.
                 Rights::Withheld { .. } => {
-                    elevate::run(&Task::Apply(job), &to.install, &|report| match report {
+                    elevate::run(&Task::Apply(job), &to.install, &to.home, &|report| match report {
                         Report::Planned(steps) => {
                             say(Progress::Planned(steps.into_iter().map(Into::into).collect()));
                         }

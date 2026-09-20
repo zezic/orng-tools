@@ -147,7 +147,24 @@ impl Destination {
         library: UserLibrary,
         placement: Strategy,
     ) -> Result<Self> {
-        Ok(Destination { install, library, home: OrngHome::discover()?, placement })
+        Ok(Self::under(install, library, OrngHome::discover()?, placement))
+    }
+
+    /// The same again, against a home the caller already holds.
+    ///
+    /// **For the one caller that must not discover it**: a process elevated by
+    /// Windows may be running as an administrator rather than as the user who
+    /// asked, and `USERPROFILE` would then name that administrator's profile.
+    /// The entry list has to be written where the JVM Bitwig starts will read
+    /// it, which is the home of the account running Bitwig - so that home is
+    /// carried to such a process rather than looked up inside it.
+    pub fn under(
+        install: Installation,
+        library: UserLibrary,
+        home: OrngHome,
+        placement: Strategy,
+    ) -> Self {
+        Destination { install, library, home, placement }
     }
 }
 

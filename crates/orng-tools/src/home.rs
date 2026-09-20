@@ -90,7 +90,11 @@ impl OrngHome {
     /// What a JVM has to be told `user.home` is for the injected class to find
     /// this entry list. On a real installation that is already true of the JVM
     /// Bitwig starts, which is why nothing sets it outside verification.
-    pub(crate) fn user_home(&self) -> &Path {
+    ///
+    /// Public because it is also the one value a process that cannot discover
+    /// this home has to be handed: an elevated child may be running as another
+    /// account entirely, and `USERPROFILE` there is that account's.
+    pub fn user_home(&self) -> &Path {
         &self.home
     }
 }

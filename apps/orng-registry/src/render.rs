@@ -321,17 +321,38 @@ fn compare<S>(harness: &mut Harness<'_, S>, name: &str) {
     harness.snapshot(name);
 }
 
+/// A window over a given machine, arranged into the state under test and laid
+/// out once.
+///
+/// **The one place a harness is built**, so the window's size, the context the
+/// application is handed and the first pass are decided once rather than at
+/// every call site. What varies between states is what is set on the `App`
+/// before it draws, which is what `arrange` is for; the context comes with it
+/// because a few of those setters need it.
+///
+/// `build_eframe` takes its closure by value, so whatever the state needs moves
+/// straight into it. The call sites used to wrap each of those in an `Option`
+/// and `take` it back out with an `expect("built once")` - a runtime guard for
+/// something `FnOnce` already promises, repeated at every site and once per
+/// captured value.
+fn window(
+    session: Session,
+    arrange: impl FnOnce(&mut App, &egui::Context),
+) -> Harness<'static, App> {
+    let mut harness = Harness::builder().with_size(SIZE).build_eframe(move |cc| {
+        let mut app = App::with(&cc.egui_ctx, session);
+        arrange(&mut app, &cc.egui_ctx);
+        app
+    });
+    harness.run();
+    harness
+}
+
 /// Render one state, with work held still, and write it out.
 fn shot_applying(name: &str, applying: Applying) {
     let root = fixture(name);
     let session = found(&root, Helper::Absent, GuardState::Armed);
-    let mut session = Some(session);
-    let mut applying = Some(applying);
-    let mut harness = Harness::builder().with_size(SIZE).build_eframe(move |cc| {
-        let mut app = App::with(&cc.egui_ctx, session.take().expect("built once"));
-        app.set_applying(applying.take().expect("built once"));
-        app
-    });
+    let mut harness = window(session, |app, _| app.set_applying(applying));
     look(&mut harness, name);
 }
 
@@ -343,13 +364,7 @@ fn shot_staged(name: &str, helper: Helper, guard: GuardState) {
     let staged = dropped(&root, &to, &entries);
     let session = found_with(&root, helper, guard, entries);
 
-    let mut session = Some(session);
-    let mut staged = Some(staged);
-    let mut harness = Harness::builder().with_size(SIZE).build_eframe(move |cc| {
-        let mut app = App::with(&cc.egui_ctx, session.take().expect("built once"));
-        app.set_staged(staged.take().expect("built once"));
-        app
-    });
+    let mut harness = window(session, |app, _| app.set_staged(staged));
     look(&mut harness, name);
 }
 
@@ -367,10 +382,7 @@ fn shot_dragging(name: &str, over: &[&str]) {
         std::fs::write(drop.join(file), b"the drag does not read it").expect("could not write");
     }
 
-    let mut session = Some(session);
-    let mut harness = Harness::builder().with_size(SIZE).build_eframe(move |cc| {
-        App::with(&cc.egui_ctx, session.take().expect("built once"))
-    });
+    let mut harness = local_window(session);
     harness.input_mut().hovered_files = over
         .iter()
         .map(|file| egui::HoveredFile { path: Some(drop.join(file)), ..Default::default() })
@@ -383,16 +395,10 @@ fn shot_dragging(name: &str, over: &[&str]) {
 fn catalog_with(name: &str, catalog: Catalog) -> Harness<'static, App> {
     let root = fixture(name);
     let session = found(&root, Helper::Present, GuardState::Disarmed);
-    let mut session = Some(session);
-    let mut catalog = Some(catalog);
-    let mut harness = Harness::builder().with_size(SIZE).build_eframe(move |cc| {
-        let mut app = App::with(&cc.egui_ctx, session.take().expect("built once"));
-        app.set_catalog(catalog.take().expect("built once"));
+    window(session, |app, _| {
+        app.set_catalog(catalog);
         app.show_view(View::Catalog);
-        app
-    });
-    harness.run();
-    harness
+    })
 }
 
 /// Render the catalog view with the catalog held still.
@@ -403,12 +409,9 @@ fn shot_catalog(name: &str, catalog: Catalog) {
 
 /// Render one state and write it out under `name`.
 fn shot(name: &str, session: Session, view: View, dark: bool) {
-    let mut session = Some(session);
-    let mut harness = Harness::builder().with_size(SIZE).build_eframe(move |cc| {
-        let mut app = App::with(&cc.egui_ctx, session.take().expect("built once"));
-        app.set_appearance(appearance(dark), &cc.egui_ctx);
+    let mut harness = window(session, |app, ctx| {
+        app.set_appearance(appearance(dark), ctx);
         app.show_view(view);
-        app
     });
     look(&mut harness, name);
 }
@@ -557,12 +560,7 @@ fn a_guard_this_build_does_not_recognise() {
 fn the_filters_match_nothing() {
     let root = fixture("no-match");
     let session = found(&root, Helper::Present, GuardState::Disarmed);
-    let mut session = Some(session);
-    let mut harness = Harness::builder().with_size(SIZE).build_eframe(move |cc| {
-        let mut app = App::with(&cc.egui_ctx, session.take().expect("built once"));
-        app.set_query("wavesh");
-        app
-    });
+    let mut harness = window(session, |app, _| app.set_query("wavesh"));
     look(&mut harness, "no-match");
 }
 
@@ -577,14 +575,10 @@ fn the_filters_match_nothing() {
 fn the_catalogs_filters_match_nothing() {
     let root = fixture("catalog-no-match");
     let session = copying(&root, superseded_entries());
-    let mut session = Some(session);
-    let mut harness = Harness::builder().with_size(SIZE).build_eframe(move |cc| {
-        let mut app = App::with(&cc.egui_ctx, session.take().expect("built once"));
-        let index = orng_catalog::Index::parse(SUPERSEDED).expect("the sample index parses");
-        app.set_catalog(Catalog::just_fetched(index));
+    let mut harness = window(session, |app, _| {
+        app.set_catalog(Catalog::just_fetched(superseded()));
         app.show_view(View::Catalog);
         app.set_query("granular");
-        app
     });
     look(&mut harness, "catalog-no-match");
 }
@@ -603,14 +597,9 @@ fn entries_that_were_written() {
     let staged = dropped(&root, &to, &entries);
     let session = found_with(&root, Helper::Present, GuardState::Disarmed, entries.clone());
 
-    let mut session = Some(session);
-    let mut staged = Some(staged);
-    let mut applying = Some(Applying::frozen(None, Stage::Registering, Some(Ok(entries))));
-    let mut harness = Harness::builder().with_size(SIZE).build_eframe(move |cc| {
-        let mut app = App::with(&cc.egui_ctx, session.take().expect("built once"));
-        app.set_staged(staged.take().expect("built once"));
-        app.set_applying(applying.take().expect("built once"));
-        app
+    let mut harness = window(session, |app, _| {
+        app.set_staged(staged);
+        app.set_applying(Applying::frozen(None, Stage::Registering, Some(Ok(entries))));
     });
     look(&mut harness, "registered");
 }
@@ -676,11 +665,7 @@ fn nothing_registered_yet() {
 fn monospaced_runs_are_set_as_tightly_as_the_design_sets_them() {
     let root = fixture("tracking");
     let session = found(&root, Helper::Present, GuardState::Disarmed);
-    let mut session = Some(session);
-    let mut harness = Harness::builder().with_size(SIZE).build_eframe(move |cc| {
-        App::with(&cc.egui_ctx, session.take().expect("built once"))
-    });
-    harness.run();
+    let harness = local_window(session);
 
     // Laid out through `font::format`, which is what the widgets use: the
     // tracking lives on the run and not on the `FontId`, so measuring the font
@@ -711,11 +696,7 @@ fn monospaced_runs_are_set_as_tightly_as_the_design_sets_them() {
 fn the_empty_states_controls_are_centred_in_the_window() {
     let root = fixture("centred");
     let session = found_with(&root, Helper::Absent, GuardState::Armed, Manifest::default());
-    let mut session = Some(session);
-    let mut harness = Harness::builder().with_size(SIZE).build_eframe(move |cc| {
-        App::with(&cc.egui_ctx, session.take().expect("built once"))
-    });
-    harness.run();
+    let harness = local_window(session);
 
     // By role as well as by label: the label alone matches the button and the
     // text node inside it, which are not the same rectangle.
@@ -791,7 +772,7 @@ fn a_catalog_item_in_detail() {
 /// `Install`.
 #[test]
 fn a_catalog_item_that_was_superseded() {
-    let index = orng_catalog::Index::parse(SUPERSEDED).expect("the sample index does not parse");
+    let index = superseded();
     shot_detail("catalog-detail-superseded", index, BREATH_FOLLOWER, superseded_entries());
 }
 
@@ -865,6 +846,17 @@ const SUPERSEDED: &str = r#"{
   ]
 }"#;
 
+/// The index above, parsed. What [`entries`] is to [`ROWS`].
+fn superseded() -> orng_catalog::Index {
+    orng_catalog::Index::parse(SUPERSEDED).expect("the sample index does not parse")
+}
+
+/// The second of its two items - `BREATH FOLLOWER II`, the replacement - which
+/// is the one every install in these tests is refused or verified against.
+fn superseded_replacement() -> orng_catalog::IndexEntry {
+    superseded().items.pop().expect("the sample index is not empty")
+}
+
 /// A catalog row opens the detail, the notice walks to the replacement, and the
 /// panel's own control closes it.
 ///
@@ -882,15 +874,10 @@ fn a_catalog_row_opens_the_detail_and_the_notice_walks_to_the_replacement() {
     let root = fixture("detail-opening");
     let session =
         found_with(&root, Helper::Present, GuardState::Disarmed, superseded_entries());
-    let mut session = Some(session);
-    let mut harness = Harness::builder().with_size(SIZE).build_eframe(move |cc| {
-        let mut app = App::with(&cc.egui_ctx, session.take().expect("built once"));
-        let index = orng_catalog::Index::parse(SUPERSEDED).expect("the sample index parses");
-        app.set_catalog(Catalog::just_fetched(index));
+    let mut harness = window(session, |app, _| {
+        app.set_catalog(Catalog::just_fetched(superseded()));
         app.show_view(View::Catalog);
-        app
     });
-    harness.run();
     assert!(harness.query_by_label("2.0.0").is_some(), "the list is not showing versions");
 
     harness.get_by_label("BREATH FOLLOWER").click();
@@ -922,15 +909,11 @@ fn a_catalog_row_opens_the_detail_and_the_notice_walks_to_the_replacement() {
 fn shot_detail(name: &str, index: orng_catalog::Index, open: &str, entries: Manifest) {
     let root = fixture(name);
     let session = found_with(&root, Helper::Present, GuardState::Disarmed, entries);
-    let mut session = Some(session);
-    let mut index = Some(index);
     let open = open.parse().expect("a sample identity");
-    let mut harness = Harness::builder().with_size(SIZE).build_eframe(move |cc| {
-        let mut app = App::with(&cc.egui_ctx, session.take().expect("built once"));
-        app.set_catalog(Catalog::just_fetched(index.take().expect("built once")));
+    let mut harness = window(session, |app, _| {
+        app.set_catalog(Catalog::just_fetched(index));
         app.show_view(View::Catalog);
         app.set_detailing(open);
-        app
     });
     look(&mut harness, name);
 }
@@ -947,11 +930,7 @@ fn shot_detail(name: &str, index: orng_catalog::Index, open: &str, entries: Mani
 fn the_overflow_menu() {
     let root = fixture("menu");
     let session = found(&root, Helper::Present, GuardState::Disarmed);
-    let mut session = Some(session);
-    let mut harness = Harness::builder().with_size(SIZE).build_eframe(move |cc| {
-        App::with(&cc.egui_ctx, session.take().expect("built once"))
-    });
-    harness.run();
+    let mut harness = local_window(session);
     // By the glyph the control draws, so the press lands on the control the
     // design names rather than on a position measured off a picture.
     harness.get_by_label(crate::widget::icon::OVERFLOW).click();
@@ -983,12 +962,9 @@ fn the_inspector_in_light() {
 fn shot_inspector(name: &str, dark: bool) {
     let root = fixture(name);
     let session = found(&root, Helper::Present, GuardState::Disarmed);
-    let mut session = Some(session);
-    let mut harness = Harness::builder().with_size(SIZE).build_eframe(move |cc| {
-        let mut app = App::with(&cc.egui_ctx, session.take().expect("built once"));
-        app.set_appearance(appearance(dark), &cc.egui_ctx);
+    let mut harness = window(session, |app, ctx| {
+        app.set_appearance(appearance(dark), ctx);
         app.set_inspecting(VOLSHAPER.parse().expect("a sample identity"));
-        app
     });
     look(&mut harness, name);
 }
@@ -1011,11 +987,7 @@ const VOLSHAPER: &str = "8b330d22-73fa-4ba5-a42f-2f2300cbd8bf";
 fn a_row_opens_the_inspector_and_the_panel_closes_itself() {
     let root = fixture("opening");
     let session = found(&root, Helper::Present, GuardState::Disarmed);
-    let mut session = Some(session);
-    let mut harness = Harness::builder().with_size(SIZE).build_eframe(move |cc| {
-        App::with(&cc.egui_ctx, session.take().expect("built once"))
-    });
-    harness.run();
+    let mut harness = local_window(session);
 
     let shortened = "8b330d22";
     assert!(harness.query_by_label(shortened).is_some(), "the list is not showing identities");
@@ -1057,14 +1029,10 @@ fn a_row_opens_the_inspector_and_the_panel_closes_itself() {
     );
 }
 
-/// A window on the Local view over a given machine, laid out once.
+/// A window on the Local view over a given machine, with nothing arranged on
+/// it: the state a launch reaches, which is where most of these start.
 fn local_window(session: Session) -> Harness<'static, App> {
-    let mut session = Some(session);
-    let mut harness = Harness::builder().with_size(SIZE).build_eframe(move |cc| {
-        App::with(&cc.egui_ctx, session.take().expect("built once"))
-    });
-    harness.run();
-    harness
+    window(session, |_, _| {})
 }
 
 /// A window with the sample list in it, and nothing else set.
@@ -1085,11 +1053,7 @@ fn a_row_under_the_pointer() {
     let name = "row-actions";
     let root = fixture(name);
     let session = found(&root, Helper::Present, GuardState::Disarmed);
-    let mut session = Some(session);
-    let mut harness = Harness::builder().with_size(SIZE).build_eframe(move |cc| {
-        App::with(&cc.egui_ctx, session.take().expect("built once"))
-    });
-    harness.run();
+    let mut harness = local_window(session);
     // Between the name and the identity rather than on either. Both of those
     // carry a tooltip of their own - the library path and "click to copy" - and
     // a picture of the row's controls with a tooltip over the row beneath it is
@@ -1114,11 +1078,7 @@ fn a_row_under_the_pointer() {
 #[test]
 fn a_document_that_went_missing_and_one_that_was_rewritten_say_so_separately() {
     let session = damaged(&fixture("statuses"));
-    let mut session = Some(session);
-    let mut harness = Harness::builder().with_size(SIZE).build_eframe(move |cc| {
-        App::with(&cc.egui_ctx, session.take().expect("built once"))
-    });
-    harness.run();
+    let mut harness = local_window(session);
 
     assert!(harness.query_by_label("Missing file").is_some(), "the deleted document said nothing");
     assert!(harness.query_by_label("Changed").is_some(), "the rewritten document said nothing");
@@ -1158,11 +1118,7 @@ fn a_document_that_went_missing_and_one_that_was_rewritten_say_so_separately() {
 #[test]
 fn the_inspector_on_a_missing_file_offers_to_locate_it_and_not_to_reveal_it() {
     let session = damaged(&fixture("inspector-missing"));
-    let mut session = Some(session);
-    let mut harness = Harness::builder().with_size(SIZE).build_eframe(move |cc| {
-        App::with(&cc.egui_ctx, session.take().expect("built once"))
-    });
-    harness.run();
+    let mut harness = local_window(session);
 
     // `SHAPER` is the entry whose document was deleted from under it.
     harness.get_by_label("SHAPER").click();
@@ -1286,16 +1242,10 @@ fn copying(root: &std::path::Path, entries: Manifest) -> Session {
 fn catalog_listing(name: &str, entries: Manifest) -> Harness<'static, App> {
     let root = fixture(name);
     let session = copying(&root, entries);
-    let mut session = Some(session);
-    let mut harness = Harness::builder().with_size(SIZE).build_eframe(move |cc| {
-        let mut app = App::with(&cc.egui_ctx, session.take().expect("built once"));
-        let index = orng_catalog::Index::parse(SUPERSEDED).expect("the sample index parses");
-        app.set_catalog(Catalog::just_fetched(index));
+    window(session, |app, _| {
+        app.set_catalog(Catalog::just_fetched(superseded()));
         app.show_view(View::Catalog);
-        app
-    });
-    harness.run();
-    harness
+    })
 }
 
 /// A published item's state is a fact about this machine, and every one of the
@@ -1505,14 +1455,7 @@ fn the_prepare_press_confirms_with_the_plan_before_it_runs() {
     let staged = dropped(&root, &to, &entries);
     let session = found_with(&root, Helper::Absent, GuardState::Armed, entries);
 
-    let mut session = Some(session);
-    let mut staged = Some(staged);
-    let mut harness = Harness::builder().with_size(SIZE).build_eframe(move |cc| {
-        let mut app = App::with(&cc.egui_ctx, session.take().expect("built once"));
-        app.set_staged(staged.take().expect("built once"));
-        app
-    });
-    harness.run();
+    let mut harness = window(session, |app, _| app.set_staged(staged));
 
     // A removal queued, so the plan has a line for it too.
     harness.get_by_label("SHAPER").hover();
@@ -1859,11 +1802,7 @@ fn a_catalog_that_did_not_arrive_and_an_install_that_was_refused_replace_the_cou
     );
 
     let mut refused = catalog_listing("catalog-bar-refused", superseded_entries());
-    let item = orng_catalog::Index::parse(SUPERSEDED)
-        .expect("the sample index parses")
-        .items
-        .pop()
-        .expect("the sample index is not empty");
+    let item = superseded_replacement();
     refused.state_mut().set_installing(Install::finished(
         item,
         Err(crate::catalog::Refused::Download("the connection closed".to_owned())),
@@ -2056,18 +1995,12 @@ fn the_catalogs_search_reaches_the_description_and_the_keywords() {
 fn detail_on(name: &str, entries: Manifest, open: &str) -> Harness<'static, App> {
     let root = fixture(name);
     let session = copying(&root, entries);
-    let mut session = Some(session);
     let open = open.parse().expect("a sample identity");
-    let mut harness = Harness::builder().with_size(SIZE).build_eframe(move |cc| {
-        let mut app = App::with(&cc.egui_ctx, session.take().expect("built once"));
-        let index = orng_catalog::Index::parse(SUPERSEDED).expect("the sample index parses");
-        app.set_catalog(Catalog::just_fetched(index));
+    window(session, |app, _| {
+        app.set_catalog(Catalog::just_fetched(superseded()));
         app.show_view(View::Catalog);
         app.set_detailing(open);
-        app
-    });
-    harness.run();
-    harness
+    })
 }
 
 const BREATH_FOLLOWER_II: &str = "d0d0caf0-2222-4333-8444-555566667777";
@@ -2085,7 +2018,7 @@ fn installing_registers_the_item_at_the_version_and_review_the_index_names() {
     let replacement: orng_tools::Uuid =
         "d0d0caf0-2222-4333-8444-555566667777".parse().expect("a sample identity");
 
-    let index = orng_catalog::Index::parse(SUPERSEDED).expect("the sample index parses");
+    let index = superseded();
     let item = index
         .items
         .iter()
@@ -2154,7 +2087,7 @@ fn installing_registers_the_item_at_the_version_and_review_the_index_names() {
 #[test]
 fn both_ways_an_install_can_fail() {
     let mut harness = catalog_listing("catalog-failures", entries());
-    let index = orng_catalog::Index::parse(SUPERSEDED).expect("the sample index parses");
+    let index = superseded();
     let refuse = |harness: &mut Harness<'static, App>, at: usize, why| {
         harness.state_mut().set_installing(Install::finished(index.items[at].clone(), Err(why)));
         settle(harness);
@@ -2198,11 +2131,7 @@ fn both_ways_an_install_can_fail() {
 #[test]
 fn an_item_that_does_not_verify_is_refused_and_offers_no_way_to_try_again() {
     let mut harness = catalog_listing("verification-failed", superseded_entries());
-    let item = orng_catalog::Index::parse(SUPERSEDED)
-        .expect("the sample index parses")
-        .items
-        .pop()
-        .expect("the sample index is not empty");
+    let item = superseded_replacement();
     let name = item.name.clone();
 
     harness.state_mut().set_installing(Install::finished(
@@ -2246,16 +2175,12 @@ fn an_item_that_does_not_verify_is_refused_and_offers_no_way_to_try_again() {
 fn an_index_that_names_no_commit_has_nowhere_to_fetch_from_and_says_so() {
     let root = fixture("no-revision");
     let session = copying(&root, superseded_entries());
-    let mut session = Some(session);
-    let mut harness = Harness::builder().with_size(SIZE).build_eframe(move |cc| {
-        let mut app = App::with(&cc.egui_ctx, session.take().expect("built once"));
-        let mut index = orng_catalog::Index::parse(SUPERSEDED).expect("the sample index parses");
+    let mut harness = window(session, |app, _| {
+        let mut index = superseded();
         index.revision = None;
         app.set_catalog(Catalog::just_fetched(index));
         app.show_view(View::Catalog);
-        app
     });
-    harness.run();
 
     harness.get_by_label("Install").click();
     settle(&mut harness);
@@ -2308,10 +2233,7 @@ fn a_row_written_while_bitwig_is_open_waits_for_a_restart() {
 fn documents_that_are_missing_or_changed() {
     let name = "statuses-shot";
     let session = damaged(&fixture(name));
-    let mut session = Some(session);
-    let mut harness = Harness::builder().with_size(SIZE).build_eframe(move |cc| {
-        App::with(&cc.egui_ctx, session.take().expect("built once"))
-    });
+    let mut harness = local_window(session);
     look(&mut harness, "statuses");
 }
 
@@ -2377,14 +2299,7 @@ fn the_controls_a_row_offers_are_the_ones_its_state_offers() {
     let entries = entries();
     let staged = dropped(&root, &to, &entries);
     let session = found_with(&root, Helper::Present, GuardState::Disarmed, entries);
-    let mut session = Some(session);
-    let mut staged = Some(staged);
-    let mut harness = Harness::builder().with_size(SIZE).build_eframe(move |cc| {
-        let mut app = App::with(&cc.egui_ctx, session.take().expect("built once"));
-        app.set_staged(staged.take().expect("built once"));
-        app
-    });
-    harness.run();
+    let mut harness = window(session, |app, _| app.set_staged(staged));
 
     // A staged row: an identity to mint and a press that cancels it. Nothing to
     // reveal, because nothing of ours has been placed for it yet.
@@ -2479,11 +2394,7 @@ fn re_dropping_a_queued_entrys_document_takes_the_removal_back() {
     let root = fixture("queued-then-dropped");
     let session = found(&root, Helper::Present, GuardState::Disarmed);
     let to = destination(&root);
-    let mut session = Some(session);
-    let mut harness = Harness::builder().with_size(SIZE).build_eframe(move |cc| {
-        App::with(&cc.egui_ctx, session.take().expect("built once"))
-    });
-    harness.run();
+    let mut harness = local_window(session);
 
     harness.get_by_label("DISPERSER").hover();
     harness.run();
@@ -2544,14 +2455,7 @@ fn cancelling_a_staged_row_settles_the_row_it_collided_with() {
     let staged = staging::read(&paths, &entries, &to, &[]);
     let session = found_with(&root, Helper::Present, GuardState::Disarmed, entries);
 
-    let mut session = Some(session);
-    let mut staged = Some(staged);
-    let mut harness = Harness::builder().with_size(SIZE).build_eframe(move |cc| {
-        let mut app = App::with(&cc.egui_ctx, session.take().expect("built once"));
-        app.set_staged(staged.take().expect("built once"));
-        app
-    });
-    harness.run();
+    let mut harness = window(session, |app, _| app.set_staged(staged));
     assert!(harness.query_by_label("Conflict").is_some(), "the two identities did not collide");
 
     harness.get_by_label("FIRST").hover();
@@ -2592,14 +2496,7 @@ fn assigning_a_new_uuid_settles_two_documents_claiming_one_identity() {
     let staged = staging::read(&paths, &entries, &to, &[]);
     let session = found_with(&root, Helper::Present, GuardState::Disarmed, entries);
 
-    let mut session = Some(session);
-    let mut staged = Some(staged);
-    let mut harness = Harness::builder().with_size(SIZE).build_eframe(move |cc| {
-        let mut app = App::with(&cc.egui_ctx, session.take().expect("built once"));
-        app.set_staged(staged.take().expect("built once"));
-        app
-    });
-    harness.run();
+    let mut harness = window(session, |app, _| app.set_staged(staged));
     assert!(harness.query_by_label("Conflict").is_some(), "the two identities did not collide");
 
     harness.get_by_label("SECOND").hover();
@@ -2630,13 +2527,8 @@ fn a_word_typed_into_the_inspector_becomes_a_keyword() {
 
     let root = fixture("keywords");
     let session = found(&root, Helper::Present, GuardState::Disarmed);
-    let mut session = Some(session);
-    let mut harness = Harness::builder().with_size(SIZE).build_eframe(move |cc| {
-        let mut app = App::with(&cc.egui_ctx, session.take().expect("built once"));
-        app.set_inspecting(VOLSHAPER.parse().expect("a sample identity"));
-        app
-    });
-    harness.run();
+    let mut harness =
+        window(session, |app, _| app.set_inspecting(VOLSHAPER.parse().expect("a sample identity")));
 
     // The lower of the panel's two fields. The description is above it, and
     // both are inside the panel rather than out on the toolbar.
@@ -2707,18 +2599,15 @@ fn the_other_half_of_every_settings_control() {
 fn shot_settings(name: &str, dark: bool, settings: Settings) {
     let root = fixture(name);
     let session = found(&root, Helper::Present, GuardState::Disarmed);
-    let mut session = Some(session);
     // The palette goes in with the rest of the preferences rather than through
     // `set_appearance` beside them - which is what the window actually does, and
     // what the first attempt at this got wrong: the setter ran first, the
     // preferences replaced everything it had set, and `settings-light.png` came
     // out in dark with a passing test beside it.
-    let mut settings = Some(Settings { appearance: appearance(dark), ..settings });
-    let mut harness = Harness::builder().with_size(SIZE).build_eframe(move |cc| {
-        let mut app = App::with(&cc.egui_ctx, session.take().expect("built once"));
-        app.set_settings(settings.take().expect("built once"));
+    let settings = Settings { appearance: appearance(dark), ..settings };
+    let mut harness = window(session, |app, _| {
+        app.set_settings(settings);
         app.show_settings();
-        app
     });
     look(&mut harness, name);
 }
@@ -2739,11 +2628,7 @@ fn shot_settings(name: &str, dark: bool, settings: Settings) {
 fn the_overflow_opens_settings_and_settings_goes_back() {
     let root = fixture("settings-opening");
     let session = found(&root, Helper::Present, GuardState::Disarmed);
-    let mut session = Some(session);
-    let mut harness = Harness::builder().with_size(SIZE).build_eframe(move |cc| {
-        App::with(&cc.egui_ctx, session.take().expect("built once"))
-    });
-    harness.run();
+    let mut harness = local_window(session);
 
     let revision = "94a90411";
     assert!(harness.query_by_label(revision).is_some(), "the install bar is not drawn");
@@ -2792,13 +2677,7 @@ fn the_overflow_opens_settings_and_settings_goes_back() {
 fn choosing_a_placement_changes_where_a_document_would_go() {
     let root = fixture("settings-placement");
     let session = found(&root, Helper::Present, GuardState::Disarmed);
-    let mut session = Some(session);
-    let mut harness = Harness::builder().with_size(SIZE).build_eframe(move |cc| {
-        let mut app = App::with(&cc.egui_ctx, session.take().expect("built once"));
-        app.show_settings();
-        app
-    });
-    harness.run();
+    let mut harness = window(session, |app, _| app.show_settings());
     assert_eq!(harness.state().placement(), Some(Strategy::Link), "not the default placement");
 
     harness.get_by_label_contains("Copy documents into the installation").click();
@@ -2821,12 +2700,7 @@ fn choosing_a_placement_changes_where_a_document_would_go() {
 fn the_restore_screen_with_nothing_kept() {
     let root = fixture("restore-empty");
     let session = found(&root, Helper::Absent, GuardState::Armed);
-    let mut session = Some(session);
-    let mut harness = Harness::builder().with_size(SIZE).build_eframe(move |cc| {
-        let mut app = App::with(&cc.egui_ctx, session.take().expect("built once"));
-        app.show_restore();
-        app
-    });
+    let mut harness = window(session, |app, _| app.show_restore());
     look(&mut harness, "restore-empty");
 }
 
@@ -2852,13 +2726,7 @@ fn the_restore_screen_lists_what_is_kept() {
             .expect("could not write the copy");
     }
 
-    let mut session = Some(session);
-    let mut harness = Harness::builder().with_size(SIZE).build_eframe(move |cc| {
-        let mut app = App::with(&cc.egui_ctx, session.take().expect("built once"));
-        app.show_restore();
-        app
-    });
-    harness.run();
+    let harness = window(session, |app, _| app.show_restore());
 
     assert!(
         harness.query_by_label_contains("Available backups").is_some(),
@@ -2905,12 +2773,8 @@ fn the_restore_screen_lists_what_is_kept() {
 fn the_about_screen() {
     let root = fixture("about");
     let session = found(&root, Helper::Present, GuardState::Disarmed);
-    let mut session = Some(session);
-    let mut harness = Harness::builder().with_size(SIZE).build_eframe(move |cc| {
-        let mut app = App::with(&cc.egui_ctx, session.take().expect("built once"));
-        app.show_about("0.9.2 \u{b7} orng-registry \u{b7} macOS arm64");
-        app
-    });
+    let mut harness =
+        window(session, |app, _| app.show_about("0.9.2 \u{b7} orng-registry \u{b7} macOS arm64"));
     look(&mut harness, "about");
 }
 
@@ -2928,11 +2792,7 @@ fn the_about_screen() {
 fn the_overflow_reaches_every_screen_and_each_one_goes_back() {
     let root = fixture("screens-opening");
     let session = found(&root, Helper::Present, GuardState::Disarmed);
-    let mut session = Some(session);
-    let mut harness = Harness::builder().with_size(SIZE).build_eframe(move |cc| {
-        App::with(&cc.egui_ctx, session.take().expect("built once"))
-    });
-    harness.run();
+    let mut harness = local_window(session);
 
     // The install bar is named by its other view tab, and not by the build
     // revision beside the installation's name: About states that same revision,
@@ -2997,13 +2857,7 @@ fn choosing_a_backup_changes_which_one_would_be_put_back() {
         std::fs::write(dir.join("bitwig.jar"), b"not an archive").expect("could not write");
     }
 
-    let mut session = Some(session);
-    let mut harness = Harness::builder().with_size(SIZE).build_eframe(move |cc| {
-        let mut app = App::with(&cc.egui_ctx, session.take().expect("built once"));
-        app.show_restore();
-        app
-    });
-    harness.run();
+    let mut harness = window(session, |app, _| app.show_restore());
 
     // The other row, found by the build it names rather than by its date - the
     // date is what this test must not know.
@@ -3200,11 +3054,7 @@ fn the_bar_says_cached_only_when_a_refresh_did_not_replace_what_is_on_screen() {
 #[test]
 fn a_refresh_that_changes_the_catalog_takes_the_refusals_with_it() {
     let mut harness = catalog_listing("catalog-refresh-clears", superseded_entries());
-    let item = orng_catalog::Index::parse(SUPERSEDED)
-        .expect("the sample index parses")
-        .items
-        .pop()
-        .expect("the sample index is not empty");
+    let item = superseded_replacement();
     harness.state_mut().set_installing(Install::finished(
         item,
         Err(crate::catalog::Refused::Download("the connection closed".to_owned())),
@@ -3214,7 +3064,7 @@ fn a_refresh_that_changes_the_catalog_takes_the_refusals_with_it() {
 
     // A refresh that confirms the index it already had leaves the refusal
     // alone: nothing it was a claim about has changed.
-    let same = orng_catalog::Index::parse(SUPERSEDED).expect("the sample index parses");
+    let same = superseded();
     let held = Catalog::just_fetched(same.clone()).answering(Ok(same.clone()));
     harness.state_mut().set_catalog(held);
     harness.run();

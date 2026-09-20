@@ -328,6 +328,34 @@ next reader will see `\u{b7}` and wonder.
   is in it? The five conditional actions are all already on the row, and the
   narrow grid drops the identity column rather than any control, so it is not
   obviously the overflow for a squeezed row either.
+- **`Show factory entries`, and the whole factory section under it.** The user
+  was asked and chose not to have it: "we don't need that for now." It comes off
+  the plan rather than sitting on it, and this is the record of what that costs.
+
+  It is not one control. `ListToolbar.dc.html:43-45` draws the checkbox - the
+  `ph-check-square`/`ph-square` pair Settings uses, inline with no sentence under
+  it - and `ORNG Registry.dc.html:131-138` draws what it opens: a second list
+  section below the normal rows, with its own `Factory` heading, its own count,
+  and rows that are inert. The caption at `:406-408` says what they are,
+  "Bitwig's own 428 entries are recessed and read-only. Off by default."
+
+  The cost of reading them is why it was never built in the first place: 428
+  entries means parsing a class out of a 30k-entry archive, about a second, so it
+  needs a worker of its own and the installation's section key resolved beside
+  the `Destination` - `project-spec.md` 4.5. A toggle that stalled the window, or
+  one that did nothing, is worse than no toggle.
+
+  **Three things follow from the decision, and none of them is a bug.** The
+  entry list is nine states rather than the design's ten: `Factory` came out of
+  `status.rs` because nothing could construct it, and the bundle does not gate
+  the row on that word anyway - `EntryRow.dc.html:117-120` flattens the cursor,
+  drops the hover fill and hides the control group on a separate `factory`
+  boolean. The Local toolbar is four boxes of the design's five and so three
+  gaps of its four, which is what `App::local_toolbar`'s
+  `BETWEEN_TOOLBAR_GROUPS` states; `widget.rs`'s search-field test still
+  computes against the bundle's four, because what it pins is the formula and
+  not this bar. And the diagnostics report has no `factory` line, which round 2
+  already recorded - it is the same count and the same worker.
 - ~~**The catalog detail's footer**~~ - *Drawn.* `Remove` at one end and the
   primary at the other, `CatalogDetail.dc.html:89-98`, 30 and 32 tall against the
   bar's 11 of padding. Both are still behind their own condition, as the bundle

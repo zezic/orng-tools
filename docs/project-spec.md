@@ -708,7 +708,7 @@ is not cosmetic: during design the inspector offered `Reveal file` on a missing 
 which is the one action that cannot work, while omitting `Locate file`, which is the one
 that fixes it.
 
-**A registered row's status is computed, not assumed.** Four of the design's ten are
+**A registered row's status is computed, not assumed.** Four of the nine drawn here are
 answers about the machine rather than about the press that was just made, and all four are
 resolved when the list is read rather than per row per frame - the same shape every screen
 here uses, and for the same reason: this audience keeps libraries on external and network
@@ -833,15 +833,15 @@ press that writes a document is offered by `Available`, which means the identity
 registered here.
 
 **The catalog's own toolbar**, which is the Local one's shape with the box at its right
-end exchanged. `Add files...` and the factory toggle are about documents on this machine;
-what somebody browsing needs instead is `All / Installed / Updatable`, and the design
-makes it a three-state switch rather than a checkbox because `Updatable` is the state a
-returning user comes back for. The search is the other difference and it is a difference
-of question: Local matches a name and an identity - *what is this thing I have* - and the
-catalog matches the name, the author, the description and the keywords, because *is there
-a thing that does X* is answered in the description. The field says so, and is capped a
-hundred pixels wider to have room to. There is no identity among the fields it searches,
-for the same reason a catalog row does not draw one.
+end exchanged. `Add files...` and the design's factory toggle are about documents on this
+machine; what somebody browsing needs instead is `All / Installed / Updatable`, and the
+design makes it a three-state switch rather than a checkbox because `Updatable` is the
+state a returning user comes back for. The search is the other difference and it is a
+difference of question: Local matches a name and an identity - *what is this thing I
+have* - and the catalog matches the name, the author, the description and the keywords,
+because *is there a thing that does X* is answered in the description. The field says so,
+and is capped a hundred pixels wider to have room to. There is no identity among the
+fields it searches, for the same reason a catalog row does not draw one.
 
 The kind facets count what the install filter left and not what the list is showing: a
 facet answers "how many would I see if I switched this kind on", so narrowing it by the
@@ -920,8 +920,8 @@ The diagnostics report is the design's shape with this project's own facts in it
 `design-review.md` round 2 records why those differ: three of the paths the bundle draws
 are wrong, and the block exists to be pasted into a bug report by somebody who will be
 believed. One line the bundle draws is missing - `factory`, the count of Bitwig's own
-content - because reading it means parsing a class out of the archive and belongs on the
-worker the factory toggle needs.
+content - because reading it means parsing a class out of the archive, and the window has
+no worker that does so and is not getting one: see `design-review.md` round 3 item 3.
 
 The Restore and About screens, which the overflow opens and which Settings also leads to.
 Both are full-window surfaces of the same shape as Settings, and Restore is the only one
@@ -963,9 +963,12 @@ Not built yet:
   that nothing has changed until then, and nothing here can honour it: the dialog is drawn
   without the control rather than with a dead one, which is a shape the design itself draws
   from Activate onwards.
-- The `Show factory entries` toggle. Reading Bitwig's own 428 entries means parsing a class
-  out of the archive, which takes about a second, so it needs a worker of its own; a toggle
-  that did nothing would be worse than no toggle.
+- The `Show factory entries` toggle, and the factory section the bundle opens under it.
+  Not pending: the user was asked and chose not to have it. Reading Bitwig's own 428
+  entries means parsing a class out of the archive, about a second, so it needs a worker
+  of its own and the installation's section key - and a toggle that stalled the window,
+  or one that did nothing, is worse than no toggle. The entry list is nine states rather
+  than the design's ten because of it - see `design-review.md` round 3 item 3.
 - The update modal.
 - `Licences` on the About screen. The plural is the point: what it would open is the
   licences of everything linked into the binary, and nothing generates or bundles them.

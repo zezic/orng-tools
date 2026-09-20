@@ -99,6 +99,20 @@ fn entries() -> Manifest {
     Manifest::parse(ROWS).expect("the sample entry list does not parse")
 }
 
+/// The same sample cut to its first row.
+///
+/// Cut rather than written out again, so the one row is the row the rest of the
+/// suite draws and not a second sample that can drift from it. What it is for is
+/// a count of one: the action bar's hidden-entries note is only drawn when the
+/// filter hid the whole list, so the singular is unreachable on a machine with
+/// four entries on it.
+fn one_entry() -> Manifest {
+    let mut lines = ROWS.lines();
+    let header = lines.next().expect("the sample names its format");
+    let first = lines.next().expect("the sample has a first row");
+    Manifest::parse(&format!("{header}\n{first}\n")).expect("the cut sample does not parse")
+}
+
 /// Make the entry list above true: link the library folders and put a document
 /// where each entry says its document is.
 ///
@@ -1043,16 +1057,19 @@ fn a_row_opens_the_inspector_and_the_panel_closes_itself() {
     );
 }
 
-/// A window with the sample list in it, and nothing else set.
-fn listing(name: &str) -> Harness<'static, App> {
-    let root = fixture(name);
-    let session = found(&root, Helper::Present, GuardState::Disarmed);
+/// A window on the Local view over a given machine, laid out once.
+fn local_window(session: Session) -> Harness<'static, App> {
     let mut session = Some(session);
     let mut harness = Harness::builder().with_size(SIZE).build_eframe(move |cc| {
         App::with(&cc.egui_ctx, session.take().expect("built once"))
     });
     harness.run();
     harness
+}
+
+/// A window with the sample list in it, and nothing else set.
+fn listing(name: &str) -> Harness<'static, App> {
+    local_window(found(&fixture(name), Helper::Present, GuardState::Disarmed))
 }
 
 /// The list with the pointer on a row, which is the only way the row's own
@@ -1669,6 +1686,152 @@ fn a_catalog_that_did_not_arrive_and_an_install_that_was_refused_replace_the_cou
         !bar_says(&refused, "2 items"),
         "the bar went on counting over a press that did not do what it said"
     );
+}
+
+/// What the Local bar says when the filter has emptied the list under it.
+///
+/// `ORNG Registry.dc.html:490` is the one Local scenario whose note is not the
+/// cost of a press: the summary goes on counting the pending work and the note
+/// carries what the filter did. The empty state behind it offers the way out
+/// and states no number, so until this the window said nothing at all about how
+/// much of the list was still there.
+///
+/// Every claim here is invisible in a picture of the one state. A note reading
+/// `4 entries hidden` over an empty list looks exactly as right whether it
+/// counted the list, the filter or the machine; only the filtered-but-not-empty
+/// case and the nothing-registered case tell those apart.
+#[test]
+fn the_local_bar_says_how_many_entries_the_filter_is_hiding() {
+    let hidden = |harness: &Harness<'static, App>, what: &str| {
+        anywhere(harness, &format!("{what} hidden by the current filter"))
+    };
+
+    // Nothing filtered. All four of the sample entries are on screen, and the
+    // bar has nothing to say about where they went.
+    let mut harness = listing("local-hidden");
+    assert!(anywhere(&harness, "DISPERSER"), "the list did not draw");
+    assert!(!hidden(&harness, "4 entries"), "the bar counted a list nothing is hiding");
+
+    // Filtered, but not emptied: two of the four carry `shaper`. A note here
+    // would be spending the bar's one line describing a list the user can see.
+    harness.state_mut().set_query("shaper");
+    harness.run();
+    assert!(anywhere(&harness, "VOLSHAPER"), "the query matched nothing, so this proves nothing");
+    assert!(!anywhere(&harness, "DISPERSER"), "the query matched everything, so ditto");
+    assert!(!hidden(&harness, "2 entries"), "the bar described a list that is on screen");
+
+    // Emptied. The count is the whole list, which is the number that says
+    // whether clearing the filter is worth doing.
+    harness.state_mut().set_query("wavesh");
+    harness.run();
+    assert!(anywhere(&harness, "No entries match"), "the list did not go empty");
+    assert!(hidden(&harness, "4 entries"), "the bar says nothing about a list the filter emptied");
+
+    // Singular, over a machine with one entry on it - the only way to reach it,
+    // because the note is drawn once the filter has hidden everything and the
+    // count is the whole list by then.
+    let one = found_with(
+        &fixture("local-hidden-one"),
+        Helper::Present,
+        GuardState::Disarmed,
+        one_entry(),
+    );
+    let mut alone = local_window(one);
+    alone.state_mut().set_query("wavesh");
+    alone.run();
+    assert!(hidden(&alone, "1 entry"), "one hidden entry was not counted as one");
+    assert!(!hidden(&alone, "1 entries"));
+
+    // A machine with nothing on it is not a filtered list. The empty state
+    // there is the invitation, and a note counting nothing would contradict it.
+    let none = found_with(
+        &fixture("local-hidden-none"),
+        Helper::Present,
+        GuardState::Disarmed,
+        Manifest::default(),
+    );
+    let mut empty = local_window(none);
+    empty.state_mut().set_query("wavesh");
+    empty.run();
+    assert!(!hidden(&empty, "0 entries"), "an empty machine was reported as a filtered one");
+
+    // The preparing mode's note goes with the rest of them, which is the part
+    // of `:490` that is a decision rather than a reading: the line is the
+    // filter's, and what the press costs survives in the tone the summary keeps
+    // and in the word on the button.
+    let cost = format!("Prepare install {} a backup is written first", crate::widget::SEPARATOR);
+    let unprepared = found(&fixture("local-hidden-unprepared"), Helper::Absent, GuardState::Armed);
+    let mut unprepared = local_window(unprepared);
+    assert!(anywhere(&unprepared, &cost), "the fixture never reached the preparing mode");
+    unprepared.state_mut().set_query("wavesh");
+    unprepared.run();
+    assert!(hidden(&unprepared, "4 entries"));
+    assert!(!anywhere(&unprepared, &cost), "the bar drew two notes on a line that holds one");
+    assert!(
+        anywhere(&unprepared, "4 entries to restore"),
+        "the summary stopped counting the work the filter cannot touch"
+    );
+}
+
+/// And the count is of the rows the list would have drawn, not of the pools it
+/// draws them from.
+///
+/// Three ways those two numbers come apart, and a picture of an empty list
+/// holds none of them. A dropped file that is not a document carries no entry,
+/// so a filter over names and identities cannot hide it and the list never goes
+/// empty. A dropped document that *is* one is a row of its own, so it is one
+/// more thing the filter is hiding. And a document dropped over an identity
+/// already registered is one row rather than two - the staged one, which is the
+/// one that can be acted on.
+#[test]
+fn the_hidden_count_is_the_rows_the_list_would_have_drawn() {
+    let hidden = |harness: &Harness<'static, App>, what: &str| {
+        anywhere(harness, &format!("{what} hidden by the current filter"))
+    };
+    let root = fixture("local-hidden-staged");
+    let to = destination(&root);
+    let entries = entries();
+    let session = found_with(&root, Helper::Present, GuardState::Disarmed, entries.clone());
+    let mut harness = local_window(session);
+
+    // Nothing in the sample carries this, so what is left on screen is left
+    // there by something other than the search.
+    let nothing = "zzz";
+
+    harness.state_mut().set_staged(dropped(&root, &to, &entries));
+    harness.state_mut().set_query(nothing);
+    harness.run();
+    assert!(
+        !anywhere(&harness, "No entries match"),
+        "a filter over entries hid a dropped file that is not one"
+    );
+    // So the bar goes on saying what the press would cost, which is the note
+    // the hidden count replaces and the only way to say that no count of any
+    // size was drawn: a tree is searched by the whole label, so there is no
+    // asking it whether anything ends in `hidden by the current filter`.
+    let cost = format!("Update entries {} Bitwig may stay open", crate::widget::SEPARATOR);
+    assert!(anywhere(&harness, &cost), "the bar counted a list that is still on screen");
+
+    // The same drop with the rejected file taken out of it: two staged rows
+    // over four registered, and the filter is now hiding all six.
+    let staged: Vec<Staged> = dropped(&root, &to, &entries)
+        .into_iter()
+        .filter(|row| row.registration().is_some())
+        .collect();
+    assert_eq!(staged.len(), 2, "the sample drop no longer stages two documents");
+    harness.state_mut().set_staged(staged);
+    harness.run();
+    assert!(hidden(&harness, "6 entries"), "the staged rows were not counted as hidden");
+
+    // A drop over an entry already on the list. Four rows, not five.
+    let registered = entries.entries().first().expect("the sample list is not empty");
+    let path = root.join("dropped").join("UPDATE.bwdevice");
+    let kind = orng_tools::Kind::from_path(&path).expect("a document extension");
+    let document = orng_tools::testing::document(kind, registered.uuid, &registered.name);
+    std::fs::write(&path, document.bytes()).expect("could not write the sample");
+    harness.state_mut().set_staged(staging::read(&[path], &entries, &to, &[]));
+    harness.run();
+    assert!(hidden(&harness, "4 entries"), "a drop over a registered entry was counted twice");
 }
 
 /// The catalog's search reads four fields where the Local list's reads two.

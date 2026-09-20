@@ -3252,6 +3252,18 @@ impl App {
             }
             None => (String::new(), Tone::Neutral),
         };
+        // `:490`, the one Local scenario whose note is not what a press costs.
+        // A filter that has left nothing on screen takes the line: the empty
+        // state under it offers the way out but states no number, and how much
+        // of the list is behind the filter is what says whether clearing it is
+        // worth doing. The cost is not lost with the note - the summary keeps
+        // the warn tone that only the preparing mode takes, and the button goes
+        // on saying `Prepare installation` in so many words.
+        let note = match self.emptied_by_filter(found) {
+            Some(1) => "1 entry hidden by the current filter".to_owned(),
+            Some(hidden) => format!("{hidden} entries hidden by the current filter"),
+            None => note,
+        };
         if !parts.is_empty() {
             return (parts.join(", "), tone, note);
         }
@@ -3379,6 +3391,54 @@ impl App {
                 (format!("Catalog {separator} {what}"), Tone::Neutral, note)
             }
         }
+    }
+
+    /// How many entries the filter is keeping off the Local list, when what it
+    /// did was empty it.
+    ///
+    /// `None` while anything is still on screen, which is the whole of the rule:
+    /// the bar has one note line, and a list that still has rows in it does not
+    /// need to be told what is missing from it. It is the state the bundle draws
+    /// this for and the only one - `:490` is the single Local scenario whose
+    /// note is not the cost of a press.
+    ///
+    /// **A count and not a sentence**, where the catalog's answer to the same
+    /// state is a sentence: `catalog_summary` already states how big the catalog
+    /// is in the line above, so there is nothing left for a number to add, and a
+    /// browsed list's size is not something the user knew before they looked.
+    /// Their own list is, and the count is what reconciles it with an empty
+    /// screen.
+    ///
+    /// **The arithmetic is [`App::local`]'s**, and it has to be: a count taken
+    /// over a pool the list does not draw from states a number that clearing the
+    /// filter would not produce. So a staged document shadows the registered
+    /// entry it updates here as it does there, and a dropped file that is not a
+    /// document counts as shown - it carries no registration, so a filter over
+    /// names and identities has nothing to hide it by.
+    fn emptied_by_filter(&self, found: &Found) -> Option<usize> {
+        let staged: Vec<&Registration> =
+            self.staged.iter().filter_map(Staged::registration).collect();
+        let drawn = found
+            .entries()
+            .entries()
+            .iter()
+            .filter(|entry| !staged.iter().any(|pending| pending.uuid == entry.uuid))
+            .map(|entry| self.filter.accepts(entry))
+            .chain(
+                self.staged
+                    .iter()
+                    .map(|row| row.registration().is_none_or(|row| self.filter.accepts(row))),
+            );
+        let mut shown = 0usize;
+        let mut hidden = 0usize;
+        for accepted in drawn {
+            if accepted {
+                shown += 1;
+            } else {
+                hidden += 1;
+            }
+        }
+        (shown == 0 && hidden > 0).then_some(hidden)
     }
 
     /// The one button, and what it would do.

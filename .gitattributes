@@ -1,0 +1,13 @@
+# The published index and the signature over it are one pair of exact bytes.
+#
+# The signature is made over the index file as published, byte for byte, so a
+# checkout that rewrites its line endings produces a pair that cannot verify -
+# and the failure reads as a broken signature rather than as a broken checkout.
+# Git for Windows sets `core.autocrlf=true` by default, which is exactly that
+# rewrite, and it is why these two tests passed on macOS and Linux and failed on
+# Windows.
+#
+# `-text` says these are bytes and not lines. `catalog.rs` has a test that says
+# the same thing out loud, because a rule in a file nobody opens is not a check.
+apps/orng-registry/tests/published-index.json -text
+apps/orng-registry/tests/published-index.json.sig -text

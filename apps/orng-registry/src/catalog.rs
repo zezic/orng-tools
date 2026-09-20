@@ -704,6 +704,27 @@ mod tests {
         Fetched { index, bytes, signature }
     }
 
+    /// The signed index is bytes, and a checkout must hand them over unchanged.
+    ///
+    /// A signature is over exact bytes, so a checkout that rewrote the file's
+    /// line endings produces a pair that cannot verify - and `verified` can only
+    /// report that as a bad signature, which points at the key or the release
+    /// rather than at the checkout. This is the assertion that names the real
+    /// cause. `.gitattributes` marks both files `-text` to prevent it; this is
+    /// what fails loudly if that rule is lost or a new checkout ignores it.
+    ///
+    /// Git for Windows defaults `core.autocrlf` to true, which is why the two
+    /// tests that verify this pair failed only on the Windows runner.
+    #[test]
+    fn the_signed_index_is_checked_out_byte_for_byte() {
+        let bytes = include_bytes!("../tests/published-index.json");
+        assert!(
+            !bytes.windows(2).any(|pair| pair == b"\r\n"),
+            "the signed index was checked out with its line endings rewritten, so the \
+             signature published over it cannot verify"
+        );
+    }
+
     /// An index kept on disk is read back, and read back through the same check
     /// it arrived through.
     ///
@@ -783,7 +804,15 @@ mod tests {
         let fresh = Catalog::just_fetched(published());
         assert!(fresh.index().is_some());
         assert!(!fresh.is_cached(), "a catalog that just arrived was called cached");
-        assert_eq!(fresh.freshness(), Freshness::Current(Duration::ZERO));
+        // A bound rather than `Duration::ZERO`. The age is read off the clock at
+        // the moment the question is asked, so zero is true only where the two
+        // calls land in one tick - which is what let this pass in release on one
+        // machine and fail in debug on all three.
+        assert!(
+            matches!(fresh.freshness(), Freshness::Current(age) if age < Duration::from_secs(60)),
+            "a catalog that just arrived is not current: {:?}",
+            fresh.freshness()
+        );
         assert!(!fresh.freshness().is_stale());
 
         // Old enough to be stated loudly, and offline with it.

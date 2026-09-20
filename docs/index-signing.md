@@ -25,6 +25,15 @@ programs to agree about. Detached keeps the bytes signed, the bytes served and
 the bytes parsed identical, and leaves `index.json` unchanged for anything
 reading it that has not learned about signatures.
 
+**The application keeps that pair and re-proves it.** A verified index is
+written to `~/.orng/catalog/` as the two files exactly as they arrived, and the
+next launch reads them back through the same `Index::verified` call the download
+goes through. So the cache is not a third party either: a home directory is
+writable by anything running as the user, and an index that decides what gets
+downloaded into a DAW must not become believable by having been stored locally.
+Keeping the parsed index instead would have made that impossible to check, which
+is the same argument the detached signature is making one level up.
+
 ## Making the key, once
 
 On a machine the maintainer trusts, never in continuous integration:

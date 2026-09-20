@@ -777,6 +777,27 @@ click and egui's modal layer that keeps the keyboard out of the bars under it, a
 progress dialog shares the skeleton. The words are the bundle's, with four exceptions the
 data forced; `design-review.md` round 3 item 8 records them.
 
+**The index is kept, and checked on every launch.** What is written down is the bytes
+that arrived and the signature over them, in `~/.orng/catalog/`, never an index this
+application re-serialised: reading the pair back is the same verification the download
+went through, so a file edited under the user's own home is refused on exactly the terms
+a tampered download is. `~/.orng` is an ordinary directory writable by anything running
+as the user, and an index decides what gets downloaded into a DAW and what digest it is
+held against, so it is the one place a cache must not be believed just because it is
+local.
+
+Two acts on opening and not one: the pair is read, which is two files and a signature, so
+the first frame has a catalog with no network at all; and a fetch starts behind it on a
+worker, so what the first frame has is not silently last month's. The window never waits
+for the second. Failing it is a degraded state and not an error, which is what the design
+insists on: the list still browses, the bar states the age of what is on screen and says
+`cached`, and the age turns accent-coloured and grows a labelled `Refresh` once it is old
+enough - a week, which is ours and is recorded in `design-review.md` round 3 item 6. Only
+a machine that has never fetched one at all gets the empty state and `Catalog
+unavailable`, and that one offers `Try again`. The age is the kept file's own write time,
+and every successful fetch rewrites both files whether the bytes changed or not, so it
+states when the catalog was last confirmed rather than when it last said something new.
+
 The catalog's detail panel, which a catalog row opens: who wrote the item, what it is
 for, whether this installation is new enough to load it, what it is licensed under, its
 keywords, the change that published it, its author's page and its identity. Two of those
@@ -864,7 +885,9 @@ catalog is and the note says what the filters did to it. Only the word changes w
 filter, because the filter is what names what is being counted.
 
 Two states replace the count rather than qualifying it, and are separated by tone. An
-index that did not arrive or did not verify is `Catalog unavailable` in the accent; an
+index that never arrived and has nothing kept behind it is `Catalog unavailable` in the
+accent - a refresh that failed over an index already in hand only qualifies the count,
+adding `cached` after it and saying under it that installing a kept item still works; an
 install that was refused is `Install refused` in the error colour, one line for both
 kinds of refusal, because what the bar has to say is that nothing was written and the
 rows say which was which. A refusal outranks the count for the reason a failed attempt

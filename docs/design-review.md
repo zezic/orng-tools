@@ -307,18 +307,35 @@ next reader will see `\u{b7}` and wonder.
   the user out of a kind they had pinned - it needs saying, and then it is a
   two-line change.
 
-- **The cached catalog, and everything the bundle words around it.** Round 2
-  confirmed that offline with a cached index is not an error, and it is right -
-  but nothing here caches the index. `Fetching` holds one fetch for the life of
-  the window and writes nothing to disk, so a window opened with no network has
-  no catalog rather than an old one. Four things in the bundle go with that: the
-  action bar's summary gaining a `cached` part after the count, its note
-  `Offline`-then-`installing a cached item still works`, the age beside the view
-  switch (`Catalog from 12 days ago`, accent-coloured once stale) and the
-  `Refresh` control that appears with it - `ORNG Registry.dc.html:466-469`. Not
-  a layout: it is a file in `~/.orng`, a written-at time, and a rule for when an
-  index is old enough to say so. The bar states `Catalog unavailable` in the
-  meantime, which is `:474`'s own word for the same window with nothing cached.
+- ~~**The cached catalog, and everything the bundle words around it**~~ -
+  *Drawn.* All four: the action bar's summary gaining ` · cached` after the
+  count, its note `Offline · installing a cached item still works`, the age
+  beside the view switch (`Catalog from 12 days ago`, accent-coloured once
+  stale) and the `Refresh` control that grows its label with it -
+  `ORNG Registry.dc.html:465-469` and `InstallBar.dc.html:35-41`. The empty
+  state for a window with nothing kept gained `Try again`, which
+  `EmptyState.dc.html:90` draws and which had nothing behind it until there was
+  something to refresh.
+
+  **What is kept is the bytes and the signature over them**, in
+  `~/.orng/catalog/`, never a re-serialised index: reading the pair back is the
+  same `Index::verified` call the download went through, so a file edited under
+  the user's home is refused on exactly the terms a tampered download is. The
+  age is the file's own write time, and every successful fetch rewrites both
+  files whether or not the bytes changed - so the age states when the catalog
+  was last *confirmed* rather than when it last said something new.
+
+  **The index is read on opening and checked on opening**, which the user asked
+  for in as many words. Reading is two files and a signature, so the first frame
+  has a catalog; the check behind it is on a worker and the window never waits
+  for it. The older rule here - do not reach for a socket before being asked -
+  was protecting against a window that hangs on a train, and this one does not
+  hang. `ui-spec-catalog.md:201` also asks for a quiet automatic refresh on view
+  entry; that is deliberately not a second trigger, because a launch already
+  covers it and two would fetch twice for one look.
+
+  Two things in it are ours and are recorded in item 6 below: when an index
+  stops being called current, and how a duration is written.
 - **The entry row's overflow** - `EntryRow.dc.html:60`, the
   `ph-dots-three-vertical` control the design draws on every row in every state.
   Nothing in the bundle says what its menu holds: not the row section of the
@@ -420,10 +437,12 @@ the root that was refused and why, or the places that were searched. That is a g
 what the design would want. It is also the state somebody is most likely to be *in* when
 they open this screen, so it is worth drawing on purpose.
 
-### 6. Two words in the catalog's action bar are not the bundle's
+### 6. What the catalog's bar says that the bundle does not
 
 For the designer, and small. The bundle words this bar for ten catalog scenarios
-and the app takes all ten as written. Two states it reaches are not among them.
+and the app takes all ten as written. Two states it reaches are not among them,
+and one sentence it now states has a rule underneath that the bundle does not
+state.
 
 **A fetch in flight.** Pressing `Install` starts a download, and the seven row
 states have no word for one - `CatalogRow.dc.html` goes straight from the offer
@@ -440,6 +459,25 @@ captioned - `Catalog · 9 items` under `All` (`ORNG Registry.dc.html:433`) and
 drawn but never captioned. It reads `Catalog · N installed`, which is the same
 sentence with the same substitution. Worth a look only because the pattern it
 extends is the design's and the extension is not.
+
+**And two things about the catalog's age, now that it has one.** The two
+sentences are the bundle's and are taken as written: `Catalog updated 20 minutes
+ago` while the index is current (`InstallBar.dc.html:61`) and `Catalog from 12
+days ago` once it is stale (`ORNG Registry.dc.html:467`). Between them the
+bundle states nothing, so two rules underneath are decisions.
+
+*When an index stops being current.* A week. The bundle draws 20 minutes as
+current and 12 days as stale and no line in between. Seven days because of what
+reaching it now means: the window checks on every launch, so a week without one
+succeeding is a machine that has been off the network for a week rather than a
+catalog nobody has published to. If the right answer is a day, or a month, it is
+one constant - `catalog::STALE_AFTER`.
+
+*How a duration is written.* The largest unit that gives a whole number, nothing
+below a minute, and `just now` under one - because a fetch that landed nine
+seconds ago would otherwise read `0 minutes ago`, which reads as broken rather
+than as recent. Days is the largest unit, so a year off the network reads `370
+days ago` rather than `1 year ago`.
 
 ### 7. The Local bar's hidden-entries note: the sentence is drawn, the number is ours
 

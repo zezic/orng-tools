@@ -253,6 +253,57 @@ impl Filter {
     }
 }
 
+/// What the Local list has to draw: the pending work, then what is registered,
+/// both after the filter.
+///
+/// Worked out before anything is drawn rather than in among the drawing,
+/// because which of the view's three surfaces to show is decided by what is
+/// left - and because the two halves have to be worked out *together*. A
+/// dropped document that is already registered is one piece of pending work and
+/// gets one row, so the registered half is only the entries the pending half is
+/// not already speaking for.
+struct Listing<'a> {
+    /// The staged rows the filter let through, each carrying where it sits in
+    /// the unfiltered list.
+    ///
+    /// **Numbered before the filter**, so a row knows where it is in the
+    /// pending list rather than where it is on screen. A control pressed on the
+    /// third row of a filtered list acts on the third row of the list the
+    /// filter was applied to, which is not the same row.
+    pending: Vec<(usize, &'a Staged)>,
+    /// The registered entries it let through, less the ones a staged row is
+    /// already the row for.
+    registered: Vec<&'a Registration>,
+}
+
+impl<'a> Listing<'a> {
+    fn of(staged: &'a [Staged], entries: &'a [Registration], filter: &Filter) -> Self {
+        // Membership and nothing else is asked of this, so a set rather than
+        // the list it is drawn from: the alternative walks the pending rows
+        // once per registered entry.
+        let spoken_for: BTreeSet<Uuid> =
+            staged.iter().filter_map(Staged::registration).map(|row| row.uuid).collect();
+        Listing {
+            pending: staged
+                .iter()
+                .enumerate()
+                .filter(|(_, row)| row.registration().is_none_or(|row| filter.accepts(row)))
+                .collect(),
+            registered: entries
+                .iter()
+                .filter(|entry| !spoken_for.contains(&entry.uuid))
+                .filter(|entry| filter.accepts(entry))
+                .collect(),
+        }
+    }
+
+    /// Whether the filter left nothing, which is the state that draws
+    /// `No entries match` rather than a list.
+    fn is_empty(&self) -> bool {
+        self.pending.is_empty() && self.registered.is_empty()
+    }
+}
+
 pub struct App {
     session: Session,
     /// What the user chose, which outlives the run where the session does not.
@@ -2765,29 +2816,7 @@ impl App {
     /// The Local view: what is pending, then what is registered.
     fn local(&mut self, ui: &mut egui::Ui) {
         let Session::Found(found) = &self.session else { return };
-
-        // A dropped document that is already registered updates that entry
-        // rather than adding a second, so it is one piece of pending work and
-        // gets one row - the staged one, which is the one that can be acted on.
-        let staged: Vec<&Registration> =
-            self.staged.iter().filter_map(Staged::registration).collect();
-        let registered: Vec<&Registration> = found
-            .entries()
-            .entries()
-            .iter()
-            .filter(|entry| !staged.iter().any(|pending| pending.uuid == entry.uuid))
-            .filter(|entry| self.filter.accepts(entry))
-            .collect();
-        // Numbered before the filter, so a row carries where it is in the
-        // pending list rather than where it is on screen. A control pressed on
-        // the third row of a filtered list acts on the third row of the list
-        // the filter was applied to, which is not the same row.
-        let shown: Vec<(usize, &Staged)> = self
-            .staged
-            .iter()
-            .enumerate()
-            .filter(|(_, s)| s.registration().is_none_or(|r| self.filter.accepts(r)))
-            .collect();
+        let listing = Listing::of(&self.staged, found.entries().entries(), &self.filter);
 
         if found.entries().is_empty() && self.staged.is_empty() {
             // The primary onboarding surface, and the only screen whose icon
@@ -2819,7 +2848,7 @@ impl App {
             return;
         }
 
-        if shown.is_empty() && registered.is_empty() {
+        if listing.is_empty() {
             let empty = widget::Empty {
                 icon: widget::icon::NO_MATCH,
                 inviting: false,
@@ -2840,6 +2869,7 @@ impl App {
             return;
         }
 
+        let Listing { pending, registered } = &listing;
         let palette = self.palette;
         let open = self.inspecting.as_ref().map(|open| open.uuid);
         let width = self.width();
@@ -2855,16 +2885,16 @@ impl App {
             // Pending work first, which is the designer's recommendation and
             // the only ordering under which the list answers "what am I about to
             // do" without scrolling.
-            if !shown.is_empty() {
-                widget::section(ui, palette, "Pending", palette.accent_text, shown.len());
-                for (at, pending) in &shown {
-                    if let Some(action) = staged_row(ui, palette, width, pending, document) {
+            if !pending.is_empty() {
+                widget::section(ui, palette, "Pending", palette.accent_text, pending.len());
+                for (at, row) in pending {
+                    if let Some(action) = staged_row(ui, palette, width, row, document) {
                         pressed = Some((Acting::Pending(*at), action));
                     }
                 }
             }
             widget::section(ui, palette, "Registered", palette.ink_2, registered.len());
-            for entry in &registered {
+            for entry in registered {
                 let selected = open == Some(entry.uuid);
                 let status = self.status_of(found, entry);
                 let (response, action) =

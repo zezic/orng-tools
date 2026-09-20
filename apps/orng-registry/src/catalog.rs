@@ -38,6 +38,9 @@ const INDEX_URL: &str =
     "https://github.com/zezic/orng-catalog/releases/latest/download/index.json";
 const SIGNATURE_URL: &str =
     "https://github.com/zezic/orng-catalog/releases/latest/download/index.json.sig";
+/// The asset's own name, which is how the signature is found beside whichever
+/// release `latest` turned out to be - see [`beside`].
+const INDEX_ASSET: &str = "index.json";
 
 /// Where a published change can be read, which is what the detail panel's
 /// `Reviewed in` leads to.
@@ -73,12 +76,33 @@ const CONTENT_URL: &str = "https://raw.githubusercontent.com/zezic/orng-catalog"
 /// the answer is to hash what comes back.
 fn document_url(revision: &Revision, path: &str) -> String {
     // The path comes out of a signed index and is a repository path, so its
-    // components are file names rather than anything a URL has to be protected
-    // from. Encoded anyway for the space a document name may carry: a raw space
-    // in a request line is not a URL at all.
-    let path: Vec<String> =
-        path.split('/').map(|part| part.replace(' ', "%20")).collect();
+    // components are file names. A file name is still not a URL: the separators
+    // are the path and everything else in a component is a name the author
+    // chose, so each component is escaped and the slashes are not.
+    let path: Vec<String> = path.split('/').map(escaped).collect();
     format!("{CONTENT_URL}/{revision}/{}", path.join("/"))
+}
+
+/// One path component, with every byte a URL gives a meaning to written as an
+/// escape.
+///
+/// The unreserved set and nothing else, which is the only rule that needs no
+/// judgement about what a host will do. A space was escaped here before and the
+/// rest were not, and the rest are what turn a legitimate name into a different
+/// request: `#` cuts the URL short at a fragment and `?` at a query, so the
+/// bytes that came back would be some other file's - and the digest check can
+/// only report that as `Verification failed`, which the design is explicit is a
+/// trust event rather than a name nobody escaped.
+fn escaped(component: &str) -> String {
+    component
+        .bytes()
+        .map(|byte| match byte {
+            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'.' | b'_' | b'~' => {
+                char::from(byte).to_string()
+            }
+            reserved => format!("%{reserved:02X}"),
+        })
+        .collect()
 }
 
 /// The key ORNG Catalog signs with.
@@ -116,10 +140,30 @@ struct Fetched {
 /// happens over the bytes that arrived, before they are parsed, so a caller
 /// cannot hold a parsed index that was never proved.
 fn fetch() -> Result<Fetched, String> {
-    let bytes = get(INDEX_URL, INDEX_LIMIT)?;
-    let signature = get(SIGNATURE_URL, INDEX_LIMIT)?;
+    // **Both assets out of one release, and `latest` is resolved once.** It is
+    // a redirect, so asking for it twice can straddle a publication and bring
+    // back the index of one release beside the signature of the next - a pair
+    // that verifies against nothing and is reported as a bad signature, which
+    // points at the key rather than at the race. So the index's own answer says
+    // which release this is, and the signature is then asked for by name.
+    let (bytes, from) = got(INDEX_URL, INDEX_LIMIT)?;
+    let signature = get(&beside(&from), INDEX_LIMIT)?;
     let index = verified(&bytes, &signature)?;
     Ok(Fetched { index, bytes, signature })
+}
+
+/// The signature published beside an index, given where that index really came
+/// from.
+///
+/// The released assets are one name apart, so this is that name and not a
+/// second `latest` URL. A resolved URL that somehow does not end in the index's
+/// own name is left alone rather than guessed at, and the pair then fails to
+/// verify as it always would.
+fn beside(index: &str) -> String {
+    match index.strip_suffix(INDEX_ASSET) {
+        Some(release) => format!("{release}{INDEX_ASSET}.sig"),
+        None => SIGNATURE_URL.to_owned(),
+    }
 }
 
 /// The check itself, over bytes and nothing else.
@@ -139,21 +183,44 @@ fn verified(bytes: &[u8], signature: &[u8]) -> Result<Index, String> {
 /// something enormous costs a refusal rather than memory.
 const INDEX_LIMIT: u64 = 4 * 1024 * 1024;
 
-fn get(url: &str, limit: u64) -> Result<Vec<u8>, String> {
-    let agent = ureq::Agent::config_builder()
-        .timeout_connect(Some(CONNECT))
-        .timeout_global(Some(TOTAL))
-        .user_agent(concat!("orng-registry/", env!("CARGO_PKG_VERSION")))
-        .build()
-        .new_agent();
+/// The one agent every request here goes through.
+///
+/// Built once rather than per call: an agent carries the connection pool and
+/// the TLS configuration, so a fresh one for each of the two requests a refresh
+/// makes is a second handshake to a host the first one is still connected to.
+fn agent() -> &'static ureq::Agent {
+    static AGENT: std::sync::OnceLock<ureq::Agent> = std::sync::OnceLock::new();
+    AGENT.get_or_init(|| {
+        ureq::Agent::config_builder()
+            .timeout_connect(Some(CONNECT))
+            .timeout_global(Some(TOTAL))
+            .user_agent(concat!("orng-registry/", env!("CARGO_PKG_VERSION")))
+            .build()
+            .new_agent()
+    })
+}
 
-    let mut response = agent.get(url).call().map_err(|e| format!("{url}: {e}"))?;
-    response
+fn get(url: &str, limit: u64) -> Result<Vec<u8>, String> {
+    got(url, limit).map(|(bytes, _)| bytes)
+}
+
+/// The same, and where the bytes actually came from.
+///
+/// The second half is what [`fetch`] needs and no other caller does: these URLs
+/// redirect, and which release a redirect landed on is the only way to ask for
+/// the asset beside it rather than for `latest` a second time.
+fn got(url: &str, limit: u64) -> Result<(Vec<u8>, String), String> {
+    use ureq::ResponseExt;
+
+    let mut response = agent().get(url).call().map_err(|e| format!("{url}: {e}"))?;
+    let from = response.get_uri().to_string();
+    let bytes = response
         .body_mut()
         .with_config()
         .limit(limit)
         .read_to_vec()
-        .map_err(|e| format!("{url}: {e}"))
+        .map_err(|e| format!("{url}: {e}"))?;
+    Ok((bytes, from))
 }
 
 /// A fetch running on another thread.
@@ -595,25 +662,26 @@ impl Install {
         Install { result, item, outcome: None }
     }
 
-    /// Returns whether anything arrived.
-    pub fn poll(&mut self) -> bool {
+    /// Take the answer if there is one.
+    ///
+    /// Says nothing about whether one arrived, for the reason [`Fetching::poll`]
+    /// says nothing: "did anything arrive just now" is false again on the next
+    /// frame, and [`Install::is_running`] is the question that is still true -
+    /// which is the one the only caller asks.
+    pub fn poll(&mut self) {
         use std::sync::mpsc::TryRecvError;
         if self.outcome.is_some() {
-            return false;
+            return;
         }
         match self.result.try_recv() {
-            Ok(outcome) => {
-                self.outcome = Some(outcome);
-                true
-            }
-            Err(TryRecvError::Empty) => false,
+            Ok(outcome) => self.outcome = Some(outcome),
+            Err(TryRecvError::Empty) => {}
             // The worker died without answering. Silence is not a document, and
             // must never be registered as one.
             Err(TryRecvError::Disconnected) => {
                 self.outcome = Some(Err(Refused::Download(
                     "the download stopped without reporting".to_owned(),
                 )));
-                true
             }
         }
     }
@@ -921,6 +989,27 @@ mod tests {
         );
         // The separators are not encoded with it: they are the path.
         assert!(!document_url(&revision, "a/b").contains("%2F"));
+    }
+
+    /// And every other character a URL gives a meaning to, which a document
+    /// name is entitled to carry.
+    ///
+    /// A `#` is the one that costs most: it starts a fragment, so the request
+    /// is cut short and whatever comes back is some other file. The digest
+    /// check can only call that `Verification failed` - a trust event the
+    /// design refuses to offer a retry for - over a name nobody escaped.
+    #[test]
+    fn a_document_name_is_escaped_rather_than_read_as_part_of_the_url() {
+        let revision = Revision::new(&"a".repeat(40)).expect("a revision");
+        let url = |name: &str| document_url(&revision, &format!("content/someone/{name}"));
+
+        let fragment = url("GATE #2.bwdevice");
+        assert!(fragment.ends_with("/GATE%20%232.bwdevice"), "{fragment}");
+        let query = url("WHAT?.bwdevice");
+        assert!(query.ends_with("/WHAT%3F.bwdevice"), "{query}");
+        // Left alone, because these are what a file name is made of and
+        // escaping them buys nothing a reader would thank us for.
+        assert!(url("A-B_C.2~x.bwdevice").ends_with("/A-B_C.2~x.bwdevice"));
     }
 
     /// A row to check bytes against, describing exactly the bytes handed in.

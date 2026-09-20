@@ -59,8 +59,15 @@ impl Rights {
 /// answer that is true on the platform where they can differ.
 pub fn rights(install: &Installation) -> Rights {
     // The directory holding `bitwig.jar`: preparation writes the patched
-    // archive here and renames it into place.
-    let archive = install.jar().parent().map(Path::to_path_buf).unwrap_or_default();
+    // archive here and renames it into place. Asserted rather than defaulted:
+    // an empty path would make the probe land in whatever directory this
+    // application was launched from, and answer `Held` for a directory nothing
+    // ever looked at.
+    let archive = install
+        .jar()
+        .parent()
+        .expect("an installation's archive is inside the installation")
+        .to_path_buf();
     // Description bundles, rewritten by every change to the entry list. This is
     // the one that makes the cheap mode reach inside the installation too.
     let localization = install.localization_dir();
@@ -114,12 +121,20 @@ mod tests {
 
     /// And the probe leaves nothing behind, which matters because the directory
     /// it really runs against is somebody's Bitwig installation.
+    ///
+    /// **In a directory of its own**, not the shared temporary one. Counting
+    /// what is in `std::env::temp_dir()` means counting the probes every other
+    /// test in this binary is writing and removing there at the same moment,
+    /// and the name carries the process id, which does not tell two threads of
+    /// one process apart. That raced with
+    /// [`a_writable_directory_answers_yes`] and failed about a third of runs.
     #[test]
     fn a_probe_removes_what_it_wrote() {
-        let temp = std::env::temp_dir();
-        let before = count_probes(&temp);
-        probe(&temp).expect("the temporary directory refused a file");
-        assert_eq!(before, count_probes(&temp), "a probe left its file behind");
+        let temp = tempfile::tempdir().expect("somewhere to probe");
+        let alone = temp.path();
+        assert_eq!(count_probes(alone), 0, "a new directory already had a probe in it");
+        probe(alone).expect("a new directory refused a file");
+        assert_eq!(count_probes(alone), 0, "a probe left its file behind");
     }
 
     /// A directory that is not there cannot be written to, and says so rather

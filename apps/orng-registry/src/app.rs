@@ -361,6 +361,18 @@ pub struct App {
     /// out at the press would then describe a press that no longer exists.
     /// What is held is only what the disk has to be asked about.
     confirming: Option<Confirming>,
+    /// A description the user has edited that has not been written yet,
+    /// because writing it would ask for rights this process does not hold.
+    ///
+    /// Apart from every other edit, which is written the moment a field is
+    /// left and announced nowhere. Where the installation is not this account's
+    /// to write, that same write is carried to a child process and Windows
+    /// raises its consent dialog - and a consent dialog that arrives because
+    /// the pointer moved out of a text box is one people learn to dismiss
+    /// without reading. So the words wait here behind a named `Save`, and
+    /// nothing is lost if the answer is `Cancel`: the entry is still what it
+    /// was.
+    asking: Option<Registration>,
     /// What the last press came to. Stated as a banner until the user puts it
     /// away, because nothing else will stop being true and take it off screen.
     outcome: Option<Outcome>,
@@ -455,6 +467,7 @@ impl App {
             reading: None,
             applying: None,
             confirming: None,
+            asking: None,
             outcome: None,
             inspecting: None,
             detailing: None,
@@ -1322,6 +1335,10 @@ impl App {
         // And so does what was waiting on a restart: it was a statement about
         // rows in the list that has just been replaced.
         self.awaiting_restart.clear();
+        // With it goes a description waiting to be saved. It revises one row of
+        // the list that has just been replaced, and the panel it was typed in
+        // is about to be settled against the new one.
+        self.asking = None;
         self.settle_screen();
     }
 
@@ -1568,7 +1585,24 @@ impl App {
             return;
         };
         let Some(revised) = revised(entry, &open.words) else { return };
+        // Where the write has to be carried to a process holding rights this
+        // one does not, it is not made here. A field losing focus is not a
+        // press, and this write raises Windows' consent dialog - so the words
+        // wait for one. See [`App::asking`].
+        if !found.rights.are_held() {
+            self.asking = Some(revised);
+            return;
+        }
+        self.write(revised, ctx);
+    }
 
+    /// Write one revised entry, now.
+    ///
+    /// The tail of [`App::write_words`], apart from it because the answer to
+    /// [`App::asking`] arrives at a different moment and has to do the same
+    /// thing.
+    fn write(&mut self, revised: Registration, ctx: &egui::Context) {
+        let Session::Found(found) = &self.session else { return };
         let mut job = Job::against(Work::Entries, &found.to, found.entries());
         job.revise(revised);
         self.applying = Some(Applying::start(
@@ -1578,6 +1612,61 @@ impl App {
             found.rights.clone(),
             ctx.clone(),
         ));
+    }
+
+    /// Ask whether to write the words that are waiting, and do it if told to.
+    ///
+    /// Drawn where a banner is drawn and answered before one: this is a
+    /// question about something that has not happened, and [`App::outcome`] is
+    /// a statement about something that has. A question the user has been
+    /// asked outranks a report they have already read.
+    fn ask_to_save(&mut self, ui: &mut egui::Ui) -> bool {
+        let (Session::Found(found), Some(waiting)) = (&self.session, &self.asking) else {
+            return false;
+        };
+        // The entry it revises may have gone since - a removal applied while
+        // this sat here. Nothing to save, and `Update::revise` would panic on
+        // an identity the list has no row for.
+        let Some(entry) = found.entries().get(waiting.uuid) else {
+            self.asking = None;
+            return false;
+        };
+        let title = format!("Save the changes to {}?", entry.name);
+        let body = format!(
+            "{} is not writable by this account, so saving asks Windows for administrator \
+             rights. The description and keywords Bitwig shows are kept inside the \
+             installation.",
+            widget::drawn_path(found.to.install.root())
+        );
+
+        let mut answered = widget::Answered::Nothing;
+        egui::Panel::bottom("banner")
+            .frame(egui::Frame::new().fill(self.palette.bg))
+            .show(ui, |ui| {
+                let banner = widget::Banner {
+                    tone: Tone::Warn,
+                    title: &title,
+                    body: &body,
+                    action: Some("Save"),
+                    cancel: Some("Cancel"),
+                    // The two words are the whole answer. A dismiss mark beside
+                    // them would be a third way out that says neither.
+                    dismissible: false,
+                };
+                answered = widget::banner(ui, self.palette, &banner);
+            });
+
+        match answered {
+            widget::Answered::Action => {
+                let revised = self.asking.take().expect("it was there a moment ago");
+                self.write(revised, ui.ctx());
+            }
+            // The words are dropped and the entry is still what it was, which
+            // is what makes this safe to offer rather than only a delay.
+            widget::Answered::Cancelled | widget::Answered::Dismissed => self.asking = None,
+            widget::Answered::Nothing => {}
+        }
+        true
     }
 
     /// The one banner the window is carrying, if it is carrying one.
@@ -1593,6 +1682,13 @@ impl App {
             Outcome,
             /// Something that is true of the machine and may stop being.
             Condition,
+        }
+
+        // A question about something that has not happened yet comes before a
+        // statement about something that has: the user is being asked, and the
+        // bottom of the window holds one banner.
+        if self.ask_to_save(ui) {
+            return;
         }
 
         let (about, banner) = match (&self.outcome, self.blocking()) {
@@ -1612,8 +1708,14 @@ impl App {
         egui::Panel::bottom("banner")
             .frame(egui::Frame::new().fill(self.palette.bg))
             .show(ui, |ui| {
-                let banner =
-                    widget::Banner { tone, title: &title, body: &body, action, dismissible };
+                let banner = widget::Banner {
+                    tone,
+                    title: &title,
+                    body: &body,
+                    action,
+                    cancel: None,
+                    dismissible,
+                };
                 answered = widget::banner(ui, self.palette, &banner);
             });
         if answered == widget::Answered::Nothing {

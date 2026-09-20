@@ -3559,6 +3559,13 @@ pub struct Banner<'a> {
     pub title: &'a str,
     pub body: &'a str,
     pub action: Option<&'a str>,
+    /// A second, named way out, drawn beside the action.
+    ///
+    /// For the one banner that is a question rather than a statement: where the
+    /// press does something the user cannot undo, refusing has to be a word
+    /// they can read and not the dismiss mark, which says "put this away" and
+    /// not "do not do it".
+    pub cancel: Option<&'a str>,
     /// Whether it can be put away. A condition cannot: it goes when it stops
     /// being true. What already happened can, and has to be, because nothing
     /// else will stop being true to take it off the screen.
@@ -3570,6 +3577,9 @@ pub struct Banner<'a> {
 pub enum Answered {
     Nothing,
     Action,
+    /// The named refusal, which is not [`Answered::Dismissed`]: one says the
+    /// press must not happen and the other says the words have been read.
+    Cancelled,
     Dismissed,
 }
 
@@ -3605,6 +3615,15 @@ pub fn banner(ui: &mut Ui, palette: Palette, banner: &Banner<'_>) -> Answered {
                         && outlined_button(ui, banner.tone.colour(palette), action).clicked()
                     {
                         pressed = Answered::Action;
+                    }
+                    // After the action in this right-to-left layout, so it sits
+                    // to its left: the press that does the thing is the one at
+                    // the end, as it is in the confirmation dialog.
+                    if let Some(cancel) = banner.cancel {
+                        ui.add_space(metric::TOOL_GAP);
+                        if outlined_button(ui, palette.ink_2, cancel).clicked() {
+                            pressed = Answered::Cancelled;
+                        }
                     }
                     ui.with_layout(Layout::top_down(Align::Min), |ui| {
                         ui.spacing_mut().item_spacing.y = BETWEEN_THE_LINES;

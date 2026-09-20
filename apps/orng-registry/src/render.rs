@@ -2647,6 +2647,62 @@ fn a_word_typed_into_the_inspector_becomes_a_keyword() {
     assert!(still.is_focused(), "Enter dropped the user out of the list they were writing");
 }
 
+/// An edit to an installation this account may not write waits for a press.
+///
+/// The write is carried to a child process holding rights this one does not,
+/// and on Windows starting that child raises the system's consent dialog. A
+/// field losing focus is not a press: a consent dialog that arrives because the
+/// pointer moved out of a text box is one people learn to dismiss without
+/// reading, and every other press here that asks for rights is deliberate. So
+/// the words wait behind a named `Save`, with `Cancel` beside it, and refusing
+/// leaves the entry as it was.
+///
+/// The rights are set on the session rather than found, because every directory
+/// on the machine running this is writable by it - which is the same reason
+/// `rights`' own refusal test has to take a write bit off by hand.
+#[test]
+fn an_edit_that_needs_rights_waits_for_a_press_rather_than_asking_by_itself() {
+    use egui::accesskit::Role;
+
+    let root = fixture("edit-without-rights");
+    let mut session = found(&root, Helper::Present, GuardState::Disarmed);
+    if let Session::Found(found) = &mut session {
+        found.rights = orng_tools::Rights::Withheld {
+            directory: found.to.install.root().to_path_buf(),
+            why: "this account may not write there".to_owned(),
+        };
+    }
+    let mut harness =
+        window(session, |app, _| app.set_inspecting(VOLSHAPER.parse().expect("a sample identity")));
+
+    // The upper of the panel's two fields, which is the description.
+    let panel = metric::WINDOW[0] - metric::ASIDE;
+    let describing = harness
+        .get_all_by_role(Role::TextInput)
+        .filter(|node| node.rect().left() > panel)
+        .min_by(|a, b| a.rect().top().total_cmp(&b.rect().top()))
+        .expect("the panel has no description field");
+    describing.focus();
+    describing.type_text(" and a little more");
+    harness.run();
+    // Out of the field, which is the moment that used to write it - and used to
+    // be the moment that asked Windows for rights.
+    harness.key_press(egui::Key::Tab);
+    harness.run();
+
+    assert!(!harness.state().is_working(), "leaving a field asked for rights by itself");
+    assert!(
+        harness.query_by_label("Save").is_some(),
+        "the words were neither written nor offered to be saved"
+    );
+    assert!(harness.query_by_label("Cancel").is_some(), "the offer had no way to refuse it");
+
+    harness.get_by_label("Cancel").click();
+    harness.run();
+    assert!(harness.query_by_label("Save").is_none(), "Cancel left the question on screen");
+    assert!(!harness.state().is_working(), "Cancel started the write it was refusing");
+}
+
 /// The Settings screen, on the installation the rest of these are drawn against.
 ///
 /// **A full-window surface**, so there is no install bar, no toolbar and no

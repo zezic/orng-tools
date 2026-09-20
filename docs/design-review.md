@@ -302,6 +302,18 @@ next reader will see `\u{b7}` and wonder.
   the user out of a kind they had pinned - it needs saying, and then it is a
   two-line change.
 
+- **The cached catalog, and everything the bundle words around it.** Round 2
+  confirmed that offline with a cached index is not an error, and it is right -
+  but nothing here caches the index. `Fetching` holds one fetch for the life of
+  the window and writes nothing to disk, so a window opened with no network has
+  no catalog rather than an old one. Four things in the bundle go with that: the
+  action bar's summary gaining a `cached` part after the count, its note
+  `Offline`-then-`installing a cached item still works`, the age beside the view
+  switch (`Catalog from 12 days ago`, accent-coloured once stale) and the
+  `Refresh` control that appears with it - `ORNG Registry.dc.html:466-469`. Not
+  a layout: it is a file in `~/.orng`, a written-at time, and a rule for when an
+  index is old enough to say so. The bar states `Catalog unavailable` in the
+  meantime, which is `:474`'s own word for the same window with nothing cached.
 - **The entry row's overflow** - `EntryRow.dc.html:60`, the
   `ph-dots-three-vertical` control the design draws on every row in every state.
   Nothing in the bundle says what its menu holds: not the row section of the
@@ -374,4 +386,25 @@ not change height with what went wrong, and the diagnostics report states what t
 the root that was refused and why, or the places that were searched. That is a guess at
 what the design would want. It is also the state somebody is most likely to be *in* when
 they open this screen, so it is worth drawing on purpose.
+
+### 6. Two words in the catalog's action bar are not the bundle's
+
+For the designer, and small. The bundle words this bar for ten catalog scenarios
+and the app takes all ten as written. Two states it reaches are not among them.
+
+**A fetch in flight.** Pressing `Install` starts a download, and the seven row
+states have no word for one - `CatalogRow.dc.html` goes straight from the offer
+to the outcome. So the press was followed by a second or two in which nothing in
+the window had changed. The bar says `Fetching <item>` for that gap, in the
+neutral tone, which is the tone the reading of a drop already takes: nothing has
+been written yet, and `Registering` in the warn follows when something is. If it
+belongs on the row instead, that is an eighth published state and a bigger
+change than this one.
+
+**The count under the `Installed` filter.** Two of the three positions are
+captioned - `Catalog · 9 items` under `All` (`ORNG Registry.dc.html:433`) and
+`Catalog · 1 update available` under `Updatable` (`:439`) - and the third is
+drawn but never captioned. It reads `Catalog · N installed`, which is the same
+sentence with the same substitution. Worth a look only because the pattern it
+extends is the design's and the extension is not.
 

@@ -828,6 +828,28 @@ rather than quietly widening it. Narrowed to nothing, the region says so in the 
 own sentence and offers the press that undoes it, with the toolbar still above it: the
 control that clears a filter must not go away with the rows it hid.
 
+**The action bar under the catalog counts the catalog.** It used to run one arithmetic
+whatever was on screen - staged rows, queued removals, which mode the press would use -
+so browsing read `Nothing pending` over a list of things to install, which is a true
+sentence about the other list. Nothing in the catalog is staged and nothing is queued: an
+install is one press on one row, so what the design puts there instead is how big the
+catalog is and what a press would cost. The count follows the install filter and nothing
+else, which is the same arithmetic the kind facets run on and for the same reason - the
+search and the chips move the note and never the number, so the summary says how big the
+catalog is and the note says what the filters did to it. Only the word changes with the
+filter, because the filter is what names what is being counted.
+
+Two states replace the count rather than qualifying it, and are separated by tone. An
+index that did not arrive or did not verify is `Catalog unavailable` in the accent; an
+install that was refused is `Install refused` in the error colour, one line for both
+kinds of refusal, because what the bar has to say is that nothing was written and the
+rows say which was which. A refusal outranks the count for the reason a failed attempt
+outranks the other six row states: it is the only thing there about a press the user just
+made. Two of the words are not the bundle's - `Fetching <item>`, because the bundle draws
+no state at all for a fetch in flight and the press was otherwise followed by a second of
+silence, and the count's wording under the `Installed` filter, which the bundle captions
+no scenario for.
+
 The inspector, which a row opens and which slides over the right of the list: what the
 entry is called, what Bitwig's browser says under it, the words that find it, its
 identity, where the registry points, where the document came from and whether it is

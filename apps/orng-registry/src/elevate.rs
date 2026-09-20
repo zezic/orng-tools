@@ -1129,6 +1129,41 @@ mod tests {
         );
     }
 
+    /// A child that dies before it calls back ends the run instead of hanging
+    /// it.
+    ///
+    /// The one failure the parent's own Windows code can be held to from a
+    /// test, and the one most worth holding it to: the connect blocks until
+    /// somebody opens the pipe, so waiting on it alone would wait for ever on a
+    /// child that never got that far. What proves it is that `current_exe` here
+    /// is the test binary rather than the application - it is started with
+    /// arguments libtest does not understand, so it exits without ever opening
+    /// the pipe, which is exactly the case being tested.
+    ///
+    /// **Ignored, because it starts a process and asks for rights.** On a
+    /// machine whose session is already elevated `runas` is silent; anywhere
+    /// else it raises the consent dialog, and a suite must not. `--ignored`
+    /// runs it, as it does the two that need the network.
+    #[cfg(windows)]
+    #[ignore = "starts a process and asks for administrator rights"]
+    #[test]
+    fn a_child_that_never_calls_back_ends_the_run_rather_than_hanging_it() {
+        let root = tempfile::tempdir().expect("somewhere to put an installation");
+        let install = orng_tools::testing::install(root.path());
+
+        let why = run(&Task::Apply(a_job()), &install, &|_| {})
+            .expect_err("a child that never called back was read as a success");
+
+        // The exact answer on a machine where `runas` is silent. A consent
+        // dialog that was dismissed instead says `declined`, which is a
+        // different outcome and should read as a failure of this test rather
+        // than be swallowed by it.
+        assert!(
+            why.contains("before it said anything"),
+            "a child that died before calling back was blamed on something else: {why}"
+        );
+    }
+
     /// Reports as they arrive down a pipe: one per line.
     fn transcript(reports: &[Report]) -> String {
         let mut wire = Vec::new();

@@ -550,3 +550,41 @@ And two pixels: the bundle's press carries a one-pixel accent outline on the
 accent fill, which makes it 34 where the action bar's is 32, and the dialog draws
 the action bar's control.
 
+
+### 9. Administrator rights: nothing in the bundle draws them, and Windows needs them
+
+For the designer, and Windows only. An installation under `Program Files` is not
+writable by an ordinary account, and **both** modes reach inside it: preparing
+writes the archive, and every entry change rewrites the description bundles that
+live in the installation's `localization` directory (4.4). The bundle draws no
+state for any of this - no consent, no elevated run, no refusal - so everything
+below is ours.
+
+*On Windows the press is not blocked.* A running process cannot gain rights, so
+preparation hands the work to a second copy of this application that Windows
+starts with them, and the consent dialog the user answers is the system's own.
+The window draws exactly what it draws for any other run: the progress dialog,
+fed from the child. Nothing new is drawn, which is the decision - a dialog of our
+own in front of Windows' would be two dialogs for one question.
+
+*Declining is not a failure.* `ShellExecuteEx` answers `ERROR_CANCELLED` when the
+consent dialog is dismissed, and the banner says `administrator rights were
+declined, so nothing was changed` rather than reporting an error. It is the one
+outcome where the user has already been told what they did.
+
+*Where the platform cannot ask, the press is refused.* macOS and Linux have no
+way for an application to ask for more rights that does not mean installing a
+privileged helper, and an installation under `/Applications` is the user's own
+anyway. So there the banner stands in the action bar's way and says `This
+installation is not yours to change.`, naming the directory that refused. It
+offers no control, for the reason the unrecognised tamper guard offers none:
+the remedy is the installation's permissions or the account this runs as, and
+neither is a press.
+
+*What is checked, and how.* Whether the installation can be written is answered
+by writing: a file created and removed in each of the three directories a
+modification touches - the archive's, `localization`, and `Library`. Permissions
+are not one model across the three platforms and cannot be read as one, and
+`Permissions::readonly` reports the DOS read-only attribute rather than an ACL.
+It is asked once when the installation is read, beside whether Bitwig is running,
+because both are conditions on a press rather than facts about the list.

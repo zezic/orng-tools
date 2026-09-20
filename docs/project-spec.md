@@ -652,23 +652,11 @@ Known gaps:
   scans processes instead, so the lock is not used and neither name has been checked against
   a Windows or Linux installation. Whichever the application ends up needing should be
   verified against one before it is trusted.
-- Preparation writes inside the installation, which on Windows is under `Program Files` and
-  needs elevation. Detecting that and asking for it is the application's, and unbuilt.
-- **Updating entries writes inside the installation too**, and the interface says it does
-  not. The description bundles live in the installation's `localization` directory (4.4)
-  and are rewritten on every entry change, so on Windows the cheap mode reaches the same
-  directory as the expensive one and can be refused for the same reason. Nothing else
-  about the mode changes - no archive work, no backup, Bitwig may stay open - and the
-  write is ordered before the entry list so a refusal registers nothing. Whatever answers
-  elevation for preparation has to answer it here, and until it does the honest statement
-  is "no part of the *archive*" rather than "no part of the installation".
-
-  **A removal that deletes the document is a second way in, under the copy strategy
-  only.** A placed document resolves inside the user library when the installation is
-  linked and inside the installation when it is copied (6.3), so the delete follows it
-  there. Nothing new is needed for it - it is the same directory, the same refusal and
-  the same answer - but it is one more press that reaches a place the interface says the
-  cheap mode does not.
+- Nothing has verified the consent dialog itself. The Windows machine available is reached
+  over SSH and its session is already elevated, so `runas` there succeeds without raising
+  one. What that proves is the child, the channel and the wait; what it does not is what a
+  user sees when the dialog appears, or what happens when they dismiss it. The declined
+  path is written against `ERROR_CANCELLED` and is unexercised.
 
 The catalog repository's own continuous integration, which checks a pull request, decides
 whether it may auto-merge, and on merge regenerates the index, signs it and publishes both
@@ -776,6 +764,49 @@ press is made. The dialog holds the window still in both senses, a scrim that ta
 click and egui's modal layer that keeps the keyboard out of the bars under it, and the
 progress dialog shares the skeleton. The words are the bundle's, with four exceptions the
 data forced; `design-review.md` round 3 item 8 records them.
+
+**Rights, which on Windows are the ordinary case.** An installation under `Program Files`
+is not writable by an ordinary account, and both modes reach inside it: preparing writes
+the archive, and every entry change rewrites the description bundles in the installation's
+`localization` directory (4.4). So the interface's old claim that the cheap mode touches no
+part of the installation was wrong, and it was wrong four ways - an inspector edit, a
+locate, a catalog install and a removal under the copy strategy all arrive there.
+
+Whether it can be written is answered **by writing**: a file created and removed in each of
+the three directories a modification touches. Permissions are not one model across three
+platforms and cannot be read as one, and on Windows `Permissions::readonly` reports the DOS
+attribute rather than the ACL that actually decides. It is asked once when the installation
+is read, beside whether Bitwig is running, because both are conditions on a press.
+
+**A running process cannot gain rights**, so a press that needs them is not done but
+*described*, and the description is carried to a second copy of this application that
+Windows starts holding them - `ShellExecuteEx` with the `runas` verb, whose consent dialog
+is the system's own. What crosses is a recipe and not a built transaction: the child replays
+the same `Update::add` and `Update::revise` calls the window would have made, so their
+assertions run on both sides of the process boundary. Rows cross in the entry list's own
+format rather than in a second per-row representation, and documents cross as bytes rather
+than as paths, because a path would be a file the elevated child reads on the say-so of
+something unelevated.
+
+**The installation root travels on the command line and never in the recipe.** Preparation
+runs the installation's own bundled JVM to verify its patch, so a child that took its root
+from the message would run `java.exe` from wherever that message pointed, elevated. The
+pipe is named with sixteen random bytes and created with `FILE_FLAG_FIRST_PIPE_INSTANCE`,
+so squatting the name is a guess rather than a race and a name already taken stops the
+launch rather than redirecting it. A restore crosses the same way and names a directory,
+which the child holds against the copies it can actually see rather than restoring what it
+was handed.
+
+The window waits on the connection and on the child's own handle together, so a child that
+dies before it calls back ends the run instead of hanging it, and a child that closes
+without saying how it went is a failure rather than a success - the rule the in-process
+worker already followed. Declining the dialog is neither: `ERROR_CANCELLED` is reported as
+rights declined and nothing changed.
+
+Where the platform has no way to ask - macOS and Linux, where an installation is the user's
+own anyway - the press is refused before it starts, with a banner naming the directory that
+refused and offering no control, because the remedy is the permissions or the account and
+neither is a press.
 
 **The index is kept, and checked on every launch.** What is written down is the bytes
 that arrived and the signature over them, in `~/.orng/catalog/`, never an index this

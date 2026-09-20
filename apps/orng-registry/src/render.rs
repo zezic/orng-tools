@@ -364,8 +364,9 @@ fn shot_dragging(name: &str, over: &[&str]) {
     look_while_dragging(&mut harness, name);
 }
 
-/// Render the catalog view with a fetch held still.
-fn shot_catalog(name: &str, fetching: Fetching) {
+/// The catalog view with a fetch held still, on an installation with nothing
+/// registered.
+fn catalog_with(name: &str, fetching: Fetching) -> Harness<'static, App> {
     let root = fixture(name);
     let session = found(&root, Helper::Present, GuardState::Disarmed);
     let mut session = Some(session);
@@ -376,6 +377,13 @@ fn shot_catalog(name: &str, fetching: Fetching) {
         app.show_view(View::Catalog);
         app
     });
+    harness.run();
+    harness
+}
+
+/// Render the catalog view with a fetch held still.
+fn shot_catalog(name: &str, fetching: Fetching) {
+    let mut harness = catalog_with(name, fetching);
     look(&mut harness, name);
 }
 
@@ -777,10 +785,22 @@ fn a_catalog_item_that_was_superseded() {
 /// the sample index publishes - so the row reads `Replacement available` and
 /// not `Update available`, which is the quieter of the two on purpose.
 fn superseded_entries() -> Manifest {
+    breath_follower_registered_at("1.2.0")
+}
+
+/// The same list a version behind, which is the only way to reach
+/// `Update available` on a catalog row: it is the one of the seven states that
+/// needs this machine and the index to disagree about a *version* rather than
+/// about an identity.
+fn outdated_entries() -> Manifest {
+    breath_follower_registered_at("1.0.0")
+}
+
+fn breath_follower_registered_at(version: &str) -> Manifest {
     let row = format!(
         "{BREATH_FOLLOWER}\tMODULATOR\tBREATH FOLLOWER\t\
          modulators/My Modulators/BREATH FOLLOWER.bwmodulator\t\
-         Envelope follower with a breath curve\tbreath follower duck envelope\t\t1.2.0\t\
+         Envelope follower with a breath curve\tbreath follower duck envelope\t\t{version}\t\
          8c41d0b9a3e5f7126d4b80ca35fe91d7b2064e83\tcatalog\n"
     );
     Manifest::parse(&format!("{ROWS}{row}")).expect("the sample entry list does not parse")
@@ -1514,6 +1534,141 @@ fn the_install_filter_shows_what_it_says_and_says_when_it_shows_nothing() {
     harness.run();
     assert!(anywhere(&harness, "BREATH FOLLOWER II"), "the filter was not undone");
     assert!(anywhere(&harness, "Modulators2"), "the counts were not undone");
+}
+
+/// Whether the action bar's summary reads `Catalog <SEP> <what>`.
+///
+/// Two nodes carry it, for `on_the_bar`'s reason at one remove:
+/// `widget::centred_block` lays the summary out once into a sizing pass to learn
+/// its height and once for real, and a sizing pass reaches the tree. Nothing
+/// here is about where it was drawn, so existence across both is the check.
+fn bar_says(harness: &Harness<'static, App>, what: &str) -> bool {
+    anywhere(harness, &format!("Catalog {} {what}", crate::widget::SEPARATOR))
+}
+
+/// The action bar counts what the view under it is showing.
+///
+/// `App::summary` ran the staged-and-queued arithmetic whatever was on screen,
+/// so the Catalog view's bar read `Nothing pending` over a list of things to
+/// install - a true sentence about the other list. The bundle words this bar as
+/// a count of the catalog and a note about what a press would cost, and every
+/// one of its ten catalog scenarios says so: `ORNG Registry.dc.html:433`.
+///
+/// **The number follows the install filter and nothing else**, which is the
+/// shell's own arithmetic and the same one the toolbar's facets run on. That is
+/// the half a picture cannot hold: a summary reading `2 items` over a list of
+/// two rows looks exactly as right whether it counted the index or the rows, and
+/// only a search that hides both tells them apart.
+#[test]
+fn the_action_bar_counts_the_catalog_and_not_the_local_pending_work() {
+    use egui::accesskit::Role;
+
+    let separator = crate::widget::SEPARATOR;
+    let mut harness = catalog_listing("catalog-summary", superseded_entries());
+
+    // `:433`. Two items published, and the note is what the press costs - the
+    // Local bar's own note in the words the catalog states it in.
+    assert!(bar_says(&harness, "2 items"), "the catalog bar does not count the catalog");
+    assert!(
+        !anywhere(&harness, "Nothing pending"),
+        "the catalog bar is still reporting the Local list's pending work"
+    );
+    let cost = format!("Installing is Update entries work {separator} no backup, \
+                        Bitwig may stay open");
+    assert!(anywhere(&harness, &cost), "the bar does not say what a press would cost");
+
+    // The filter names what is being counted, so it names the word. One of the
+    // two is registered here and neither has moved on.
+    on_the_bar(&harness, "Installed").click();
+    harness.run();
+    assert!(bar_says(&harness, "1 installed"), "the count did not follow the install filter");
+
+    on_the_bar(&harness, "Updatable").click();
+    harness.run();
+    assert!(bar_says(&harness, "0 updates available"));
+    // The list has gone empty under the filter, and `:486` moves that into the
+    // note rather than into the count.
+    assert!(
+        anywhere(&harness, "No item matches the current search and filters"),
+        "the bar says nothing about a list the filters emptied"
+    );
+
+    // And a search moves the note without moving the number: `:486` reads the
+    // whole catalog over a query that matches none of it.
+    on_the_bar(&harness, "All").click();
+    harness.run();
+    let field = harness.get_by_role(Role::TextInput);
+    field.focus();
+    field.type_text("granular");
+    harness.run();
+    assert!(
+        !anywhere(&harness, "BREATH FOLLOWER"),
+        "the query matched something, so this proves nothing about the count"
+    );
+    assert!(bar_says(&harness, "2 items"), "the search narrowed the count the bundle does not");
+    assert!(anywhere(&harness, "No item matches the current search and filters"));
+}
+
+/// `Catalog <SEP> 1 update available`, and the one sentence the design puts
+/// under it.
+///
+/// A fixture of its own because it is the only catalog state that needs this
+/// machine and the index to disagree about a version: everything else in the
+/// sample list turns on whether an identity is registered at all. `:438-439` is
+/// both halves - the count the `Updatable` filter names, and the note, which is
+/// the one thing about an update that an install does not share.
+#[test]
+fn an_update_the_catalog_publishes_is_counted_as_one_and_says_what_it_costs() {
+    let mut harness = catalog_listing("catalog-summary-update", outdated_entries());
+    assert!(anywhere(&harness, "Update available"), "the fixture reaches no updatable row");
+
+    on_the_bar(&harness, "Updatable").click();
+    harness.run();
+    assert!(bar_says(&harness, "1 update available"), "one update was not counted as one");
+    assert!(
+        anywhere(&harness, "An update changes the device in projects that already use it"),
+        "the bar does not say what an update reaches into"
+    );
+    // Singular, which is the whole of why the count is formatted rather than
+    // interpolated.
+    assert!(!anywhere(&harness, "1 updates available"));
+}
+
+/// The two states where the bar is not a count, and the tones that carry them.
+///
+/// Both are about something that failed, and the design separates them by how
+/// much: an index that did not arrive is a degraded window (`:474`, warn) and an
+/// install that was refused is a press that did not do what it said it would
+/// (`:481`, error). A count in either place would be the bar reporting on a list
+/// while the thing the user just did went unmentioned.
+#[test]
+fn a_catalog_that_did_not_arrive_and_an_install_that_was_refused_replace_the_count() {
+    let unavailable = catalog_with(
+        "catalog-bar-unavailable",
+        Fetching::frozen(Err("the signature does not match this index under this key".to_owned())),
+    );
+    assert!(anywhere(&unavailable, "Catalog unavailable"));
+    assert!(
+        !bar_says(&unavailable, "0 items"),
+        "an index that did not verify was counted as an empty catalog"
+    );
+
+    let mut refused = catalog_listing("catalog-bar-refused", superseded_entries());
+    let item = orng_catalog::Index::parse(SUPERSEDED)
+        .expect("the sample index parses")
+        .items
+        .pop()
+        .expect("the sample index is not empty");
+    refused.state_mut().set_installing(Install::finished(
+        item,
+        Err(crate::catalog::Refused::Download("the connection closed".to_owned())),
+    ));
+    settle(&mut refused);
+    assert!(anywhere(&refused, "Install refused"));
+    assert!(
+        !bar_says(&refused, "2 items"),
+        "the bar went on counting over a press that did not do what it said"
+    );
 }
 
 /// The catalog's search reads four fields where the Local list's reads two.

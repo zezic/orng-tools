@@ -604,6 +604,20 @@ impl App {
     /// from `draw` directly meant that swapping in another would have been four
     /// separate conditions that all had to agree about one fact.
     fn browse(&mut self, ui: &mut egui::Ui) {
+        // Every published item's state, worked out once for the frame because
+        // three surfaces are drawn from it: the action bar counts what the
+        // install filter is letting through, the toolbar counts the kinds it is,
+        // and the list draws the rows. Only in the Catalog view - in Local there
+        // is nothing on screen it answers for, and it walks the whole index
+        // against the whole entry list.
+        //
+        // Before the first panel rather than beside the list, because the action
+        // bar is laid out first and asks the same question.
+        let states = match self.view {
+            View::Catalog => self.published_states(),
+            View::Local => std::collections::BTreeMap::new(),
+        };
+
         egui::Panel::top("install")
             .exact_size(metric::INSTALL_BAR)
             .frame(widget::bar(self.palette))
@@ -612,7 +626,7 @@ impl App {
         egui::Panel::bottom("action")
             .exact_size(metric::ACTION_BAR)
             .frame(widget::bar(self.palette))
-            .show(ui, |ui| self.action_bar(ui));
+            .show(ui, |ui| self.action_bar(ui, &states));
 
         // Between the list and the action bar, which is where the design puts
         // it: a banner is about the press that is one control below it, and
@@ -628,16 +642,6 @@ impl App {
         // not as an overlay, which is the same statement: the toolbar beside it
         // is 548 wide, and so is every row under it.
         let inspector = self.aside(ui);
-
-        // Every published item's state, worked out once for the frame because
-        // two surfaces are drawn from it: the toolbar counts the kinds the
-        // install filter is letting through, and the list draws the rows. Only
-        // in the Catalog view - in Local there is nothing on screen it answers
-        // for, and it walks the whole index against the whole entry list.
-        let states = match self.view {
-            View::Catalog => self.published_states(),
-            View::Local => std::collections::BTreeMap::new(),
-        };
 
         if let Some(listing) = self.shows_a_list() {
             egui::Panel::top("toolbar")
@@ -3136,7 +3140,11 @@ impl App {
     }
 
     /// Region three: what one press would do, and the press.
-    fn action_bar(&mut self, ui: &mut egui::Ui) {
+    fn action_bar(
+        &mut self,
+        ui: &mut egui::Ui,
+        states: &std::collections::BTreeMap<Uuid, Published>,
+    ) {
         let palette = self.palette;
         ui.spacing_mut().item_spacing.x = 0.0;
         ui.horizontal_centered(|ui| {
@@ -3148,7 +3156,7 @@ impl App {
                 self.action(ui);
                 ui.add_space(metric::GAP);
                 ui.with_layout(Layout::left_to_right(Align::Center), |ui| {
-                    let (summary, tone, note) = self.summary();
+                    let (summary, tone, note) = self.summary(states);
                     widget::centred_block(ui, |ui| {
                         ui.add(
                             egui::Label::new(
@@ -3173,7 +3181,10 @@ impl App {
     }
 
     /// What one press would do, in words, beside the button that would do it.
-    fn summary(&self) -> (String, Tone, String) {
+    fn summary(
+        &self,
+        states: &std::collections::BTreeMap<Uuid, Published>,
+    ) -> (String, Tone, String) {
         let found = match &self.session {
             Session::Found(found) => found,
             Session::Unreadable { .. } => {
@@ -3200,6 +3211,15 @@ impl App {
                 }
                 Stage::Registering => ("Registering".to_owned(), Tone::Warn, String::new()),
             };
+        }
+
+        // Everything above is true of the window rather than of a list, which
+        // is why it comes first: an installation that cannot be read is not
+        // readable from the catalog either, and the second half of an install
+        // is the same `Registering` a drop's is. Below here the two views are
+        // counting different things.
+        if self.view == View::Catalog {
+            return self.catalog_summary(states);
         }
 
         // The design's own order and wording: "2 to add, 1 to remove, 2 to
@@ -3253,6 +3273,111 @@ impl App {
                 (format!("{many} entries to restore"), tone, note)
             }
             _ => ("Nothing pending".to_owned(), Tone::Neutral, note),
+        }
+    }
+
+    /// The same line for the Catalog view, which has no pending work to count.
+    ///
+    /// Nothing in the catalog is staged and nothing is queued: an install is one
+    /// press on one row, so the arithmetic the Local bar runs on has no answer
+    /// here and the bar would say `Nothing pending` over a list of nine things
+    /// to install. What the design puts there instead is how big the catalog is
+    /// and what a press would cost - `ORNG Registry.dc.html:433`.
+    ///
+    /// **The count is taken against the install filter and against nothing
+    /// else**, which is the same arithmetic the toolbar's facets run on and the
+    /// shell's own: `:433` reads `Catalog {SEP} 9 items` over a nine-item index,
+    /// `:439` reads `Catalog {SEP} 1 update available` over the same nine with
+    /// the `Updatable` filter pressed, and `:486` still reads nine with a search
+    /// in the field that matches none of them. So the search and the kind chips
+    /// do not move this number - the summary says how big the catalog is, and
+    /// the note says what the filters did to it.
+    fn catalog_summary(
+        &self,
+        states: &std::collections::BTreeMap<Uuid, Published>,
+    ) -> (String, Tone, String) {
+        let separator = widget::SEPARATOR;
+        let status = |item: &orng_catalog::IndexEntry| {
+            states.get(&item.uuid).expect("every published item was answered for this frame")
+        };
+
+        // The first half of an install, which is the one piece of work in this
+        // view that writes nothing - hence the neutral tone the reading of a
+        // drop gets, where preparing and registering take the warn. Not drawn in
+        // the bundle, which has no state for a fetch in flight; without it the
+        // window says nothing at all for the second or two after the press.
+        if let Some(fetching) = &self.installing {
+            let name = &fetching.item.name;
+            return (format!("Fetching {name}"), Tone::Neutral, String::new());
+        }
+        // A refusal outranks the count, for the reason `published_status` puts
+        // it first among the seven: it is the only thing here about a press the
+        // user just made, and the one they are owed an answer about. One line
+        // for both kinds, which is the bundle's own - `:481` states
+        // `Install refused` over a download failure and a verification failure
+        // together, because what the bar has to say is that nothing was
+        // installed and the rows say which was which.
+        if !self.refused.is_empty() {
+            return ("Install refused".to_owned(), Tone::Err, String::new());
+        }
+
+        match self.catalog.as_ref().and_then(|fetch| fetch.outcome.as_ref()) {
+            // Nobody has asked for it yet, or it has not answered. The same pair
+            // the list draws one empty state for, and they are alike here too:
+            // this bar is laid out before the region that starts the fetch, so
+            // the frame it starts on is a frame where there is no fetch at all.
+            None => ("Fetching the catalog".to_owned(), Tone::Neutral, String::new()),
+            // An index that did not arrive and one that did not verify read the
+            // same here, because the bar has one line and the difference is in
+            // the empty state's own words. `:474` and its warn tone.
+            Some(Err(_)) => ("Catalog unavailable".to_owned(), Tone::Warn, String::new()),
+            // No note: what installing costs is not worth saying over a list
+            // with nothing in it to install.
+            Some(Ok(index)) if index.items.is_empty() => {
+                (format!("Catalog {separator} 0 items"), Tone::Neutral, String::new())
+            }
+            Some(Ok(index)) => {
+                let counted = index
+                    .items
+                    .iter()
+                    .filter(|item| self.filter.shown.lets_through(status(item)))
+                    .count();
+                // The filter names what is being counted, so it names the word.
+                // Two of the three are the bundle's own; `Installed` is the same
+                // sentence for the one state it captions no scenario for.
+                let what = match self.filter.shown {
+                    Shown::All if counted == 1 => "1 item".to_owned(),
+                    Shown::All => format!("{counted} items"),
+                    Shown::Installed => format!("{counted} installed"),
+                    Shown::Updatable if counted == 1 => "1 update available".to_owned(),
+                    Shown::Updatable => format!("{counted} updates available"),
+                };
+
+                let showing = index
+                    .items
+                    .iter()
+                    .filter(|item| self.filter.accepts_published(item, status(item)))
+                    .count();
+                // What the filters did, then what a press would cost. The first
+                // is the design's answer to a list that has gone empty under the
+                // user - `:486`, where the summary goes on stating the whole
+                // catalog and the note carries the absence.
+                let note = if showing == 0 {
+                    "No item matches the current search and filters".to_owned()
+                } else if self.filter.shown == Shown::Updatable {
+                    // `:439`. The one sentence that matters about an update, on
+                    // the filter that is looking for them: it reaches backwards
+                    // into projects already saved, where an install does not.
+                    "An update changes the device in projects that already use it".to_owned()
+                } else {
+                    // `:433`. Which mode a press runs in is the thing a user is
+                    // entitled to know before pressing, and it is the Local
+                    // bar's own note in catalog words.
+                    let cost = "no backup, Bitwig may stay open";
+                    format!("Installing is Update entries work {separator} {cost}")
+                };
+                (format!("Catalog {separator} {what}"), Tone::Neutral, note)
+            }
         }
     }
 

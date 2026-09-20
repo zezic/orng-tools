@@ -1212,10 +1212,7 @@ pub fn status_colour(palette: Palette, status: Status) -> Color32 {
         Status::Staged | Status::PendingRestart => palette.ink_2,
         Status::Changed | Status::UpdateAvailable => palette.accent_text,
         Status::MissingFile | Status::Conflict => palette.err_text,
-        Status::Registered
-        | Status::Rejected
-        | Status::PendingRemoval
-        | Status::Factory => palette.ink_3,
+        Status::Registered | Status::Rejected | Status::PendingRemoval => palette.ink_3,
     }
 }
 
@@ -1384,8 +1381,8 @@ pub struct Inspected<'a> {
     pub provenance: Option<(&'a str, &'a str)>,
     /// Where the document actually is, which is a different question.
     pub placement: &'a Placement,
-    /// Which of the design's ten states this entry is in, which is what decides
-    /// the panel's action list - see [`crate::status`].
+    /// Which of the nine states this entry is in, which is what decides the
+    /// panel's action list - see [`crate::status`].
     pub status: Status,
     /// What removing this entry would do to its document, which is a setting
     /// and not a property of the entry. Carried here because the panel's
@@ -4620,7 +4617,10 @@ mod tests {
     ///
     /// The inputs are the bundle's own boxes, out of the two probes: the chips,
     /// the factory toggle, `Add files...`, four gaps of eight, and the field's
-    /// own content.
+    /// own content. **Four gaps where `App::local_toolbar` passes three** - the
+    /// toggle is deliberately not drawn, so that bar has one box fewer and one
+    /// gap fewer, and the field is given what the missing box leaves. What is
+    /// under test here is the formula, and the formula is the same on both.
     #[test]
     fn the_search_field_is_as_wide_as_the_bundle_draws_it() {
         let gaps = 4.0 * metric::TOOL_GAP;

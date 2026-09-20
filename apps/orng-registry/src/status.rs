@@ -3,11 +3,17 @@
 
 //! What a row says about an entry, and what can be done with it in that state.
 //!
-//! The design gives an entry exactly ten states and gates every row control on
-//! which one it is in - `EntryRow.dc.html:121-130`, and the same table again in
-//! the inspector. Getting that table wrong is not cosmetic: during design the
-//! panel offered `Reveal file` on a missing file, which is the one action that
-//! cannot work, while omitting `Locate file`, which is the one that fixes it.
+//! The design gives an entry ten states and gates every row control on which
+//! one it is in - `EntryRow.dc.html:121-130`, and the same table again in the
+//! inspector. Getting that table wrong is not cosmetic: during design the panel
+//! offered `Reveal file` on a missing file, which is the one action that cannot
+//! work, while omitting `Locate file`, which is the one that fixes it.
+//!
+//! **Nine of the ten are here.** The tenth is `Factory`, Bitwig's own content,
+//! and the only way to reach it is the `Show factory entries` toggle that this
+//! deliberately does not draw - `docs/design-review.md` round 3 item 3. A state
+//! nothing can be in is not a state; it is a row in the table that no test can
+//! do more than read back to itself.
 //!
 //! So the table is written once, here, rather than at each of the two surfaces
 //! that draw it. This module answers *which* controls a state offers;
@@ -15,21 +21,21 @@
 //! design's and not this module's.
 //!
 //! **Two tables, because there are two lists.** [`Status`] is an entry on this
-//! machine and [`Published`] is an item in the catalog, and they are not the
-//! same seven-of-ten: a catalog row can say `Available` and an entry cannot, and
-//! an entry can say `Missing file` and a catalog row has no file to miss. The
-//! one word they share - `Update available` - is the two lists describing the
-//! same fact from either end, and the README is explicit that it has to be one
-//! fact: an entry is catalog-sourced exactly when a catalog item of the same
-//! identity reads as installed.
+//! machine and [`Published`] is an item in the catalog, and neither is the
+//! other with rows taken out: a catalog row can say `Available` and an entry
+//! cannot, and an entry can say `Missing file` and a catalog row has no file to
+//! miss. The one word they share - `Update available` - is the two lists
+//! describing the same fact from either end, and the README is explicit that it
+//! has to be one fact: an entry is catalog-sourced exactly when a catalog item
+//! of the same identity reads as installed.
 
 use orng_tools::{BitwigVersion, TheDocument};
 
-/// One of the ten words the design has for the state of an entry.
+/// One of the nine words this has for the state of an entry.
 ///
-/// Every one of them, including the four nothing computes yet - the table is
-/// the contract, and a table missing a row reads as a state that offers
-/// nothing rather than as a state nobody has got to.
+/// Nine of the design's ten, and every one of them is reachable: something in
+/// [`crate::staging`] or [`crate::app`] puts a row in each. The tenth is
+/// `Factory` - see the module comment.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Status {
     /// Dropped, not yet applied.
@@ -51,8 +57,6 @@ pub enum Status {
     Rejected,
     /// Queued for removal, and still registered until the next apply.
     PendingRemoval,
-    /// Bitwig's own entry, which this application only reads.
-    Factory,
 }
 
 /// One thing a row offers to do to its entry.
@@ -90,7 +94,6 @@ impl Status {
             Status::Conflict => "Conflict",
             Status::Rejected => "Rejected",
             Status::PendingRemoval => "Pending removal",
-            Status::Factory => "Factory",
         }
     }
 
@@ -109,12 +112,6 @@ impl Status {
     /// Whether this state offers that one control.
     fn offers(self, action: Action) -> bool {
         use Status::*;
-        // Bitwig's own entry is read-only. Not one of these applies to it, and
-        // the design says so by hiding the whole group rather than by drawing
-        // controls that would refuse.
-        if self == Factory {
-            return false;
-        }
         match action {
             // A staged document is the only one whose identity can still be
             // changed, because nothing has been written under it yet.
@@ -370,10 +367,10 @@ mod tests {
         status.actions().collect()
     }
 
-    /// The ten the design has, so a test can walk them all. Here rather than on
+    /// The nine this draws, so a test can walk them all. Here rather than on
     /// [`Status`] because nothing that draws needs the list - each surface is
     /// handed the one status its row is in.
-    const EVERY: [Status; 10] = [
+    const EVERY: [Status; 9] = [
         Status::Staged,
         Status::Registered,
         Status::PendingRestart,
@@ -383,7 +380,6 @@ mod tests {
         Status::Conflict,
         Status::Rejected,
         Status::PendingRemoval,
-        Status::Factory,
     ];
 
     /// The design's table, transcribed from `EntryRow.dc.html:121-130`. Written
@@ -401,15 +397,20 @@ mod tests {
         assert_eq!(offered(Status::MissingFile), [Locate, Remove]);
         assert_eq!(offered(Status::PendingRemoval), [Undo, Reveal]);
         assert_eq!(offered(Status::Rejected), []);
-        assert_eq!(offered(Status::Factory), []);
     }
 
-    /// The ten words, against the keys of the bundle's own `STATUS` map -
-    /// `EntryRow.dc.html:68-79`. Copy from an external document, and the kind
-    /// of copy that is read as a state rather than as a sentence: `Missing
-    /// file` is the design's wording and `File missing` is not.
+    /// The nine words, in the order the bundle's own `STATUS` map lists them -
+    /// `EntryRow.dc.html:68-79`, less its tenth key. Copy from an external
+    /// document, and the kind of copy that is read as a state rather than as a
+    /// sentence: `Missing file` is the design's wording and `File missing` is
+    /// not.
+    ///
+    /// The map's `Factory` is the one key with nothing behind it here, and the
+    /// bundle does not gate the row's controls on that word either: `:117`,
+    /// `:118` and `:120` flatten the cursor, drop the hover fill and hide the
+    /// whole control group on a separate `factory` boolean.
     #[test]
-    fn the_words_are_the_designs_ten() {
+    fn the_words_are_the_designs_nine() {
         let said: Vec<&str> = EVERY.iter().map(|status| status.word()).collect();
         assert_eq!(
             said,
@@ -423,7 +424,6 @@ mod tests {
                 "Conflict",
                 "Rejected",
                 "Pending removal",
-                "Factory",
             ]
         );
     }

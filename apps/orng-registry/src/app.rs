@@ -2348,8 +2348,9 @@ impl App {
         };
 
         // Five boxes in the design and four here, because the factory toggle is
-        // not built: the field, the chips, the flexible gap, and `Add files...`.
-        // Three gaps between the four.
+        // deliberately not drawn - `docs/design-review.md` round 3 item 3. The
+        // field, the chips, the flexible gap, and `Add files...`, with three
+        // gaps between the four.
         const BETWEEN_TOOLBAR_GROUPS: f32 = 3.0 * metric::TOOL_GAP;
         let fixed = widget::measured(ui, "chips", |ui| {
             chips(ui);
@@ -2383,9 +2384,9 @@ impl App {
     /// Above the catalog: what to show of it, and how much of it is already here.
     ///
     /// The Local toolbar's shape with the box at the right end exchanged.
-    /// `Add files...` and the factory toggle are about documents on this
-    /// machine; what somebody browsing needs instead is to be able to ask which
-    /// of this list they already have - `CatalogToolbar.dc.html`.
+    /// `Add files...` and the design's factory toggle are about documents on
+    /// this machine; what somebody browsing needs instead is to be able to ask
+    /// which of this list they already have - `CatalogToolbar.dc.html`.
     fn catalog_toolbar(
         &mut self,
         ui: &mut egui::Ui,

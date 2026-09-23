@@ -908,10 +908,12 @@ mod windows {
     };
     use windows_sys::Win32::System::IO::{CancelIo, GetOverlappedResult, OVERLAPPED};
     use windows_sys::Win32::System::Pipes::{
-        ConnectNamedPipe, CreateNamedPipeW, PIPE_READMODE_BYTE, PIPE_TYPE_BYTE, PIPE_WAIT,
+        ConnectNamedPipe, CreateNamedPipeW, GetNamedPipeClientProcessId, PIPE_READMODE_BYTE,
+        PIPE_REJECT_REMOTE_CLIENTS, PIPE_TYPE_BYTE, PIPE_WAIT,
     };
     use windows_sys::Win32::System::Threading::{
-        CreateEventW, GetExitCodeProcess, INFINITE, ResetEvent, WaitForMultipleObjects,
+        CreateEventW, GetExitCodeProcess, GetProcessId, INFINITE, ResetEvent,
+        WaitForMultipleObjects,
     };
     use windows_sys::Win32::UI::Shell::{
         SEE_MASK_NOASYNC, SEE_MASK_NOCLOSEPROCESS, SHELLEXECUTEINFOW, ShellExecuteExW,
@@ -970,6 +972,7 @@ mod windows {
             return Err(format!("could not wait for an elevated run: {}", last()));
         }
         connecting.finish(&pipe)?;
+        pipe.admits(child.id())?;
 
         let mut channel = pipe.stream()?;
         outgoing
@@ -1011,7 +1014,9 @@ mod windows {
                 CreateNamedPipeW(
                     wide(name).as_ptr(),
                     PIPE_ACCESS_DUPLEX | FILE_FLAG_FIRST_PIPE_INSTANCE | FILE_FLAG_OVERLAPPED,
-                    PIPE_TYPE_BYTE | PIPE_READMODE_BYTE | PIPE_WAIT,
+                    // Local only: the child is on this machine, and nothing on
+                    // another one has any business opening this.
+                    PIPE_TYPE_BYTE | PIPE_READMODE_BYTE | PIPE_WAIT | PIPE_REJECT_REMOTE_CLIENTS,
                     // One instance. A second caller on this name is not a
                     // second child of ours; there is only ever one.
                     1,
@@ -1030,6 +1035,28 @@ mod windows {
         fn raw(&self) -> HANDLE {
             use std::os::windows::io::AsRawHandle;
             self.0.as_raw_handle()
+        }
+
+        /// Refuse whatever opened the pipe unless it is the process `expected`.
+        ///
+        /// Asked after the connect and before a byte crosses in either
+        /// direction. The name is random, but the pipe is listed where any
+        /// process can see it and its default access lets other accounts open
+        /// it, so the first to connect need not be the child. Something else is
+        /// told nothing and heard from not at all - and the child, finding the
+        /// one instance taken, exits without doing anything.
+        fn admits(&self, expected: u32) -> Result<(), String> {
+            let mut connected = 0u32;
+            if unsafe { GetNamedPipeClientProcessId(self.raw(), &mut connected) } == 0 {
+                return Err(format!("could not tell what opened the channel: {}", last()));
+            }
+            if connected != expected {
+                return Err(format!(
+                    "process {connected} opened the channel meant for the elevated run \
+                     ({expected}), so it was told nothing"
+                ));
+            }
+            Ok(())
         }
 
         /// Start listening, and answer with the thing to wait on.
@@ -1223,6 +1250,12 @@ mod windows {
             raw_of(&self.0)
         }
 
+        /// Its process id. Stable for as long as this handle is held, which is
+        /// what makes it safe to hold the pipe's client to.
+        fn id(&self) -> u32 {
+            unsafe { GetProcessId(self.handle()) }
+        }
+
         /// Why a child that exited before calling back gave up.
         ///
         /// Its exit code rather than a guess. A child that failed to parse its
@@ -1287,6 +1320,42 @@ mod windows {
     /// The last error, as a sentence rather than a number.
     fn last() -> String {
         std::io::Error::last_os_error().to_string()
+    }
+
+    #[cfg(test)]
+    mod tests {
+        use super::*;
+
+        /// The pipe lets on the process it expects and no other, and a child's
+        /// id is the one Windows gave it.
+        ///
+        /// Connected from this process, as the child connects from its own, so
+        /// the answer is the real one from the real call. No rights are asked
+        /// for: a pipe and an ordinary process are all it takes.
+        #[test]
+        fn only_the_child_that_was_started_is_let_onto_the_pipe() {
+            let name = pipe_name();
+            let pipe = Pipe::create(&name).expect("a pipe");
+            let connecting = pipe.arm_connect().expect("a connect");
+            let client = std::fs::OpenOptions::new().read(true).write(true).open(&name);
+
+            let spawned = std::process::Command::new("cmd")
+                .args(["/c", "exit"])
+                .spawn()
+                .expect("an ordinary process");
+            let expected = spawned.id();
+            let stranger = Child(OwnedHandle::from(spawned));
+
+            let here = pipe.admits(std::process::id());
+            let there = pipe.admits(stranger.id());
+            connecting.abandon(&pipe);
+            drop(client.expect("the pipe did not open"));
+
+            assert_eq!(stranger.id(), expected, "a child's id is not the one it was given");
+            assert_eq!(here, Ok(()), "the process that opened the pipe was refused");
+            let why = there.expect_err("another process's id was let onto the pipe");
+            assert!(why.contains("told nothing"), "refused for something else: {why}");
+        }
     }
 }
 

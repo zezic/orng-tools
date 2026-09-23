@@ -18,7 +18,7 @@
 //! than facts about the machine, so neither can be re-read from anywhere.
 
 use std::collections::BTreeSet;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use eframe::egui::{self, Align, Layout, vec2};
 use orng_catalog::Index;
@@ -415,6 +415,14 @@ pub struct App {
     /// index, because nothing else that happens makes them stop being true - and
     /// a refresh that confirms the index they were made against does not either.
     refused: std::collections::BTreeMap<Uuid, catalog::Refused>,
+    /// What the drop overlay says about the files over the window, while there
+    /// are any.
+    ///
+    /// Kept rather than drawn from the paths each frame, because saying it means
+    /// listing every hovered folder, and a drag redraws the window for as long
+    /// as it is held. Worked out again only when a different set of paths is
+    /// over the window.
+    hovered: Option<Hovered>,
 }
 
 impl App {
@@ -479,6 +487,7 @@ impl App {
             catalog: Catalog::opened(None),
             installing: None,
             refused: std::collections::BTreeMap::new(),
+            hovered: None,
         }
     }
 
@@ -3445,26 +3454,19 @@ impl App {
     }
 
     /// The drop target, while something is over the window.
-    fn hovering(&self, ui: &mut egui::Ui) {
-        let hovered: Vec<PathBuf> = ui.ctx().input(|input| {
+    fn hovering(&mut self, ui: &mut egui::Ui) {
+        let paths: Vec<PathBuf> = ui.ctx().input(|input| {
             input.raw.hovered_files.iter().filter_map(|file| file.path.clone()).collect()
         });
-        if hovered.is_empty() {
+        if paths.is_empty() {
+            self.hovered = None;
             return;
         }
-        // Accept and reject are stated before the drop, from the name alone,
-        // because that is all there is to go on while the file is still the
-        // operating system's. Every file is named, refused ones included: a
-        // listing of what will be taken cannot be checked against what the
-        // pointer is carrying.
-        let files: Vec<widget::Hovering> = hovered.iter().map(over).collect();
-        let staging = staging::documents_in(&hovered).len();
-        let heading = match staging {
-            0 => "Nothing here can be registered".to_owned(),
-            1 => "Drop to stage 1 document".to_owned(),
-            many => format!("Drop to stage {many} documents"),
-        };
-        widget::drop_target(ui, self.palette, &heading, &files);
+        if self.hovered.as_ref().is_none_or(|hovered| hovered.paths != paths) {
+            self.hovered = Some(Hovered::over(paths));
+        }
+        let hovered = self.hovered.as_ref().expect("set a moment ago");
+        widget::drop_target(ui, self.palette, &hovered.heading, &hovered.files);
     }
 
     /// Region three: what one press would do, and the press.
@@ -4061,17 +4063,55 @@ impl Confirming {
     }
 }
 
-/// One path under the pointer, as the drop overlay states it.
+/// What the drop overlay says about one set of paths under the pointer.
+struct Hovered {
+    /// The paths this was worked out for, so a different set is noticed.
+    paths: Vec<PathBuf>,
+    files: Vec<widget::Hovering>,
+    heading: String,
+}
+
+impl Hovered {
+    /// Accept and reject are stated before the drop, from the name alone,
+    /// because that is all there is to go on while the file is still the
+    /// operating system's. Every file is named, refused ones included: a
+    /// listing of what will be taken cannot be checked against what the pointer
+    /// is carrying.
+    ///
+    /// Each folder is listed once. The heading's count is the sum of the rows',
+    /// which is what [`staging::documents_in`] over the whole set would say,
+    /// because it takes each path on its own.
+    fn over(paths: Vec<PathBuf>) -> Hovered {
+        let mut staging = 0;
+        let files = paths
+            .iter()
+            .map(|path| {
+                let documents = staging::documents_in(std::slice::from_ref(path)).len();
+                staging += documents;
+                over(path, documents)
+            })
+            .collect();
+        let heading = match staging {
+            0 => "Nothing here can be registered".to_owned(),
+            1 => "Drop to stage 1 document".to_owned(),
+            many => format!("Drop to stage {many} documents"),
+        };
+        Hovered { paths, files, heading }
+    }
+}
+
+/// One path under the pointer, as the drop overlay states it, given how many
+/// documents a drop of it would read.
 ///
 /// A folder is named as a folder and counted, rather than unfolded into the
 /// documents inside it: what the user is dragging is the folder, and a listing
 /// that says something else cannot be checked against the pointer.
-fn over(path: &PathBuf) -> widget::Hovering {
+fn over(path: &Path, documents: usize) -> widget::Hovering {
     let name = path.file_name().unwrap_or(path.as_os_str()).to_string_lossy().into_owned();
     if Kind::from_path(path).is_some() {
         return widget::Hovering { name, note: String::new(), accepted: true };
     }
-    match staging::documents_in(std::slice::from_ref(path)).len() {
+    match documents {
         0 => widget::Hovering { name, note: "ignored".to_owned(), accepted: false },
         1 => widget::Hovering {
             name: format!("{name}/"),

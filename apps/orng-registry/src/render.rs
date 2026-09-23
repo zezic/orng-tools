@@ -782,6 +782,55 @@ fn files_held_over_the_window_that_cannot_be_registered() {
     shot_dragging("dragging-refused", &["notes.txt", "mix.wav"]);
 }
 
+/// The overlay says what is over the window now, not what was over it first.
+///
+/// What it says is kept for as long as the same paths are held there, because
+/// working it out lists every hovered folder and a drag redraws every frame. So
+/// this carries one set, then a different one, then nothing, then the first set
+/// again after its folder has changed. The folder is also the one case the two
+/// pictures above do not draw: its documents counted in the heading and on its
+/// own row.
+#[test]
+fn the_drop_overlay_follows_what_is_held_over_the_window() {
+    let root = fixture("dragging-again");
+    let session = found(&root, Helper::Present, GuardState::Disarmed);
+    let drop = root.join("dragged");
+    let folder = drop.join("My Devices");
+    std::fs::create_dir_all(&folder).expect("a place to drag from");
+    for file in ["WAVESHAPER ALPHA.bwdevice", "SLEW LIMITER.bwmodule", "notes.txt"] {
+        std::fs::write(folder.join(file), b"the drag does not read it").expect("could not write");
+    }
+    let lone = drop.join("BREATH.bwmodulator");
+    std::fs::write(&lone, b"the drag does not read it").expect("could not write");
+
+    let mut harness = local_window(session);
+    let mut hold = |paths: &[&std::path::Path]| {
+        harness.input_mut().hovered_files = paths
+            .iter()
+            .map(|path| egui::HoveredFile { path: Some(path.to_path_buf()), ..Default::default() })
+            .collect();
+        harness.run_steps(SETTLING_PASSES);
+        let says = |heading: &str| harness.query_all_by_label(heading).next().is_some();
+        [says("Drop to stage 1 document"), says("Drop to stage 3 documents")]
+    };
+
+    assert_eq!(hold(&[&lone]), [true, false], "one document was not stated as one");
+    assert_eq!(
+        hold(&[&folder, &lone]),
+        [false, true],
+        "the overlay kept what it said about the drag before"
+    );
+    assert_eq!(hold(&[]), [false, false], "the overlay outlived the drag");
+
+    std::fs::remove_file(folder.join("SLEW LIMITER.bwmodule")).expect("could not remove");
+    std::fs::remove_file(folder.join("WAVESHAPER ALPHA.bwdevice")).expect("could not remove");
+    assert_eq!(
+        hold(&[&folder, &lone]),
+        [true, false],
+        "a new drag of the same paths was stated from the last one"
+    );
+}
+
 /// The onboarding surface: an installation found, nothing registered, nothing
 /// dropped. It has to name the extensions and say that the first run needs
 /// Bitwig closed.

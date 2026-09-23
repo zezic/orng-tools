@@ -786,7 +786,11 @@ the same `Update::add` and `Update::revise` calls the window would have made, so
 assertions run on both sides of the process boundary. Rows cross in the entry list's own
 format rather than in a second per-row representation, and documents cross as bytes rather
 than as paths, because a path would be a file the elevated child reads on the say-so of
-something unelevated.
+something unelevated. They follow the recipe's one line of JSON rather than sitting inside
+it, each as many bytes as the line says it is. So every read has a bound: a line is at most
+16 MiB, the size of a very long entry list, in both directions, and a document at most
+64 MiB, refused on its stated length before a byte of it is read - and by the window before
+the child is started, so a document too large to cross never costs a consent dialog.
 
 **The installation root travels on the command line and never in the recipe.** Preparation
 runs the installation's own bundled JVM to verify its patch, so a child that took its root

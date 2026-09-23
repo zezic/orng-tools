@@ -32,10 +32,15 @@
 //!
 //! **The installation root is on the command line, never in the job.** The
 //! preparation runs the installation's own bundled JVM to verify its patch, so a
-//! child that took its root from a file would run `java.exe` from wherever that
-//! file pointed, elevated. A command line is set by the parent at
+//! child that took its root from the job would run `java.exe` from wherever the
+//! job pointed, elevated. A command line is set by the parent at
 //! `ShellExecuteEx` and read by the child out of its own process; nothing
 //! between them can rewrite it.
+//!
+//! What that stops is a root arriving *through the job* - from a process that
+//! got onto the pipe, or from a fault in how a job is built. It does not stop
+//! the parent, which writes the command line and can name any root it likes.
+//! The only check on that is the administrator who answers the consent dialog.
 //!
 //! # What is deliberately not discovered by the child
 //!
@@ -95,8 +100,10 @@ pub struct Job {
     pub work: Work,
     /// Where documents go when they are not placed inside the installation.
     ///
-    /// Beside the installation root rather than inside the job on the wire:
-    /// see the module's note on what the child does not take from a job.
+    /// On the wire, unlike the installation root: it decides where documents
+    /// are written, never which program runs. It crosses rather than being
+    /// discovered for the reason the home does - the window resolved it, from
+    /// the setting or the platform's own, as the account that asked.
     pub library: PathBuf,
     #[serde(with = "crate::settings::placement")]
     pub placement: Strategy,
@@ -677,6 +684,11 @@ fn apply(
 /// list` is what knows that - so a path that is not one of those is refused
 /// here rather than being copied over an installation by a process holding
 /// rights the window did not.
+///
+/// That limits which directory, not what is in it. The backups are under the
+/// asking account's home, which that account can write, so what a restore
+/// copies is whatever that account left there. Nothing here tells a pristine
+/// copy from one changed since it was taken.
 ///
 /// The entry list is deliberately untouched, which is what leaves the
 /// installation in the `Needs re-apply` state the window already says.

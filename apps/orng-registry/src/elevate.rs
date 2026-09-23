@@ -28,6 +28,12 @@
 //! which work this is, where it writes, what becomes of a removed file - have a
 //! wire form of their own, and those are in this module.
 //!
+//! The documents do not cross in that line at all. It names each one and says
+//! how long it is, and the bytes follow it, whole and in the same order - see
+//! [`Attached`]. So both halves have a size a reader can hold them to: a line
+//! is never longer than an entry list, and a document never longer than a
+//! document.
+//!
 //! # What is deliberately not taken from the job
 //!
 //! **The installation root is on the command line, never in the job.** The
@@ -74,11 +80,15 @@ use crate::work::Work;
 /// Three presses reach inside an installation and only two of them are the same
 /// operation, so this is where they meet: a child is started the same way, told
 /// the same way and watched the same way whichever it was asked for.
+///
+/// `D` is what a document is while the task is held: its bytes everywhere but
+/// on the line that crosses the pipe, where it is only their length.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub enum Task {
+#[serde(bound = "D: OnTheLine")]
+pub enum Task<D = Vec<u8>> {
     /// Change what is registered, preparing the installation first if it is not
     /// prepared yet.
-    Apply(Job),
+    Apply(Job<D>),
     /// Put a pristine copy back over the installation.
     ///
     /// The directory it was taken into, which is the only name a backup has -
@@ -95,7 +105,8 @@ pub enum Task {
 /// [`Update`] by [`Job::update`] in exactly one place - so the run that happens
 /// here and the run that happens in a child are the same run, described once.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct Job {
+#[serde(bound = "D: OnTheLine")]
+pub struct Job<D = Vec<u8>> {
     /// Whether the installation is prepared first, or only the entries change.
     pub work: Work,
     /// Where documents go when they are not placed inside the installation.
@@ -119,7 +130,7 @@ pub struct Job {
     #[serde(with = "list")]
     pub written: Manifest,
     /// The documents to place, by the identity of the row that describes them.
-    pub documents: Vec<Placing>,
+    pub documents: Vec<Placing<D>>,
     /// Identities to forget, and what becomes of each one's file.
     pub removed: Vec<Removal>,
 }
@@ -146,7 +157,8 @@ mod list {
 
 /// A document to place, and the identity it is placed under.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct Placing {
+#[serde(bound = "D: OnTheLine")]
+pub struct Placing<D = Vec<u8>> {
     pub uuid: Uuid,
     /// What the bytes are to be read as.
     #[serde(with = "kind")]
@@ -154,9 +166,53 @@ pub struct Placing {
     /// The document itself.
     ///
     /// The bytes cross rather than a path to them. A path would be a file the
-    /// elevated child reads on the say-so of something running unelevated, and
-    /// the bytes are twenty to thirty kilobytes.
-    pub bytes: Vec<u8>,
+    /// elevated child reads on the say-so of something running unelevated.
+    ///
+    /// They cross after the line and not inside it. A document runs from a few
+    /// kilobytes to a couple of megabytes, and inside JSON it would be an array
+    /// of numbers three and a half times its size, in a line with no length a
+    /// reader could hold it to.
+    pub bytes: D,
+}
+
+/// What a document can be on the line: [`Attached`], and nothing else.
+///
+/// A task that holds bytes therefore has no JSON form at all, and the one way
+/// it crosses is as a line followed by its documents.
+pub trait OnTheLine: Serialize + serde::de::DeserializeOwned {}
+
+/// A document on the line: how many of the bytes that follow it are this one's.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(transparent)]
+pub struct Attached(u64);
+
+impl OnTheLine for Attached {}
+
+/// The longest line either side reads.
+///
+/// A line carries an entry list at most - the job's, or the one a child hands
+/// back - and a row is a few hundred bytes, so this is tens of thousands of
+/// entries. What it stops is the other end of the pipe growing one line until
+/// the reader runs out of memory.
+const LINE_LIMIT: u64 = 16 * 1024 * 1024;
+
+/// The largest document a child takes.
+///
+/// Bitwig's own run to kilobytes, and a Grid patch with a great deal in it to a
+/// megabyte or two. Held against the length the line states before a byte of
+/// the document is read, so a length that is a lie costs a refusal rather than
+/// an allocation.
+const DOCUMENT_LIMIT: u64 = 64 * 1024 * 1024;
+
+/// Refuse a document longer than a child takes, on either side of the pipe.
+fn within_limit(uuid: Uuid, length: u64) -> Result<(), String> {
+    if length > DOCUMENT_LIMIT {
+        return Err(format!(
+            "the document for {uuid} is {length} bytes, and an elevated run takes at most \
+             {DOCUMENT_LIMIT}"
+        ));
+    }
+    Ok(())
 }
 
 /// An identity to forget, and what becomes of the file behind it.
@@ -314,6 +370,124 @@ impl Placing {
     }
 }
 
+/// A task as it is about to cross: the line, and the documents that follow it.
+///
+/// Built before the child is started, so that a document too large to be taken
+/// is refused before anybody is asked for the rights to write it.
+#[cfg(any(windows, test))]
+struct Outgoing<'a> {
+    line: Task<Attached>,
+    documents: Vec<&'a [u8]>,
+}
+
+#[cfg(any(windows, test))]
+impl Task {
+    fn outgoing(&self) -> Result<Outgoing<'_>, String> {
+        let job = match self {
+            Task::Apply(job) => job,
+            Task::Restore { from } => {
+                let line = Task::Restore { from: from.clone() };
+                return Ok(Outgoing { line, documents: Vec::new() });
+            }
+        };
+        let attached = job
+            .documents
+            .iter()
+            .map(|placing| {
+                let length = placing.bytes.len() as u64;
+                within_limit(placing.uuid, length)?;
+                Ok(Placing { uuid: placing.uuid, kind: placing.kind, bytes: Attached(length) })
+            })
+            .collect::<Result<_, String>>()?;
+        let line = Task::Apply(Job {
+            work: job.work,
+            library: job.library.clone(),
+            placement: job.placement,
+            base: job.base.clone(),
+            written: job.written.clone(),
+            documents: attached,
+            removed: job.removed.clone(),
+        });
+        let documents = job.documents.iter().map(|placing| placing.bytes.as_slice()).collect();
+        Ok(Outgoing { line, documents })
+    }
+}
+
+#[cfg(any(windows, test))]
+impl Outgoing<'_> {
+    /// The line, then each document's bytes as they are, in the line's order.
+    fn send(&self, to: &mut impl Write) -> std::io::Result<()> {
+        send(to, &self.line)?;
+        for document in &self.documents {
+            to.write_all(document)?;
+        }
+        to.flush()
+    }
+}
+
+impl Task<Attached> {
+    /// The task the line describes, each document read off what follows it.
+    fn attach(self, rest: &mut impl Read) -> Result<Task, String> {
+        let job = match self {
+            Task::Apply(job) => job,
+            Task::Restore { from } => return Ok(Task::Restore { from }),
+        };
+        let documents = job
+            .documents
+            .into_iter()
+            .map(|placing| {
+                let Attached(length) = placing.bytes;
+                within_limit(placing.uuid, length)?;
+                let mut bytes = vec![0; length as usize];
+                rest.read_exact(&mut bytes).map_err(|e| {
+                    format!("the document for {} did not arrive whole: {e}", placing.uuid)
+                })?;
+                Ok(Placing { uuid: placing.uuid, kind: placing.kind, bytes })
+            })
+            .collect::<Result<_, String>>()?;
+        Ok(Task::Apply(Job {
+            work: job.work,
+            library: job.library,
+            placement: job.placement,
+            base: job.base,
+            written: job.written,
+            documents,
+            removed: job.removed,
+        }))
+    }
+}
+
+/// Read what the window sent: the line, and the documents after it.
+///
+/// `None` when the window went away before it said anything.
+fn read_task(from: &mut impl BufRead) -> Result<Option<Task>, String> {
+    let Some(line) = read_line(from).map_err(|e| format!("the job did not arrive: {e}"))? else {
+        return Ok(None);
+    };
+    let line: Task<Attached> =
+        serde_json::from_str(&line).map_err(|e| format!("the job did not read: {e}"))?;
+    line.attach(from).map(Some)
+}
+
+/// One line, refused if it runs past [`LINE_LIMIT`] without ending.
+///
+/// `None` at the end of what there is to read. A last line with no newline is
+/// still a line, as `BufRead::lines` has it.
+fn read_line(from: &mut impl BufRead) -> std::io::Result<Option<String>> {
+    let mut line = String::new();
+    let read = Read::take(&mut *from, LINE_LIMIT).read_line(&mut line)?;
+    if read == 0 {
+        return Ok(None);
+    }
+    if !line.ends_with('\n') && read as u64 == LINE_LIMIT {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidData,
+            format!("a line ran past {LINE_LIMIT} bytes"),
+        ));
+    }
+    Ok(Some(line))
+}
+
 /// What the child says as it goes.
 ///
 /// A wire form of its own rather than [`crate::work`]'s `Progress`, because the
@@ -368,12 +542,12 @@ impl From<WireStep> for orng_tools::Step {
     }
 }
 
-/// One JSON value per line, in both directions.
+/// One JSON value, as one line.
 ///
-/// A line rather than a length prefix because the whole conversation is JSON
-/// already and a newline cannot occur inside one of these values: `serde_json`
-/// escapes every control character it writes, and the document bytes cross as
-/// an array of numbers rather than as text.
+/// A line rather than a length prefix because a newline cannot occur inside one
+/// of these values: `serde_json` escapes every control character it writes.
+/// Every report is one of these, and so is the start of a task; a task's
+/// documents are the one thing that crosses otherwise, after its line.
 fn send(to: &mut impl Write, what: &impl Serialize) -> std::io::Result<()> {
     let line = serde_json::to_string(what)
         .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
@@ -484,9 +658,11 @@ fn listen(
     from: impl Read,
     say: &impl Fn(Report),
 ) -> Result<Manifest, String> {
+    let mut from = BufReader::new(from);
     let mut ended = None;
-    for line in BufReader::new(from).lines() {
-        let line = line.map_err(|e| format!("the elevated run stopped being readable: {e}"))?;
+    while let Some(line) = read_line(&mut from)
+        .map_err(|e| format!("the elevated run stopped being readable: {e}"))?
+    {
         if line.trim().is_empty() {
             continue;
         }
@@ -607,7 +783,7 @@ impl Serving {
     }
 }
 
-/// The child's half of the conversation: read one job, run it, report.
+/// The child's half of the conversation: read one task, carry it out, report.
 ///
 /// Takes what it reads and what it writes rather than opening them, so that the
 /// protocol can be exercised without a process at all - and so that the one
@@ -622,27 +798,23 @@ pub fn serve(
     install: Installation,
     home: OrngHome,
 ) -> std::io::Result<()> {
-    let mut lines = BufReader::new(input).lines();
-    let line = match lines.next() {
-        Some(line) => line?,
+    let outcome = match read_task(&mut BufReader::new(input)) {
         // The parent went away before it said what to do. Nothing has been
         // written and there is nobody left to tell.
-        None => return Ok(()),
+        Ok(None) => return Ok(()),
+        Ok(Some(task)) => run_task(task, install, home, &mut output),
+        Err(why) => Err(why),
     };
-
-    let outcome = run_job(&line, install, home, &mut output);
     send(&mut output, &Report::Finished(outcome))
 }
 
-/// Parse the task, carry it out, and report every step as it goes.
-fn run_job(
-    line: &str,
+/// Carry the task out, and report every step as it goes.
+fn run_task(
+    task: Task,
     install: Installation,
     home: OrngHome,
     output: &mut impl Write,
 ) -> Result<String, String> {
-    let task: Task =
-        serde_json::from_str(line).map_err(|e| format!("the job did not read: {e}"))?;
     match task {
         Task::Apply(job) => apply(job, install, home, output),
         Task::Restore { from } => restore(&from, &install, &home),
@@ -746,7 +918,7 @@ mod windows {
     };
     use windows_sys::Win32::UI::WindowsAndMessaging::SW_HIDE;
 
-    use super::{Report, Task, command_line, listen, send};
+    use super::{Report, Task, command_line, listen};
 
     /// How much the pipe holds before a writer has to wait for a reader.
     ///
@@ -762,6 +934,9 @@ mod windows {
         home: &OrngHome,
         say: &impl Fn(Report),
     ) -> Result<Manifest, String> {
+        // Before anything is started: a document too large to cross is refused
+        // here rather than after the consent dialog.
+        let outgoing = task.outgoing()?;
         // Named before the child is launched, because the name is what the
         // child is told to call back on.
         let name = pipe_name();
@@ -797,7 +972,8 @@ mod windows {
         connecting.finish(&pipe)?;
 
         let mut channel = pipe.stream()?;
-        send(&mut channel, task)
+        outgoing
+            .send(&mut channel)
             .map_err(|e| format!("the elevated run could not be told: {e}"))?;
         listen(channel, say)
     }
@@ -1126,11 +1302,10 @@ mod tests {
     /// a document under a registration that no longer described it.
     #[test]
     fn a_job_comes_back_off_the_wire_as_it_went() {
-        let job = a_job();
-        let line = serde_json::to_string(&job).expect("a job did not serialise");
-        let back: Job = serde_json::from_str(&line).expect("a job did not come back");
+        let task = Task::Apply(a_job());
+        let back = off_the_wire(&on_the_wire(&task));
 
-        assert_eq!(back, job, "a job did not survive the wire");
+        assert_eq!(back, Ok(Some(task)), "a job did not survive the wire");
     }
 
     /// And it describes the same update on the other side.
@@ -1142,8 +1317,10 @@ mod tests {
     #[test]
     fn a_job_that_crossed_describes_the_same_update() {
         let job = a_job();
-        let line = serde_json::to_string(&job).expect("a job did not serialise");
-        let back: Job = serde_json::from_str(&line).expect("a job did not come back");
+        let Ok(Some(Task::Apply(back))) = off_the_wire(&on_the_wire(&Task::Apply(job.clone())))
+        else {
+            panic!("a job did not come back as a job");
+        };
 
         let here = job.update().expect("the job does not describe an update");
         let there = back.update().expect("the job that crossed does not describe one");
@@ -1177,12 +1354,10 @@ mod tests {
     /// point after this at which a job could be holding a kind that is not one.
     #[test]
     fn a_placing_whose_kind_is_not_one_is_refused() {
-        let line = serde_json::to_string(&a_job()).expect("a job did not serialise");
-        let tampered = line.replace("\"bwdevice\"", "\"bwexploit\"");
-        assert_ne!(tampered, line, "the kind this test rewrites is not in a job any more");
+        let wire = on_the_wire(&Task::Apply(a_job()));
+        let tampered = in_the_line(&wire, "\"bwdevice\"", "\"bwexploit\"");
 
-        serde_json::from_str::<Job>(&tampered)
-            .expect_err("a document of no known kind crossed anyway");
+        off_the_wire(&tampered).expect_err("a document of no known kind crossed anyway");
     }
 
     /// And so is a removal that says something other than what becomes of a
@@ -1192,11 +1367,10 @@ mod tests {
     fn a_removal_that_does_not_say_what_becomes_of_the_document_is_refused() {
         let mut job = a_job();
         job.remove(Uuid::new_v4(), TheDocument::Deleted);
-        let line = serde_json::to_string(&job).expect("a job did not serialise");
-        let tampered = line.replace("\"deleted\"", "\"maybe\"");
-        assert_ne!(tampered, line, "the outcome this test rewrites is not in a job any more");
+        let wire = on_the_wire(&Task::Apply(job));
+        let tampered = in_the_line(&wire, "\"deleted\"", "\"maybe\"");
 
-        serde_json::from_str::<Job>(&tampered).expect_err("a removal of no known kind crossed");
+        off_the_wire(&tampered).expect_err("a removal of no known kind crossed");
     }
 
     /// Both tasks cross, and cross as different things.
@@ -1212,11 +1386,73 @@ mod tests {
             Task::Restore { from: PathBuf::from("/home/someone/.orng/backups/5.1.9") },
         ];
         for task in &tasks {
-            let line = serde_json::to_string(task).expect("a task did not serialise");
-            let back: Task = serde_json::from_str(&line).expect("a task did not come back");
-            assert_eq!(&back, task, "a task did not survive the wire");
+            let back = off_the_wire(&on_the_wire(task));
+            assert_eq!(back.as_ref(), Ok(&Some(task.clone())), "a task did not survive the wire");
         }
         assert_ne!(tasks[0], tasks[1], "the two tasks are the same value");
+    }
+
+    /// A document crosses as its own bytes, after the line, and not as a number
+    /// array inside it: the wire is the line and then exactly the document.
+    #[test]
+    fn a_document_crosses_as_itself_after_the_line() {
+        let job = a_job();
+        let bytes = job.documents[0].bytes.clone();
+        let wire = on_the_wire(&Task::Apply(job));
+
+        let line = wire.iter().position(|byte| *byte == b'\n').expect("no line on the wire") + 1;
+        assert_eq!(&wire[line..], &bytes[..], "what follows the line is not the document");
+    }
+
+    /// A length over the limit is refused as the line is read, before any of
+    /// the bytes it claims are waited for or allocated. The wire here carries
+    /// none of them, so an answer about bytes that did not arrive would mean the
+    /// length was believed.
+    #[test]
+    fn a_document_longer_than_a_child_takes_is_refused_before_it_is_read() {
+        let task = Task::Apply(a_job());
+        let mut outgoing = task.outgoing().expect("a job too large to send");
+        let Task::Apply(line) = &mut outgoing.line else { panic!("a job left as another task") };
+        line.documents[0].bytes = Attached(DOCUMENT_LIMIT + 1);
+        let mut wire = Vec::new();
+        send(&mut wire, &outgoing.line).expect("the line did not send");
+
+        let why = off_the_wire(&wire).expect_err("a document over the limit was taken");
+        assert!(why.contains("at most"), "refused for something other than its length: {why}");
+    }
+
+    /// And the window will not send one, so the refusal comes before the
+    /// consent dialog rather than after it.
+    #[test]
+    fn a_document_longer_than_a_child_takes_is_not_sent() {
+        let mut job = a_job();
+        job.documents[0].bytes = vec![0; DOCUMENT_LIMIT as usize + 1];
+
+        let refused = Task::Apply(job).outgoing().map(|_| ());
+        assert!(matches!(&refused, Err(why) if why.contains("at most")), "{refused:?}");
+    }
+
+    /// A document cut short is refused rather than placed as what arrived.
+    #[test]
+    fn a_document_cut_short_is_refused() {
+        let wire = on_the_wire(&Task::Apply(a_job()));
+
+        let why = off_the_wire(&wire[..wire.len() - 1]).expect_err("a truncated document crossed");
+        assert!(why.contains("did not arrive whole"), "refused for something else: {why}");
+    }
+
+    /// A line may run to the limit and no further, on both ends of the pipe:
+    /// the child's reading of a task, and the window's reading of reports.
+    #[test]
+    fn a_line_past_the_limit_is_refused_by_both_readers() {
+        let at_the_limit = format!("{}\n", " ".repeat(LINE_LIMIT as usize - 1));
+        assert_eq!(read_line(&mut at_the_limit.as_bytes()).ok().flatten(), Some(at_the_limit));
+
+        let past = "x".repeat(LINE_LIMIT as usize + 1);
+        let why = off_the_wire(past.as_bytes()).expect_err("the child read a line past the limit");
+        assert!(why.contains("ran past"), "the child refused it for something else: {why}");
+        let why = listen(past.as_bytes(), &|_| {}).expect_err("the window read one too");
+        assert!(why.contains("ran past"), "the window refused it for something else: {why}");
     }
 
     /// A whole conversation, read as the window reads it.
@@ -1475,6 +1711,30 @@ mod tests {
             why.contains("before it said anything"),
             "a child that died before calling back was blamed on something else: {why}"
         );
+    }
+
+    /// A task as the window puts it on the pipe.
+    fn on_the_wire(task: &Task) -> Vec<u8> {
+        let mut wire = Vec::new();
+        let outgoing = task.outgoing().expect("a task too large to send");
+        outgoing.send(&mut wire).expect("a task did not send");
+        wire
+    }
+
+    /// And as the child reads it back.
+    fn off_the_wire(mut wire: &[u8]) -> Result<Option<Task>, String> {
+        read_task(&mut wire)
+    }
+
+    /// The wire with one thing in its line rewritten, and the documents after
+    /// it left alone - they are bytes, and a rewrite there would be a different
+    /// test.
+    fn in_the_line(wire: &[u8], from: &str, to: &str) -> Vec<u8> {
+        let end = wire.iter().position(|byte| *byte == b'\n').expect("no line on the wire");
+        let line = std::str::from_utf8(&wire[..end]).expect("the line is not text");
+        let tampered = line.replace(from, to);
+        assert_ne!(tampered, line, "{from} is not in the line any more");
+        [tampered.as_bytes(), &wire[end..]].concat()
     }
 
     /// Reports as they arrive down a pipe: one per line.

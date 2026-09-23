@@ -797,9 +797,11 @@ runs the installation's own bundled JVM to verify its patch, so a child that too
 from the message would run `java.exe` from wherever that message pointed, elevated. The
 pipe is named with sixteen random bytes and created with `FILE_FLAG_FIRST_PIPE_INSTANCE`,
 so squatting the name is a guess rather than a race and a name already taken stops the
-launch rather than redirecting it. A restore crosses the same way and names a directory,
-which the child holds against the copies it can actually see rather than restoring what it
-was handed.
+launch rather than redirecting it. Whatever connects is held to the child's own process id
+before a byte crosses either way, because the pipe is listed where any process can see it;
+anything else is told nothing, and remote clients are refused outright. A restore crosses
+the same way and names a directory, which the child holds against the copies it can
+actually see rather than restoring what it was handed.
 
 The window waits on the connection and on the child's own handle together, so a child that
 dies before it calls back ends the run instead of hanging it, and a child that closes

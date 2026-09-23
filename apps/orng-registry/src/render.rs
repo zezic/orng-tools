@@ -624,16 +624,61 @@ fn documents_dropped_on_a_prepared_installation() {
 /// **The second half is what makes the first mean anything.** The same drop on
 /// the same window with nothing running does reach the list, so what the first
 /// half proves is the guard rather than a drop that never arrived.
+///
+/// There are two guards, and either alone keeps this green: `App::read` starts
+/// no read under a run, and `App::pump` takes no read while one is going. The
+/// two tests below pin one each.
 #[test]
 fn a_document_dropped_while_a_run_is_going_is_refused() {
     assert!(
-        !dropped_while("drop-mid-run", true),
+        !dropped_while("drop-mid-run", Meanwhile::Running),
         "a document dropped during a run joined the list the run was built from"
     );
     assert!(
-        dropped_while("drop-when-idle", false),
+        dropped_while("drop-when-idle", Meanwhile::Nothing),
         "the drop this test relies on never reached the window"
     );
+}
+
+/// And it is refused, not put off: the run ending does not let it in.
+///
+/// Pins `App::read`'s guard. Without it the read starts under the run, is held
+/// by `App::pump` until the run is over, and lands the moment it ends - built
+/// against a list the run has since cleared, and displacing any read `pump` was
+/// already holding.
+#[test]
+fn a_document_dropped_while_a_run_is_going_is_not_taken_when_it_ends() {
+    assert!(
+        !dropped_while("drop-then-finish", Meanwhile::Ran),
+        "a document dropped during a run was read anyway and joined the list after it"
+    );
+}
+
+/// A document still being read when a run starts does not join it.
+///
+/// Pins `App::pump`'s guard, which is the one that covers this: `App::read`
+/// had nothing to refuse, because nothing was running when the drop landed. The
+/// press takes the staged rows as they stand, so rows folded in under it would be
+/// counted as registered and then cleared.
+#[test]
+fn a_document_still_being_read_when_a_run_starts_stays_out_of_it() {
+    assert!(
+        !dropped_while("drop-then-press", Meanwhile::Pressed),
+        "a read in flight when a run started joined the list the run was built from"
+    );
+}
+
+/// What the window is doing when a document is dropped on it.
+#[derive(Clone, Copy)]
+enum Meanwhile {
+    Nothing,
+    /// A run in flight that never finishes.
+    Running,
+    /// A run in flight when the drop lands, which finishes the frame after.
+    Ran,
+    /// A run that starts the frame after the drop lands, while the document is
+    /// still being read, and never finishes.
+    Pressed,
 }
 
 /// A dropped file as the window's own input carries one.
@@ -657,7 +702,7 @@ impl egui::DroppedFile for Dropped {
 
 /// Drop one document on a window, with or without a run already in flight, and
 /// answer whether it reached the list.
-fn dropped_while(name: &str, running: bool) -> bool {
+fn dropped_while(name: &str, meanwhile: Meanwhile) -> bool {
     const DROPPED: &str = "WAVESHAPER ALPHA";
 
     let root = fixture(name);
@@ -672,21 +717,35 @@ fn dropped_while(name: &str, running: bool) -> bool {
     );
     std::fs::write(&path, document.bytes()).expect("could not write the sample");
 
+    // Held still and never finishing: what matters is only that the window has
+    // work in flight. No steps, so no progress dialog is drawn over the list.
+    let running = || Applying::frozen(None, Stage::Preparing, None);
     let mut harness = window(session, move |app, _| {
-        if running {
-            // Held still and never finishing: what matters is only that the
-            // window has work in flight when the drop lands. No steps, so no
-            // progress dialog is drawn over the list.
-            app.set_applying(Applying::frozen(None, Stage::Preparing, None));
+        if let Meanwhile::Running | Meanwhile::Ran = meanwhile {
+            app.set_applying(running());
         }
     });
     harness.input_mut().dropped_files = vec![std::sync::Arc::new(Dropped(path))];
-    harness.run();
+    // One frame and not `run`, which draws until nothing asks for another - and
+    // the reader asks when it is done, so `Pressed` would find the read already
+    // taken. The drop is read in this frame, after the read it could have taken.
+    harness.step();
     // Once. A drop is an event and not a state, and redelivering it every frame
     // would start a fresh read each time and never let one land.
     harness.input_mut().dropped_files.clear();
+    match meanwhile {
+        Meanwhile::Nothing | Meanwhile::Running => {}
+        // Reporting the list it was handed, which is all a run that wrote
+        // nothing would have to say.
+        Meanwhile::Ran => {
+            let written = harness.state().registered().expect("an installation").clone();
+            let finished = Applying::frozen(None, Stage::Registering, Some(Ok(written)));
+            harness.state_mut().set_applying(finished);
+        }
+        Meanwhile::Pressed => harness.state_mut().set_applying(running()),
+    }
 
-    // The read is on a worker in both halves, so both get the same chances. A
+    // The read is on a worker in every case, so both get the same chances. A
     // bound rather than an interval, as `settle` is: the loop draws first and
     // looks after.
     for _ in 0..200 {

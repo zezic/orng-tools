@@ -567,6 +567,24 @@ The window draws exactly what it draws for any other run: the progress dialog,
 fed from the child. Nothing new is drawn, which is the decision - a dialog of our
 own in front of Windows' would be two dialogs for one question.
 
+*Except an edit in the inspector, which waits for a press.* Every other edit is
+written the moment a field is left, and announced nowhere. Here that moment would
+raise the consent dialog because the pointer left a text box, which is a dialog
+people learn to dismiss unread. So the words wait behind a warn-toned banner,
+the user's own design, and only its wording is ours:
+
+- Title: `Save the changes to <name>?`
+- Body: `<installation> is not writable by this account, so saving asks Windows
+  for administrator rights. The description and keywords Bitwig shows are kept
+  inside the installation.`
+- Two buttons, `Cancel` and `Save`, and no dismiss mark: a third way out would
+  say neither. `Cancel` drops the words and the entry is what it was.
+
+This is the one new thing the window draws for rights, and it is drawn before
+the press rather than in front of Windows' dialog, so the decision above holds.
+Only on Windows: elsewhere there is no `Save` that could succeed, so the edit is
+written, refused, and reported as `The change was not saved.`
+
 *Declining is not a failure.* `ShellExecuteEx` answers `ERROR_CANCELLED` when the
 consent dialog is dismissed, and the banner says `administrator rights were
 declined, so nothing was changed` rather than reporting an error. It is the one

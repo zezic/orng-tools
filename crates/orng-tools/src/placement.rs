@@ -58,8 +58,8 @@ pub fn inspect(install: &Installation, registration: &Registration) -> Placement
     }
     let folder = install
         .library_dir()
-        .join(registration.kind.library_subdir())
-        .join(registration.kind.user_folder());
+        .join(registration.kind().library_subdir())
+        .join(registration.kind().user_folder());
     match folder.symlink_metadata().map(|m| m.file_type().is_symlink()) {
         Ok(true) => Placement::Linked(target),
         _ => Placement::Copied(target),
@@ -155,7 +155,7 @@ pub fn target(to: &Destination, registration: &Registration) -> PathBuf {
     match to.placement {
         Strategy::Link => to
             .library
-            .folder(registration.kind.user_folder())
+            .folder(registration.kind().user_folder())
             .join(registration.library_path.file_name()),
         Strategy::Copy => registration.library_path.resolve(&to.install),
     }
@@ -169,7 +169,7 @@ pub fn target(to: &Destination, registration: &Registration) -> PathBuf {
 /// two callers, because a second one would be free to drift.
 pub fn would_replace(to: &Destination, registration: &Registration) -> Result<Option<PathBuf>> {
     let destination = target(to, registration);
-    Ok(match occupant_of(&destination)? {
+    Ok(match occupant_of(&destination, registration.kind())? {
         Occupant::Vacant => None,
         // The same identity is this content, at whatever revision was there
         // before. Replacing it is the point of re-applying an edited document.
@@ -190,11 +190,12 @@ enum Occupant {
     Foreign,
 }
 
-fn occupant_of(path: &Path) -> Result<Occupant> {
+/// `kind` is what the file there would have to be to be this registration's
+/// document at all.
+fn occupant_of(path: &Path, kind: Kind) -> Result<Occupant> {
     let Some(raw) = fs::read_if_exists(path)? else {
         return Ok(Occupant::Vacant);
     };
-    let kind = Kind::from_path(path).expect("a placement target ends in a document extension");
     Ok(match Document::parse(kind, raw) {
         Ok(document) => Occupant::Document(document.identity().uuid),
         Err(_) => Occupant::Foreign,
@@ -578,7 +579,6 @@ mod tests {
 
         let registration = Registration {
             uuid: Uuid::new_v4(),
-            kind: Kind::Device,
             name: "X".into(),
             library_path: path,
             description: String::new(),

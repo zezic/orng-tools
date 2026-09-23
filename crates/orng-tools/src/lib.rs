@@ -36,7 +36,7 @@ pub mod prepare;
 #[cfg(any(test, feature = "testing"))]
 pub mod testing;
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 pub use backup::{Backup, TakenFrom};
 pub use bitwig_document::{BitwigVersion, Document, Identity, Kind, Serialization};
@@ -78,6 +78,14 @@ pub enum Error {
     Registry(#[from] bitwig_registry::Error),
     #[error("{field} may not contain a tab or newline: {value:?}")]
     UnrepresentableField { field: &'static str, value: String },
+    #[error("{path:?} does not end in a document's extension")]
+    NotADocumentName { path: String },
+    #[error(
+        "{file_name:?} does not end in .{}, as a {} has to",
+        .kind.extension(),
+        .kind.label().to_lowercase()
+    )]
+    MisnamedDocument { file_name: String, kind: Kind },
     #[error("malformed entry list at line {line}: {reason}")]
     MalformedManifest { line: usize, reason: &'static str },
     #[error("this build does not state its version, so a backup could not be named for it")]
@@ -173,14 +181,26 @@ impl Destination {
 ///
 /// Validated on construction so that a traversal or a separator that would break
 /// the entry list can never reach the registry.
+///
+/// **The file name's extension is the document's kind**, so a path is refused
+/// unless it names one, and [`LibraryPath::kind`] is the only place a
+/// registration's kind is kept. Bitwig reads a document by its extension; a
+/// kind recorded beside the path could say something the file name does not.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct LibraryPath(String);
 
 impl LibraryPath {
     /// The conventional location for registered content: the kind's directory
     /// inside the installation, under the folder linked to the user library.
+    ///
+    /// Refused if `file_name` is not named as a document of that kind is.
     pub fn for_document(kind: Kind, file_name: &str) -> Result<Self> {
-        Self::new(format!("{}/{}/{}", kind.library_subdir(), kind.user_folder(), file_name))
+        let path =
+            Self::new(format!("{}/{}/{}", kind.library_subdir(), kind.user_folder(), file_name))?;
+        if path.kind() != kind {
+            return Err(Error::MisnamedDocument { file_name: file_name.to_owned(), kind });
+        }
+        Ok(path)
     }
 
     pub fn new(path: impl Into<String>) -> Result<Self> {
@@ -193,7 +213,16 @@ impl LibraryPath {
         if rejected {
             return Err(Error::UnrepresentableField { field: "library path", value: path });
         }
-        Ok(LibraryPath(path))
+        let named = LibraryPath(path);
+        if Kind::from_path(Path::new(named.file_name())).is_none() {
+            return Err(Error::NotADocumentName { path: named.0 });
+        }
+        Ok(named)
+    }
+
+    /// What the document at this path is, as its extension says.
+    pub fn kind(&self) -> Kind {
+        Kind::from_path(Path::new(self.file_name())).expect("a library path names a document")
     }
 
     pub fn as_str(&self) -> &str {
@@ -222,7 +251,6 @@ impl LibraryPath {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Registration {
     pub uuid: Uuid,
-    pub kind: Kind,
     pub name: String,
     pub library_path: LibraryPath,
     /// Shown under the entry in Bitwig's browser.
@@ -273,6 +301,12 @@ pub enum Provenance {
 }
 
 impl Registration {
+    /// What the document is. Read off the library path, which is where Bitwig
+    /// reads it from.
+    pub fn kind(&self) -> Kind {
+        self.library_path.kind()
+    }
+
     /// Derive a registration from a document, with defaults good enough that a
     /// user who edits nothing still gets a searchable entry.
     ///
@@ -284,7 +318,6 @@ impl Registration {
         let kind = document.kind();
         Ok(Registration {
             uuid: identity.uuid,
-            kind,
             name: validated("name", &identity.name)?,
             library_path: LibraryPath::for_document(kind, file_name)?,
             description: identity
@@ -310,12 +343,28 @@ fn validated(field: &'static str, value: &str) -> Result<String> {
 mod tests {
     use super::*;
 
+    /// Each named as a document is, so that the escape is what refuses it and
+    /// not the missing extension.
     #[test]
     fn library_paths_reject_escapes() {
         assert!(LibraryPath::new("devices/My Devices/A.bwdevice").is_ok());
-        assert!(LibraryPath::new("/etc/passwd").is_err());
-        assert!(LibraryPath::new("devices/../../x").is_err());
-        assert!(LibraryPath::new("devices/a\tb").is_err());
+        assert!(LibraryPath::new("/devices/A.bwdevice").is_err());
+        assert!(LibraryPath::new("devices/../../A.bwdevice").is_err());
+        assert!(LibraryPath::new("devices/a\tb.bwdevice").is_err());
+    }
+
+    /// A path that names no document has no kind to give a registration, and one
+    /// that names another kind's would put a device's row over a modulator's file.
+    #[test]
+    fn a_library_path_names_a_document_and_so_its_kind() {
+        for path in ["devices/My Devices/A.txt", "devices/My Devices/A", "devices/.bwdevice"] {
+            let refused = LibraryPath::new(path);
+            assert!(matches!(refused, Err(Error::NotADocumentName { .. })), "{path}: {refused:?}");
+        }
+        assert_eq!(LibraryPath::new("modules/My Modules/A.bwmodule").unwrap().kind(), Kind::Module);
+
+        let misnamed = LibraryPath::for_document(Kind::Device, "SHAPER.bwmodulator");
+        assert!(matches!(misnamed, Err(Error::MisnamedDocument { kind: Kind::Device, .. })));
     }
 
     #[test]

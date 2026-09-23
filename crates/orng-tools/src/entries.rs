@@ -101,11 +101,11 @@ impl Update {
             registration.name
         );
         assert_eq!(
-            registration.kind,
+            registration.kind(),
             document.kind(),
             "registration {} is a {:?} and its document is a {:?}",
             registration.name,
-            registration.kind,
+            registration.kind(),
             document.kind()
         );
         registration.digest = Some(Digest::of(document.bytes()));
@@ -201,7 +201,7 @@ impl Update {
         // description of a removed entry behind for Bitwig to go on reading.
         for kind in Kind::ALL {
             let of_kind: Vec<&Registration> =
-                self.entries.entries().iter().filter(|entry| entry.kind == kind).collect();
+                self.entries.entries().iter().filter(|entry| entry.kind() == kind).collect();
             descriptions::write_bundle(&to.install, kind, &of_kind)?;
         }
 

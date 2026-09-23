@@ -224,7 +224,7 @@ impl Default for Filter {
 
 impl Filter {
     fn accepts(&self, entry: &Registration) -> bool {
-        if !self.kinds.contains(&entry.kind) {
+        if !self.kinds.contains(&entry.kind()) {
             return false;
         }
         let query = self.query.trim().to_lowercase();
@@ -1423,7 +1423,7 @@ impl App {
         let Inspection { words, placement, .. } =
             self.inspecting.as_mut().expect("the panel was open a moment ago");
         let item = widget::Inspected {
-            kind: entry.kind,
+            kind: entry.kind(),
             name: &entry.name,
             uuid: &identity,
             path: entry.library_path.as_str(),
@@ -2612,12 +2612,12 @@ impl App {
             .into_iter()
             .map(|kind| {
                 let registered =
-                    found.entries().entries().iter().filter(|e| e.kind == kind).count();
+                    found.entries().entries().iter().filter(|e| e.kind() == kind).count();
                 let staged = self
                     .staged
                     .iter()
                     .filter_map(Staged::registration)
-                    .filter(|r| r.kind == kind)
+                    .filter(|r| r.kind() == kind)
                     .count();
                 (kind, registered + staged)
             })
@@ -3425,7 +3425,7 @@ impl App {
         let Some(entry) = found.entries().get(uuid) else { return };
         let Some(chosen) = rfd::FileDialog::new()
             .set_title(format!("Locate the document for {}", entry.name))
-            .add_filter("Bitwig documents", &[entry.kind.extension()])
+            .add_filter("Bitwig documents", &[entry.kind().extension()])
             .pick_file()
         else {
             return;
@@ -3963,7 +3963,7 @@ impl App {
                 let count = self
                     .ready()
                     .filter_map(Staged::registration)
-                    .filter(|row| row.kind == kind)
+                    .filter(|row| row.kind() == kind)
                     .count();
                 (count > 0).then(|| {
                     format!("{count} to {}/{}", kind.library_subdir(), kind.user_folder())
@@ -4434,12 +4434,12 @@ fn this_entrys_document(
             entry.name, entry.uuid
         ));
     }
-    if document.kind() != entry.kind {
+    if document.kind() != entry.kind() {
         return Err(format!(
             "{name} is a {:?} and {} is a {:?}",
             document.kind(),
             entry.name,
-            entry.kind
+            entry.kind()
         ));
     }
     Ok(document)
@@ -4468,7 +4468,7 @@ fn row(
     let mut pressed = None;
     let response = widget::row(ui, palette, width, selected, |ui, columns, controls| {
         widget::cell(ui, columns.kind, Align::Min, |ui| {
-            widget::kind_label(ui, secondary, entry.kind);
+            widget::kind_label(ui, secondary, entry.kind());
         });
         widget::cell(ui, columns.name, Align::Min, |ui| {
             // Struck through while a removal is queued, which is the design's
@@ -4548,7 +4548,7 @@ fn staged_row(
             // A rejected row has no kind, because nothing readable said what it
             // was. Drawing one would be inventing it.
             match staged.registration() {
-                Some(registration) => widget::kind_label(ui, palette.ink_3, registration.kind),
+                Some(registration) => widget::kind_label(ui, palette.ink_3, registration.kind()),
                 None => {
                     ui.label(font::run("-", font::plain(font::CHIP)).color(palette.ink_3));
                 }
@@ -4832,7 +4832,6 @@ mod tests {
     fn entry() -> Registration {
         Registration {
             uuid: "8b330d22-73fa-4ba5-a42f-2f2300cbd8bf".parse().expect("a sample identity"),
-            kind: Kind::Device,
             name: "VOLSHAPER".to_owned(),
             library_path: LibraryPath::new("devices/My Devices/VOLSHAPER.bwdevice")
                 .expect("a library path"),
@@ -4875,7 +4874,6 @@ mod tests {
         assert_eq!(revised.keywords, ["volshaper", "lfo"]);
         assert_eq!(revised.name, entry.name);
         assert_eq!(revised.uuid, entry.uuid);
-        assert_eq!(revised.kind, entry.kind);
         assert_eq!(revised.library_path, entry.library_path);
         assert_eq!(revised.provenance, entry.provenance);
     }
@@ -4941,13 +4939,13 @@ mod tests {
         };
 
         // The entry's own document, which is the whole point of the control.
-        let its_own = write("VOLSHAPER.bwdevice", entry.kind, entry.uuid);
+        let its_own = write("VOLSHAPER.bwdevice", entry.kind(), entry.uuid);
         let found = this_entrys_document(&entry, &its_own).expect("that is this entry");
         assert_eq!(found.identity().uuid, entry.uuid);
 
         // Another device entirely. Placing it would register somebody else's
         // content under this entry's name and identity.
-        let stranger = write("STRANGER.bwdevice", entry.kind, Uuid::new_v4());
+        let stranger = write("STRANGER.bwdevice", entry.kind(), Uuid::new_v4());
         let why = this_entrys_document(&entry, &stranger).expect_err("that is not this entry");
         assert!(why.contains("carries the identity"), "{why}");
         assert!(why.contains("VOLSHAPER"), "{why}");

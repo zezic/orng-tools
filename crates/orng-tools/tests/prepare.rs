@@ -304,7 +304,6 @@ fn the_injected_class_registers_the_entry_list() {
     {
         manifest.insert(Registration {
             uuid: uuid::Uuid::new_v4(),
-            kind,
             name: name.into(),
             library_path: LibraryPath::for_document(kind, &format!("{name}.{}", kind.extension()))
                 .unwrap(),
@@ -442,7 +441,6 @@ fn copying_documents_keeps_them_inside_the_installation() {
     let document = a_real_device();
     let registration = Registration {
         uuid: document.identity().uuid,
-        kind: Kind::Device,
         name: "ORNG COPIED".into(),
         library_path: LibraryPath::for_document(Kind::Device, "ORNG COPIED.bwdevice").unwrap(),
         description: "written by a test".into(),

@@ -86,7 +86,6 @@ mod tests {
     fn registration(name: &str) -> Registration {
         Registration {
             uuid: Uuid::new_v4(),
-            kind: Kind::Device,
             name: name.into(),
             library_path: LibraryPath::new(format!("devices/My Devices/{name}.bwdevice")).unwrap(),
             description: "Allpass phase-rotator".into(),

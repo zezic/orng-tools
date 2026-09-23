@@ -134,7 +134,7 @@ fn placed(to: &Destination, entries: Manifest) -> Manifest {
     let to = &Destination { placement: Strategy::Copy, ..to.clone() };
     let mut update = orng_tools::Update::to(Manifest::default());
     for entry in entries.entries() {
-        let document = orng_tools::testing::document(entry.kind, entry.uuid, &entry.name);
+        let document = orng_tools::testing::document(entry.kind(), entry.uuid, &entry.name);
         update.add(entry.clone(), document);
     }
     update.apply(to).expect("the fixture's documents could not be placed")

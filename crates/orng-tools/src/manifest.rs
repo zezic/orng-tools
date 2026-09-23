@@ -143,7 +143,7 @@ impl Manifest {
             out.push_str(&format!(
                 "{}\t{}\t{}\t{}\t{}\t{}\t{digest}\t{version}\t{reviewed_in}\t{source}\n",
                 entry.uuid,
-                entry.kind.enum_constant(),
+                entry.kind().enum_constant(),
                 entry.name,
                 entry.library_path.as_str(),
                 entry.description,
@@ -235,6 +235,12 @@ fn parse_line(line: &str, number: usize, format: Format) -> Result<Registration>
         .ok_or(Error::MalformedManifest { line: number, reason: "unknown kind" })?;
     let library_path = LibraryPath::new(columns[3])
         .map_err(|_| Error::MalformedManifest { line: number, reason: "bad library path" })?;
+    // The column is kept for whoever reads the list by eye, and held to what the
+    // path says rather than trusted beside it.
+    if library_path.kind() != kind {
+        let reason = "kind is not the library path's";
+        return Err(Error::MalformedManifest { line: number, reason });
+    }
     let provenance = match format {
         // Everything written under version 1 predates the catalog, so it can
         // only have come from a file the user chose.
@@ -264,7 +270,6 @@ fn parse_line(line: &str, number: usize, format: Format) -> Result<Registration>
 
     Ok(Registration {
         uuid,
-        kind,
         name: columns[2].to_owned(),
         library_path,
         description: columns[4].to_owned(),
@@ -281,7 +286,6 @@ mod tests {
     fn sample() -> Registration {
         Registration {
             uuid: Uuid::parse_str("80c0dc4c-d142-53a7-85ee-b91427819b66").unwrap(),
-            kind: Kind::Device,
             name: "DISPERSER".into(),
             library_path: LibraryPath::new("devices/My Devices/DISPERSER.bwdevice").unwrap(),
             description: "Allpass phase-rotator".into(),
@@ -342,6 +346,24 @@ mod tests {
                 .is_err()
         );
         assert!(Manifest::parse("#orng-registry 4\n#comment\n\n").unwrap().is_empty());
+    }
+
+    /// The kind column is held to the library path's extension. The first line
+    /// is the same row agreeing with itself, so what refuses the rest is the
+    /// disagreement and nothing else about them.
+    #[test]
+    fn a_kind_its_library_path_does_not_name_is_refused() {
+        let uuid = "80c0dc4c-d142-53a7-85ee-b91427819b66";
+        assert!(Manifest::parse(&row(&format!(
+            "{uuid}\tDEVICE\tA\tdevices/My Devices/A.bwdevice\t\t\t\t\t\tlocal"
+        )))
+        .is_ok());
+        for (kind, path) in
+            [("MODULATOR", "devices/My Devices/A.bwdevice"), ("DEVICE", "devices/My Devices/A.txt")]
+        {
+            let line = format!("{uuid}\t{kind}\tA\t{path}\t\t\t\t\t\tlocal");
+            assert!(Manifest::parse(&row(&line)).is_err(), "accepted {kind} at {path}");
+        }
     }
 
     #[test]

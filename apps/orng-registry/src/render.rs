@@ -2657,11 +2657,17 @@ fn a_word_typed_into_the_inspector_becomes_a_keyword() {
 /// the words wait behind a named `Save`, with `Cancel` beside it, and refusing
 /// leaves the entry as it was.
 ///
+/// Only on Windows, which is the only platform with a dialog to put off. Anywhere
+/// else there is no `Save` that could succeed, so the edit is written as any
+/// other is, the child cannot be started, and the window says the change was not
+/// saved - which is what it did before the question existed. Both halves are
+/// here so that each platform proves the one it can reach.
+///
 /// The rights are set on the session rather than found, because every directory
 /// on the machine running this is writable by it - which is the same reason
 /// `rights`' own refusal test has to take a write bit off by hand.
 #[test]
-fn an_edit_that_needs_rights_waits_for_a_press_rather_than_asking_by_itself() {
+fn an_edit_that_needs_rights_waits_for_a_press_only_where_it_can_ask() {
     use egui::accesskit::Role;
 
     let root = fixture("edit-without-rights");
@@ -2689,6 +2695,16 @@ fn an_edit_that_needs_rights_waits_for_a_press_rather_than_asking_by_itself() {
     // be the moment that asked Windows for rights.
     harness.key_press(egui::Key::Tab);
     harness.run();
+
+    if !crate::elevate::can_ask() {
+        assert!(harness.query_by_label("Save").is_none(), "offered a save that can only fail");
+        settle(&mut harness);
+        assert!(
+            harness.query_by_label("The change was not saved.").is_some(),
+            "the refused write was not reported"
+        );
+        return;
+    }
 
     assert!(!harness.state().is_working(), "leaving a field asked for rights by itself");
     assert!(

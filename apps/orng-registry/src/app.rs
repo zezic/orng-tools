@@ -371,7 +371,8 @@ pub struct App {
     /// the pointer moved out of a text box is one people learn to dismiss
     /// without reading. So the words wait here behind a named `Save`, and
     /// nothing is lost if the answer is `Cancel`: the entry is still what it
-    /// was.
+    /// was. Never set where [`elevate::can_ask`] is false, because there is no
+    /// dialog there to put off.
     asking: Option<Registration>,
     /// What the last press came to. Stated as a banner until the user puts it
     /// away, because nothing else will stop being true and take it off screen.
@@ -1588,8 +1589,10 @@ impl App {
         // Where the write has to be carried to a process holding rights this
         // one does not, it is not made here. A field losing focus is not a
         // press, and this write raises Windows' consent dialog - so the words
-        // wait for one. See [`App::asking`].
-        if !found.rights.are_held() {
+        // wait for one. See [`App::asking`]. Only where there is a dialog to
+        // raise: elsewhere the write is made and refused, and a `Save` that
+        // could only fail would be an offer that leads nowhere.
+        if !found.rights.are_held() && elevate::can_ask() {
             self.asking = Some(revised);
             return;
         }

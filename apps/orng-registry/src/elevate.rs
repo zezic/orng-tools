@@ -412,11 +412,12 @@ pub fn run(
     }
     #[cfg(not(windows))]
     {
-        // Unreachable from the window, which refuses the press instead - see
-        // `App::blocking`. Said rather than panicked on, because what put us
-        // here would be the installation's permissions having changed between
-        // the session being read and the press being made, and that is the
-        // machine's doing rather than a fault in this code.
+        // Reached. `App::blocking` refuses the action bar's press here, but an
+        // inspector edit and a restore are written anyway and fail with this,
+        // which the window reports as the change or the restore not being
+        // made. Said rather than panicked on, because the cause is the
+        // installation's permissions - the machine's doing rather than a fault
+        // in this code.
         let _ = (task, install, home, say);
         Err("this installation is not writable by this account, and this platform has no \
              way for an application to ask for more rights"

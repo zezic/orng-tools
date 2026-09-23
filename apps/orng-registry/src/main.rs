@@ -38,8 +38,15 @@ fn main() -> eframe::Result {
     // installation the window may not write is prepared by a second copy of
     // this binary that Windows started with the rights, and that copy has a
     // pipe to call back on and no interface of its own.
-    if let Some(serving) = elevate::Serving::from_arguments(std::env::args()) {
-        std::process::exit(serving.serve());
+    match elevate::Serving::from_arguments(std::env::args()) {
+        Ok(Some(serving)) => std::process::exit(serving.serve()),
+        Ok(None) => {}
+        // Never the window. The window hears of it as a child that ended
+        // without saying anything, which is what it is.
+        Err(why) => {
+            eprintln!("{why}");
+            std::process::exit(4);
+        }
     }
 
     let options = eframe::NativeOptions {

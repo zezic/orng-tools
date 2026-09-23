@@ -50,6 +50,10 @@
 
 use std::collections::BTreeMap;
 use std::io::{BufRead, BufReader, Read, Write};
+#[cfg(any(windows, test))]
+use std::ffi::{OsStr, OsString};
+#[cfg(any(windows, test))]
+use std::path::Path;
 use std::path::PathBuf;
 
 use orng_tools::{
@@ -380,6 +384,40 @@ pub const INSTALL: &str = "--orng-install";
 /// itself - see the module note on what it does not discover.
 pub const HOME: &str = "--orng-home";
 
+/// The child's orders, as the one string Windows hands a process.
+///
+/// A process on Windows is given its command line whole and splits it itself,
+/// by rules the C runtime and Rust's standard library share: inside quotes a
+/// backslash is literal, unless a run of them ends at a quote - then each pair
+/// is one backslash, and an odd one out makes the quote text. So a value ending
+/// in a separator, which an installation at the root of a drive does (`D:\`),
+/// turned its own closing quote into text and swallowed every argument after it.
+/// The run before each closing quote is doubled.
+///
+/// Built as an `OsString` and never through `format!`: two of the three values
+/// are paths, and `Display` on a path is lossy.
+#[cfg(any(windows, test))]
+fn command_line(pipe: &OsStr, install: &Path, home: &Path) -> OsString {
+    let mut arguments = OsString::new();
+    for (flag, value) in [(SERVE, pipe), (INSTALL, install.as_os_str()), (HOME, home.as_os_str())] {
+        let bytes = value.as_encoded_bytes();
+        // Not escaped, because it cannot happen: no path on Windows may hold a
+        // quote, and the pipe name is this module's own.
+        assert!(!bytes.contains(&b'"'), "{flag} was given a value with a quote in it");
+        let trailing = bytes.iter().rev().take_while(|byte| **byte == b'\\').count();
+
+        if !arguments.is_empty() {
+            arguments.push(" ");
+        }
+        arguments.push(flag);
+        arguments.push(" \"");
+        arguments.push(value);
+        arguments.push("\\".repeat(trailing));
+        arguments.push("\"");
+    }
+    arguments
+}
+
 /// Whether this platform gives an application any way to ask for more rights.
 ///
 /// Windows does, through the consent dialog `runas` raises. The others do not -
@@ -485,24 +523,42 @@ pub struct Serving {
 impl Serving {
     /// The orders, if this process has them.
     ///
-    /// `None` for the window, which is every invocation a user makes.
-    pub fn from_arguments(arguments: impl Iterator<Item = String>) -> Option<Serving> {
+    /// `Ok(None)` for the window, which is every invocation a user makes: none
+    /// of the three flags. All three are orders. Some but not all is refused,
+    /// and is not the window either - it is what a command line that came apart
+    /// on the way looks like, and a process started with administrator rights
+    /// that opened the window would be the whole application running elevated
+    /// with nobody having asked for it.
+    pub fn from_arguments(
+        arguments: impl Iterator<Item = String>,
+    ) -> Result<Option<Serving>, String> {
         let mut pipe = None;
         let mut install = None;
         let mut home = None;
+        let mut any = false;
         let mut arguments = arguments.skip(1);
         while let Some(argument) = arguments.next() {
-            match argument.as_str() {
-                SERVE => pipe = arguments.next(),
-                INSTALL => install = arguments.next().map(PathBuf::from),
-                HOME => home = arguments.next().map(PathBuf::from),
-                _ => {}
-            }
+            let value = match argument.as_str() {
+                SERVE => &mut pipe,
+                INSTALL => &mut install,
+                HOME => &mut home,
+                _ => continue,
+            };
+            any = true;
+            *value = arguments.next();
         }
-        // All three or none. Any short of that is this application having been
-        // started with something it does not understand, and the window is the
-        // right answer to that.
-        Some(Serving { pipe: pipe?, install: install?, home: home? })
+        match (pipe, install, home) {
+            (Some(pipe), Some(install), Some(home)) => Ok(Some(Serving {
+                pipe,
+                install: PathBuf::from(install),
+                home: PathBuf::from(home),
+            })),
+            _ if any => Err(format!(
+                "started with part of an elevated child's orders: {SERVE}, {INSTALL} and {HOME} \
+                 come together or not at all"
+            )),
+            _ => Ok(None),
+        }
     }
 
     /// Hold the conversation, and answer with this process's exit code.
@@ -654,7 +710,7 @@ fn restore(
 /// be made here.
 #[cfg(windows)]
 mod windows {
-    use std::ffi::{OsStr, OsString};
+    use std::ffi::OsStr;
     use std::io::{Read, Write};
     use std::os::windows::ffi::OsStrExt;
     use std::os::windows::io::{FromRawHandle, OwnedHandle};
@@ -678,7 +734,7 @@ mod windows {
     };
     use windows_sys::Win32::UI::WindowsAndMessaging::SW_HIDE;
 
-    use super::{HOME, INSTALL, Report, SERVE, Task, listen, send};
+    use super::{Report, Task, command_line, listen, send};
 
     /// How much the pipe holds before a writer has to wait for a reader.
     ///
@@ -1002,24 +1058,7 @@ mod windows {
     fn launch(pipe: &str, install: &Installation, home: &OrngHome) -> Result<Child, String> {
         let exe = std::env::current_exe()
             .map_err(|e| format!("this application cannot find its own binary: {e}"))?;
-        // Built as an `OsString` and never through `format!`: two of the three
-        // values are paths, and `Display` on a path is lossy. Quoted, because a
-        // pipe name, an installation path and a home may all hold spaces and
-        // this is one string by the time Windows reads it.
-        let mut arguments = OsString::new();
-        for (flag, value) in [
-            (SERVE, OsStr::new(pipe)),
-            (INSTALL, install.root().as_os_str()),
-            (HOME, home.user_home().as_os_str()),
-        ] {
-            if !arguments.is_empty() {
-                arguments.push(" ");
-            }
-            arguments.push(flag);
-            arguments.push(" \"");
-            arguments.push(value);
-            arguments.push("\"");
-        }
+        let arguments = command_line(OsStr::new(pipe), install.root(), home.user_home());
 
         let verb = wide("runas");
         let file = wide(&exe);
@@ -1249,11 +1288,12 @@ mod tests {
         let window = ["orng-registry".to_owned()];
         assert_eq!(
             Serving::from_arguments(window.into_iter()),
-            None,
+            Ok(None),
             "the window was mistaken for an elevated child"
         );
 
         let serving = Serving::from_arguments(orders().into_iter())
+            .expect("a child refused its orders")
             .expect("a child did not read its orders");
         assert_eq!(serving.pipe, r"\\.\pipe\orng-registry-1-abc");
         assert_eq!(serving.install, PathBuf::from(r"C:\Program Files\Bitwig Studio"));
@@ -1263,23 +1303,95 @@ mod tests {
         assert_eq!(serving.home, PathBuf::from(r"C:\Users\someone"));
     }
 
-    /// Anything short of all three is not orders.
+    /// Anything short of all three is not orders, and not the window either.
     ///
     /// A child told where to call back but not what to work on would have to
     /// discover an installation for itself, and one told nothing about a home
     /// would take its own - both of which are what the module exists to stop.
+    /// And the window, started by the consent dialog, would be this whole
+    /// application running with administrator rights.
     #[test]
-    fn part_of_the_orders_is_not_orders() {
+    fn part_of_the_orders_is_refused() {
         for missing in [SERVE, INSTALL, HOME] {
             let mut short = orders();
             let flag = short.iter().position(|argument| argument == missing).expect("the flag");
             // The flag and the value behind it, which is how it is given.
             short.drain(flag..=flag + 1);
-            assert_eq!(
-                Serving::from_arguments(short.into_iter()),
-                None,
-                "a child with no {missing} went looking for one"
+            assert!(
+                Serving::from_arguments(short.into_iter()).is_err(),
+                "a child with no {missing} was not refused"
             );
+        }
+        // A flag at the very end, with nothing behind it.
+        let mut cut = orders();
+        cut.pop();
+        let cut = Serving::from_arguments(cut.into_iter());
+        assert!(cut.is_err(), "a flag with no value was taken");
+    }
+
+    /// A value ending in a separator comes back whole, and so does everything
+    /// after it.
+    ///
+    /// The string the child is given, spelled out, so the rule is visible where
+    /// it is tested. The round trip through Windows' own splitting is the test
+    /// below, and only runs where there is a Windows to ask.
+    #[test]
+    fn a_trailing_separator_keeps_its_closing_quote() {
+        let line = command_line(
+            OsStr::new(r"\\.\pipe\orng-registry-1-abc"),
+            Path::new("D:\\"),
+            Path::new(r"C:\Users\someone"),
+        );
+        assert_eq!(
+            line,
+            OsStr::new(concat!(
+                r#"--orng-elevated-apply "\\.\pipe\orng-registry-1-abc" "#,
+                r#"--orng-install "D:\\" "#,
+                r#"--orng-home "C:\Users\someone""#,
+            )),
+            "the closing quote after a separator was not escaped from it"
+        );
+    }
+
+    /// The command line, split the way Windows splits it, is the orders it was
+    /// built from - for the values that break a naive quoting.
+    #[cfg(windows)]
+    #[test]
+    fn the_orders_survive_the_command_line() {
+        use std::os::windows::ffi::{OsStrExt, OsStringExt};
+        use windows_sys::Win32::Foundation::LocalFree;
+        use windows_sys::Win32::UI::Shell::CommandLineToArgvW;
+
+        let pipe = r"\\.\pipe\orng-registry-1-abc";
+        for (install, home) in [
+            ("D:\\", r"C:\Users\someone"),
+            (r"C:\Program Files\Bitwig Studio", "E:\\"),
+            (r"C:\Program Files\Bitwig Studio\\", r"C:\Users\some one\\"),
+            (r"\\server\share\Bitwig", r"C:\Users\someone"),
+        ] {
+            let mut line = std::ffi::OsString::from("orng-registry.exe ");
+            line.push(command_line(OsStr::new(pipe), Path::new(install), Path::new(home)));
+            let wide: Vec<u16> = line.encode_wide().chain(Some(0)).collect();
+            let mut count = 0;
+            let argv = unsafe { CommandLineToArgvW(wide.as_ptr(), &mut count) };
+            assert!(!argv.is_null(), "Windows could not split {line:?}");
+            let split: Vec<String> = (0..count as usize)
+                .map(|at| unsafe {
+                    let argument = *argv.add(at);
+                    let length = (0..).take_while(|&i| *argument.add(i) != 0).count();
+                    std::ffi::OsString::from_wide(std::slice::from_raw_parts(argument, length))
+                        .into_string()
+                        .expect("an argument that is not Unicode")
+                })
+                .collect();
+            unsafe { LocalFree(argv.cast()) };
+
+            let serving = Serving::from_arguments(split.into_iter())
+                .unwrap_or_else(|why| panic!("{line:?} came apart: {why}"))
+                .expect("the orders were read as the window");
+            assert_eq!(serving.pipe, pipe);
+            assert_eq!(serving.install, PathBuf::from(install), "in {line:?}");
+            assert_eq!(serving.home, PathBuf::from(home), "in {line:?}");
         }
     }
 

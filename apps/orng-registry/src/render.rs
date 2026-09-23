@@ -2778,6 +2778,51 @@ fn an_edit_that_needs_rights_waits_for_a_press_only_where_it_can_ask() {
     assert!(!harness.state().is_working(), "Cancel started the write it was refusing");
 }
 
+/// Staged work on an installation this account may not write is refused only
+/// where nothing can ask for rights.
+///
+/// On macOS and Linux the banner stands in the action bar's way, names the
+/// directory, and the primary action is disabled with the same words on it. On
+/// Windows the press is the ordinary one and asks when it is made, so neither
+/// the banner nor a disabled press would be true there. Round 3 item 9. Both
+/// halves are here so that each platform proves the one it can reach.
+///
+/// Read off the tree rather than pressed: on Windows the press would start this
+/// test binary elevated.
+#[test]
+fn a_press_that_needs_rights_is_refused_only_where_nothing_can_ask() {
+    use egui::accesskit::Role;
+    use egui_kittest::kittest::NodeT as _;
+
+    const REFUSED: &str = "This installation is not yours to change.";
+
+    let root = fixture("apply-without-rights");
+    let to = destination(&root);
+    let entries = entries();
+    let staged = dropped(&root, &to, &entries);
+    let mut session = found_with(&root, Helper::Present, GuardState::Disarmed, entries);
+    if let Session::Found(found) = &mut session {
+        found.rights = orng_tools::Rights::Withheld {
+            directory: found.to.install.root().to_path_buf(),
+            why: "this account may not write there".to_owned(),
+        };
+    }
+    let harness = window(session, |app, _| app.set_staged(staged));
+
+    let press = harness
+        .get_all_by_role(Role::Button)
+        .find(|node| node.accesskit_node().label().is_some_and(|label| label.starts_with("Apply ")))
+        .expect("the action bar has no primary action");
+    let refused = harness.query_by_label(REFUSED).is_some();
+    if crate::elevate::can_ask() {
+        assert!(!refused, "refused a press that can ask for the rights it needs");
+        assert!(!press.accesskit_node().is_disabled(), "the press was disabled all the same");
+    } else {
+        assert!(refused, "nothing said why the staged work cannot be applied");
+        assert!(press.accesskit_node().is_disabled(), "a press that cannot ask stayed enabled");
+    }
+}
+
 /// The Settings screen, on the installation the rest of these are drawn against.
 ///
 /// **A full-window surface**, so there is no install bar, no toolbar and no

@@ -261,17 +261,6 @@ pub enum Published {
 /// there applies to something that is not registered. The design gives a catalog
 /// row at most one of these, which is why the whole column is 92 wide against
 /// the entry row's 84 for two.
-///
-/// **`Update` is not here, and the omission is deliberate.** The design gives
-/// `Update available` a press and gives that press a modal to confirm through -
-/// Bitwig resolves a device by identity, so replacing the file changes every
-/// project that already uses it, and the modal is where the user is told so and
-/// shown both versions. Nothing in the bundle draws that modal. A press that
-/// quietly overwrote a device under every open project rather than asking is not
-/// a smaller version of the design; it is the one thing the design put a dialog
-/// in front of. So the row states the fact in the accent and offers nothing,
-/// which is the shape the progress dialog's missing `Cancel` already takes. See
-/// `docs/design-review.md` round 3 item 3.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Offer {
     /// Fetch it, check it against the digest the index states, register it.
@@ -279,6 +268,14 @@ pub enum Offer {
     /// Only ever a new identity: an item already registered here is never
     /// `Available`, so this cannot reach a document some project is loading.
     Install,
+    /// Ask whether to put the newer version in place of the one registered
+    /// here, and do it if the answer is yes.
+    ///
+    /// **The one press here that confirms first**, and the design says why:
+    /// Bitwig resolves a device by identity, so replacing the file changes every
+    /// project that already uses it. `UpdateModal.dc.html` is where the user is
+    /// told so and shown both versions, and the press itself does nothing else.
+    Update,
     /// Open the item that has taken this one's place.
     SeeReplacement,
     /// Ask for the bytes again.
@@ -317,15 +314,11 @@ impl Published {
             Published::Superseded => Some(Offer::SeeReplacement),
             Published::DownloadFailed => Some(Offer::Retry),
             Published::VerificationFailed => Some(Offer::CopyDetails),
+            Published::UpdateAvailable => Some(Offer::Update),
             // Nothing to do to something that is already here, and nothing to
             // offer for a Bitwig that is too old - the row states the version it
-            // needs instead, which is the only useful thing to say. `Update
-            // available` is the third of these and is the one that has a press
-            // in the design and none here: [`Offer`] says why.
-            Published::Installed
-            | Published::Incompatible(_)
-            | Published::UpdateAvailable
-            | Published::Fetching => None,
+            // needs instead, which is the only useful thing to say.
+            Published::Installed | Published::Incompatible(_) | Published::Fetching => None,
         }
     }
 
@@ -355,28 +348,36 @@ impl Published {
 }
 
 impl Offer {
-    /// What the control says.
-    ///
-    /// One map and not two, unlike [`Action`]'s pair. The bundle words these the
-    /// same on both surfaces except for the update, which wears a trailing
-    /// ellipsis in the panel because the press opens the modal that names both
-    /// versions - and that press is not offered here at all. If it is ever
-    /// built, the second map comes back with it.
+    /// What the row's control says.
     pub fn label(self) -> &'static str {
         match self {
             Offer::Install => "Install",
+            Offer::Update => "Update",
             Offer::SeeReplacement => "See replacement",
             Offer::Retry => "Retry",
             Offer::CopyDetails => "Copy details",
         }
     }
 
+    /// What the detail panel's primary says, which is the row's word except
+    /// for the update's: `CatalogDetail.dc.html:109` writes `Update...`, and the
+    /// trailing "..." says the press opens something - the modal. The row's
+    /// opens the same modal and has no ellipsis, as the bundle draws it.
+    pub fn in_the_panel(self) -> &'static str {
+        match self {
+            Offer::Update => "Update...",
+            other => other.label(),
+        }
+    }
+
     /// Whether the press writes into the installation, and so needs the same
-    /// rights a preparation does. Both fetch an item and register it, which
-    /// rewrites the description bundles inside the installation.
+    /// rights a preparation does. All three fetch an item and register it, which
+    /// rewrites the description bundles inside the installation. The update's
+    /// asks first, and wears the shield all the same - as the action bar's
+    /// `Prepare installation` does, one step before its plan.
     pub fn writes(self) -> bool {
         match self {
-            Offer::Install | Offer::Retry => true,
+            Offer::Install | Offer::Update | Offer::Retry => true,
             Offer::SeeReplacement | Offer::CopyDetails => false,
         }
     }
@@ -613,10 +614,6 @@ mod tests {
     /// matter. `Superseded` reads `Replacement available` - quieter, and from
     /// the user's side rather than the publisher's - and `Incompatible` states
     /// the version instead of naming the state at all.
-    ///
-    /// One row differs from the bundle on purpose: `Update available` draws the
-    /// design's word and offers no press, because the design confirms that press
-    /// through a modal nothing draws. [`Offer`] carries the reasoning.
     #[test]
     fn every_published_state_says_what_the_bundle_says() {
         let said: Vec<(String, Option<&str>)> = every_published()
@@ -628,7 +625,7 @@ mod tests {
             [
                 ("Available".to_owned(), Some("Install")),
                 ("Installed".to_owned(), None),
-                ("Update available".to_owned(), None),
+                ("Update available".to_owned(), Some("Update")),
                 ("Replacement available".to_owned(), Some("See replacement")),
                 ("Needs Bitwig 6.2".to_owned(), None),
                 ("Download failed".to_owned(), Some("Retry")),
@@ -638,21 +635,21 @@ mod tests {
         );
     }
 
-    /// The press the design gives `Update available` is not offered, and that is
-    /// the claim rather than an oversight.
+    /// Replacing a document is offered only as the update, which confirms, and
+    /// never as an install, which does not.
     ///
-    /// The design puts a modal in front of it because replacing a document
-    /// changes every project that already loads that identity, and nothing in
-    /// the bundle draws that modal. So the word is drawn and the press is not -
-    /// and an install can never reach an identity that is already here, which is
-    /// what keeps that guarantee true rather than merely intended.
+    /// The design puts a modal in front of the update because replacing a
+    /// document changes every project that already loads that identity. An
+    /// install is offered only where nothing is registered under the identity,
+    /// which is what keeps the press without a modal from ever reaching a
+    /// document some project is loading.
     #[test]
-    fn an_update_is_stated_and_never_run_without_the_modal_that_confirms_it() {
+    fn only_the_update_reaches_an_identity_already_here() {
         assert_eq!(Published::UpdateAvailable.word(), "Update available");
-        assert_eq!(Published::UpdateAvailable.offer(), None);
-        assert_eq!(Published::UpdateAvailable.primary(), None);
-        // The one press that writes a document, and the only state that offers
-        // it is the one that means this machine does not have the item.
+        assert_eq!(Published::UpdateAvailable.offer(), Some(Offer::Update));
+        assert_eq!(Published::UpdateAvailable.primary(), Some(Offer::Update));
+        // The one press that writes a document unasked, and the only state that
+        // offers it is the one that means this machine does not have the item.
         let installs: Vec<String> = every_published()
             .iter()
             .filter(|state| state.offer() == Some(Offer::Install))
@@ -716,16 +713,25 @@ mod tests {
         }
     }
 
-    /// A trailing "..." says the press opens something, and not one of the four
-    /// offered here does. Installing deliberately does not confirm, so it must
-    /// not wear the mark that says it will - which is the only way this surface
-    /// can get that wrong now that the press with a modal behind it is not
-    /// offered at all.
+    /// A trailing "..." says the press opens something, and only the panel's
+    /// update wears it - `CatalogDetail.dc.html:109`. Installing deliberately
+    /// does not confirm, so it must not wear the mark that says it will; the
+    /// row's `Update` opens the same modal and the bundle draws it bare.
     #[test]
-    fn nothing_offered_here_says_it_will_ask_first() {
-        for offer in [Offer::Install, Offer::SeeReplacement, Offer::Retry, Offer::CopyDetails] {
+    fn only_the_panels_update_says_it_will_ask_first() {
+        let every = [
+            Offer::Install,
+            Offer::Update,
+            Offer::SeeReplacement,
+            Offer::Retry,
+            Offer::CopyDetails,
+        ];
+        for offer in every {
             assert!(!offer.label().ends_with("..."), "{offer:?}");
+            let in_the_panel = offer.in_the_panel();
+            assert_eq!(in_the_panel.ends_with("..."), offer == Offer::Update, "{offer:?}");
+            assert_eq!(in_the_panel.trim_end_matches('.'), offer.label());
         }
-        assert_eq!(Offer::Install.label(), "Install");
+        assert_eq!(Offer::Update.in_the_panel(), "Update...");
     }
 }

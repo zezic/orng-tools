@@ -2406,7 +2406,7 @@ pub fn detail(ui: &mut Ui, palette: Palette, item: &Detailed<'_>) -> Detailing {
             }
             if let Some(offer) = primary {
                 ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                    if panel_primary(ui, palette, offer.label()).clicked() {
+                    if panel_primary(ui, palette, offer.in_the_panel()).clicked() {
                         pressed = Detailing::Acted(offer);
                     }
                 });
@@ -2497,11 +2497,13 @@ pub fn detail(ui: &mut Ui, palette: Palette, item: &Detailed<'_>) -> Detailing {
 }
 
 /// The kind as the detail panel tags it: lowercased and in the monospaced face,
-/// which is the design's way of making it a tag rather than a word.
+/// which is the design's way of making it a tag rather than a word. The same
+/// word is the one a sentence names the kind by - the update's `this
+/// modulator`, `UpdateModal.dc.html`'s `kindWord`.
 ///
 /// Not the same words as [`kind_label`]'s - a grid module is tagged `module`
 /// here and named `Grid module` in a list - so the two maps are two facts.
-fn kind_tag(kind: Kind) -> &'static str {
+pub fn kind_tag(kind: Kind) -> &'static str {
     match kind {
         Kind::Device => "device",
         Kind::Modulator => "modulator",
@@ -4238,6 +4240,30 @@ pub struct Confirmation<'a> {
     pub plan: &'a [PlanLine],
     /// What is true afterwards, under the plan.
     pub note: &'a str,
+    pub answers: Answers<'a>,
+}
+
+/// What an update asks before it runs: `UpdateModal.dc.html`.
+///
+/// The other dialog that asks, and not a [`Confirmation`] with its plan left
+/// empty: it has no tag and no numbered list, and it says why in paragraphs and
+/// then in strips about this machine. Every word is the caller's, as there.
+pub struct UpdateQuestion<'a> {
+    pub title: &'a str,
+    /// The one sentence that matters, before anything else.
+    pub lead: &'a str,
+    /// Both versions in the monospaced face, the installed one first.
+    pub versions: &'a str,
+    /// Why the lead is true, a paragraph each.
+    pub reasons: &'a [String],
+    /// What is true of this machine that the press will meet, a strip each.
+    pub caveats: &'a [Caveat],
+    pub answers: Answers<'a>,
+}
+
+/// The pair of controls a question is answered with: the way out, and the
+/// press.
+pub struct Answers<'a> {
     pub cancel: &'a str,
     pub primary: &'a str,
     /// The glyph after the primary's words.
@@ -4245,6 +4271,13 @@ pub struct Confirmation<'a> {
     /// Whether the primary asks the system for administrator rights, and so
     /// wears the shield.
     pub elevates: bool,
+}
+
+/// A strip inside a dialog saying one thing about this machine: a wash, a dot,
+/// and a sentence. `UpdateModal.dc.html:30-35` draws the neutral one.
+pub struct Caveat {
+    pub tone: Tone,
+    pub text: String,
 }
 
 /// One numbered line of a plan.
@@ -4267,6 +4300,7 @@ pub enum Answer {
 /// them a softer corner than a control: they are surfaces, not buttons.
 const PROGRESS_WIDTH: f32 = 436.0;
 const CONFIRMATION_WIDTH: f32 = 476.0;
+const UPDATE_WIDTH: f32 = 428.0;
 const DIALOG_RADIUS: u8 = 8;
 /// The dialog's own padding, which is not the window's: 14 across, and a little
 /// less under a heading than over it.
@@ -4281,17 +4315,28 @@ const STEP_DOT: f32 = 5.0;
 const UNDER_A_TITLE: f32 = 2.0;
 /// The bar across the foot, which is a line rather than a trough.
 const PROGRESS_BAR: f32 = 2.0;
-/// The plan, `ORNG Registry.dc.html:231-241`: a pixel more over it than over
-/// the step list, eleven between the sentence, the list and the note, each line
-/// padded five above and below, and its number a pixel down from its words and
-/// ten before them.
-const ABOVE_A_PLAN: f32 = 13.0;
+/// Over the body of a dialog that asks something, a pixel more than over the
+/// step list: the plan's and the update's alike, `ORNG Registry.dc.html:231`
+/// and `UpdateModal.dc.html:25`.
+const ABOVE_A_QUESTION: f32 = 13.0;
+/// The plan, `ORNG Registry.dc.html:231-241`: eleven between the sentence, the
+/// list and the note, each line padded five above and below, and its number a
+/// pixel down from its words and ten before them.
 const BETWEEN_PLAN_BLOCKS: f32 = 11.0;
 const PLAN_LINE_PAD: f32 = 5.0;
 const ALONG_A_PLAN_LINE: f32 = 10.0;
 const UNDER_A_PLAN_NUMBER: f32 = 1.0;
 /// Between the two controls at a dialog's foot.
 const ALONG_A_DIALOG_FOOT: f32 = 8.0;
+/// The update's body, `UpdateModal.dc.html:25-36`: ten between each of its
+/// parts, and a strip padded eight by ten with its dot five down from the top
+/// of the words and nine before them.
+const BETWEEN_UPDATE_BLOCKS: f32 = 10.0;
+const CAVEAT_PAD_X: f32 = 10.0;
+const CAVEAT_PAD_Y: f32 = 8.0;
+const CAVEAT_DOT: f32 = 6.0;
+const OVER_A_CAVEAT_DOT: f32 = 5.0;
+const ALONG_A_CAVEAT: f32 = 9.0;
 
 /// A dialog over the window, holding it still.
 ///
@@ -4517,7 +4562,7 @@ pub fn confirmation_dialog(
             .inner_margin(Margin {
                 left: DIALOG_PAD as i8,
                 right: DIALOG_PAD as i8,
-                top: ABOVE_A_PLAN as i8,
+                top: ABOVE_A_QUESTION as i8,
                 bottom: DIALOG_PAD as i8,
             })
             .show(ui, |ui| {
@@ -4537,35 +4582,134 @@ pub fn confirmation_dialog(
                 );
             });
 
-        let foot = Margin::symmetric(DIALOG_PAD as i8, UNDER_A_HEADING as i8);
-        dialog_band(ui, palette, Edge::Bottom, foot, |ui| {
-            // As tall as the press, so the way out beside it is centred on it
-            // rather than hung from the top of a row the theme sized.
-            ui.allocate_ui_with_layout(
-                vec2(ui.available_width(), metric::ACTION),
-                Layout::right_to_left(Align::Center),
-                |ui| {
-                    ui.spacing_mut().item_spacing.x = 0.0;
-                    let (primary, icon) = (confirmation.primary, confirmation.icon);
-                    let pressed = if confirmation.elevates {
-                        elevating_button(ui, palette, primary, icon)
-                    } else {
-                        primary_button(ui, palette, primary, icon, true, "")
-                    };
-                    ui.add_space(ALONG_A_DIALOG_FOOT);
-                    let way_out = cancel_button(ui, palette, confirmation.cancel, Foot::Dialog);
-                    if pressed.clicked() {
-                        Some(Answer::Proceed)
-                    } else if way_out.clicked() {
-                        Some(Answer::Cancel)
-                    } else {
-                        None
-                    }
-                },
-            )
-            .inner
-        })
+        answer_foot(ui, palette, &confirmation.answers)
     })
+}
+
+/// The update's question, over the window, and what it was answered with.
+///
+/// `UpdateModal.dc.html`, mounted by the shell over its scrim as the plan is.
+/// The heading is the title alone; the body is the lead in the primary ink,
+/// both versions under it, the reasons in the tertiary ink, and a strip for
+/// each caveat; the foot is the plan's own.
+pub fn update_dialog(
+    ui: &mut Ui,
+    palette: Palette,
+    question: &UpdateQuestion<'_>,
+) -> Option<Answer> {
+    dialog(ui, palette, "update-dialog", UPDATE_WIDTH, |ui| {
+        dialog_band(ui, palette, Edge::Top, heading_margin(), |ui| {
+            ui.add(
+                egui::Label::new(
+                    font::run(question.title, font::emphasis(ui.ctx(), font::DIALOG_TITLE))
+                        .color(palette.ink),
+                )
+                .wrap(),
+            );
+        });
+
+        Frame::new()
+            .inner_margin(Margin {
+                left: DIALOG_PAD as i8,
+                right: DIALOG_PAD as i8,
+                top: ABOVE_A_QUESTION as i8,
+                bottom: DIALOG_PAD as i8,
+            })
+            .show(ui, |ui| {
+                ui.set_width(ui.available_width());
+                ui.label(
+                    font::wrapping(question.lead, font::CONTROL, font::Leading::Describing)
+                        .color(palette.ink),
+                );
+                ui.add_space(BETWEEN_UPDATE_BLOCKS);
+                ui.label(font::run(question.versions, font::mono(font::MONO)).color(palette.ink_3));
+                for reason in question.reasons {
+                    ui.add_space(BETWEEN_UPDATE_BLOCKS);
+                    ui.label(
+                        font::wrapping(reason.as_str(), font::NOTE, font::Leading::Planning)
+                            .color(palette.ink_3),
+                    );
+                }
+                for caveat in question.caveats {
+                    ui.add_space(BETWEEN_UPDATE_BLOCKS);
+                    caveat_strip(ui, palette, caveat);
+                }
+            });
+
+        answer_foot(ui, palette, &question.answers)
+    })
+}
+
+/// A question's foot: the way out, and the press at the right of it.
+///
+/// The same in both dialogs that ask, and here once so the two cannot drift:
+/// the press is the action bar's own control, 32 tall, beside a 30-tall
+/// `Cancel` eight to its left.
+fn answer_foot(ui: &mut Ui, palette: Palette, answers: &Answers<'_>) -> Option<Answer> {
+    let foot = Margin::symmetric(DIALOG_PAD as i8, UNDER_A_HEADING as i8);
+    dialog_band(ui, palette, Edge::Bottom, foot, |ui| {
+        // As tall as the press, so the way out beside it is centred on it
+        // rather than hung from the top of a row the theme sized.
+        ui.allocate_ui_with_layout(
+            vec2(ui.available_width(), metric::ACTION),
+            Layout::right_to_left(Align::Center),
+            |ui| {
+                ui.spacing_mut().item_spacing.x = 0.0;
+                let (primary, icon) = (answers.primary, answers.icon);
+                let pressed = if answers.elevates {
+                    elevating_button(ui, palette, primary, icon)
+                } else {
+                    primary_button(ui, palette, primary, icon, true, "")
+                };
+                ui.add_space(ALONG_A_DIALOG_FOOT);
+                let way_out = cancel_button(ui, palette, answers.cancel, Foot::Dialog);
+                if pressed.clicked() {
+                    Some(Answer::Proceed)
+                } else if way_out.clicked() {
+                    Some(Answer::Cancel)
+                } else {
+                    None
+                }
+            },
+        )
+        .inner
+    })
+}
+
+/// One caveat as its strip: the tone's wash, its dot at the height of the first
+/// line, and the sentence wrapped beside it.
+///
+/// The neutral dot is the secondary ink, as `UpdateModal.dc.html:32` draws it,
+/// rather than [`Tone::mark`]'s tertiary: at six pixels the fainter grey is
+/// lost against the wash. A toned one is its mark, as a banner's glyph is.
+fn caveat_strip(ui: &mut Ui, palette: Palette, caveat: &Caveat) {
+    let dot = match caveat.tone {
+        Tone::Neutral => palette.ink_2,
+        toned => toned.mark(palette),
+    };
+    Frame::new()
+        .fill(caveat.tone.wash(palette))
+        .inner_margin(Margin::symmetric(CAVEAT_PAD_X as i8, CAVEAT_PAD_Y as i8))
+        .show(ui, |ui| {
+            ui.set_width(ui.available_width());
+            ui.with_layout(Layout::left_to_right(Align::Min), |ui| {
+                ui.spacing_mut().item_spacing.x = 0.0;
+                ui.vertical(|ui| {
+                    ui.add_space(OVER_A_CAVEAT_DOT);
+                    let (at, _) =
+                        ui.allocate_exact_size(vec2(CAVEAT_DOT, CAVEAT_DOT), Sense::hover());
+                    ui.painter().circle_filled(at.center(), CAVEAT_DOT / 2.0, dot);
+                });
+                ui.add_space(ALONG_A_CAVEAT);
+                ui.add(
+                    egui::Label::new(
+                        font::wrapping(caveat.text.as_str(), font::NOTE, font::Leading::Noticing)
+                            .color(caveat.tone.supporting(palette)),
+                    )
+                    .wrap(),
+                );
+            });
+        });
 }
 
 /// One line of the plan: its number, and its words wrapped beside it.

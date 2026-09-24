@@ -430,15 +430,9 @@ pub struct App {
     /// Set while work is in flight, and only while it is in flight: the moment
     /// it reports, what it did becomes an [`Outcome`] and the work is over.
     applying: Option<Applying>,
-    /// The plan, while it is up: from the press of `Prepare installation` on
-    /// the bar until the dialog's own press or its `Cancel`.
-    ///
-    /// The one press in the window that confirms before it runs, because it is
-    /// the one that modifies Bitwig Studio itself - README, section 6. What the
-    /// plan says is worked out as it is drawn, from the same rows the press
-    /// will write: a drop can still land under the scrim, and a plan copied
-    /// out at the press would then describe a press that no longer exists.
-    /// What is held is only what the disk has to be asked about.
+    /// The question a press asks before it runs, while it is up: from the
+    /// press until the dialog's own press or its `Cancel`. One field for both,
+    /// because both hold the window still behind a scrim and only one can.
     confirming: Option<Confirming>,
     /// What the last press came to. Stated as a banner until the user puts it
     /// away, because nothing else will stop being true and take it off screen.
@@ -622,7 +616,7 @@ impl App {
         self.applying = Some(applying);
     }
 
-    /// Whether the plan is up. Tests only.
+    /// Whether a question is up - the plan, or an update's. Tests only.
     #[cfg(test)]
     pub fn is_confirming(&self) -> bool {
         self.confirming.is_some()
@@ -757,9 +751,10 @@ impl App {
             Screen::About(_) => self.about(ui),
         }
 
-        // The plan, before the work: it can only be up while the list is
-        // showing, because the press that opens it is on the list's bar, and
-        // its scrim is what keeps every other press from being made.
+        // A question, before the work: it can only be up while the list is
+        // showing, because the presses that open one are on the list's bar and
+        // the catalog's rows, and its scrim is what keeps every other press
+        // from being made.
         if self.confirming.is_some() {
             self.confirm(ui);
         }
@@ -1935,15 +1930,24 @@ impl App {
             // because an install is not one of the things the primary action
             // does - somebody with three documents staged may install from the
             // catalog and still expect to press Apply afterwards.
-            Ok(entries) if errand == Errand::Install => {
+            //
+            // An update the same, and it names the version it is now: the
+            // question named both, and this is the one that is true.
+            Ok(entries) if matches!(errand, Errand::Install | Errand::Update) => {
                 let [uuid] = wrote[..] else {
                     panic!("an install writes exactly one row, and this one wrote {}", wrote.len())
                 };
-                let name = entries.get(uuid).expect("the row this run just wrote").name.clone();
+                let row = entries.get(uuid).expect("the row this run just wrote");
+                let outcome = match (&row.provenance, errand) {
+                    (Provenance::Catalog { version, .. }, Errand::Update) => {
+                        Outcome::Updated { name: row.name.clone(), version: *version }
+                    }
+                    _ => Outcome::Installed { name: row.name.clone() },
+                };
                 if let Session::Found(found) = &mut self.session {
                     found.relist(entries, wrote);
                 }
-                self.outcome = Some(Outcome::Installed { name });
+                self.outcome = Some(outcome);
             }
             Ok(entries) => {
                 // What was written is no longer pending.
@@ -2268,15 +2272,23 @@ enum Outcome {
     /// A published item was installed. Named, because the press was about one
     /// item and a count of one is the window declining to say which.
     Installed { name: String },
+    /// A newer version of an installed item was put in place of the old one.
+    /// Named for the reason an install is, and with the version it is now.
+    Updated { name: String, version: orng_tools::ItemVersion },
     /// An item's bytes were not the ones the catalog states, so nothing was
-    /// installed.
+    /// installed or updated.
     ///
     /// Its own variant rather than a [`Outcome::Failed`]: what failed is not a
     /// run, because no run started. The design is explicit that this must not
     /// read like a network error, and the thing that makes it not read like one
     /// is the promise underneath - nothing reached the library or the
     /// installation, because nothing got as far as being written.
-    Refused { item: String, why: String },
+    Refused {
+        /// An install or an update, which is the one word the headline changes.
+        what: Errand,
+        item: String,
+        why: String,
+    },
     Failed {
         /// Which run stopped, which is what decides what can honestly be
         /// promised about the state left behind: the three differ in what they
@@ -2325,6 +2337,7 @@ impl Outcome {
             | Outcome::Registered { .. }
             | Outcome::Located
             | Outcome::Installed { .. }
+            | Outcome::Updated { .. }
             | Outcome::Restored
             | Outcome::Declined => None,
         }
@@ -2401,13 +2414,28 @@ impl Outcome {
                     .to_owned(),
                 None,
             ),
+            // The words are the ones the user had, which is what they are owed
+            // being told: the question said the version would change, and said
+            // nothing about the description.
+            Outcome::Updated { name, version } => (
+                Tone::Ok,
+                format!("{name} is updated to {version}. Restart Bitwig Studio to load it."),
+                "Its description and search keywords are the ones you had, and the file is \
+                 where it was. Projects that already use it will open with the new version."
+                    .to_owned(),
+                None,
+            ),
             // Deliberately not worded as a network problem, and deliberately
             // offering no way to try again. What is being said is that the
             // catalog's review did not reach this machine intact, and the one
             // useful thing to do with that is to report it.
-            Outcome::Refused { item, .. } => (
+            Outcome::Refused { what, item, .. } => (
                 Tone::Err,
-                format!("{item} was not installed, and nothing was written."),
+                if *what == Errand::Update {
+                    format!("{item} was not updated, and nothing was written.")
+                } else {
+                    format!("{item} was not installed, and nothing was written.")
+                },
                 "The file does not match the hash the catalog states for it, so it was \
                  refused before anything reached your library or your installation. The \
                  catalog's review is what stands behind an item, and this file is not the \
@@ -2435,6 +2463,19 @@ impl Outcome {
                 "It was fetched and checked against the digest the catalog states, and the \
                  write is what stopped. The entry list is written last, so it is unchanged \
                  and nothing is registered."
+                    .to_owned(),
+                Some("Copy details"),
+            ),
+            // Not "nothing was changed": the document is placed before the
+            // list is written, so the new one may already be where the old one
+            // was. What can be promised is that the list still names the old
+            // version, and that the same press finishes the job.
+            Outcome::Failed { what: Errand::Update, .. } => (
+                Tone::Err,
+                "The item was not updated.".to_owned(),
+                "It was fetched and checked against the digest the catalog states, and the \
+                 write is what stopped. The entry list is written last, so it still names the \
+                 version you had, and updating again finishes the job."
                     .to_owned(),
                 Some("Copy details"),
             ),
@@ -3203,14 +3244,22 @@ impl App {
     /// so a window nobody has opened the catalog in says nothing about updates
     /// instead of reaching for a socket to draw a list.
     fn update_available(&self, entry: &Registration) -> bool {
-        let Provenance::Catalog { version, .. } = &entry.provenance else { return false };
+        self.newer(entry).is_some()
+    }
+
+    /// The item the catalog publishes at a newer version than this entry was
+    /// installed at, and that installed version - the two numbers the update's
+    /// question states side by side.
+    fn newer<'a>(
+        &'a self,
+        entry: &'a Registration,
+    ) -> Option<(&'a orng_catalog::IndexEntry, &'a orng_tools::ItemVersion)> {
+        let Provenance::Catalog { version, .. } = &entry.provenance else { return None };
         // By identity and never by name. The catalog allows two items to share
-        // a display name and this application renames an entry when they
-        // collide, so matching on the name would eventually mark the wrong row
-        // - and would do it first to the user who hit the rename.
-        self.index()
-            .and_then(|index| index.items.iter().find(|item| item.uuid == entry.uuid))
-            .is_some_and(|published| published.version > *version)
+        // a display name, so matching on the name would eventually mark the
+        // wrong row.
+        let published = self.index()?.items.iter().find(|item| item.uuid == entry.uuid)?;
+        (published.version > *version).then_some((published, version))
     }
 
     fn status_of(&self, found: &Found, entry: &Registration) -> Status {
@@ -3315,6 +3364,13 @@ impl App {
             .collect()
     }
 
+    /// Whether the catalog publishes a newer version of an entry registered
+    /// here under this identity.
+    fn updatable(&self, uuid: Uuid) -> bool {
+        let Session::Found(found) = &self.session else { return false };
+        found.entries().get(uuid).is_some_and(|entry| self.update_available(entry))
+    }
+
     /// The published item that lists this one as replaced, if one does.
     ///
     /// A fact about the whole index rather than about the row, which is why both
@@ -3399,6 +3455,18 @@ impl App {
     /// offers applies to something that is not registered.
     fn offer(&mut self, on: Uuid, offer: Offer, ctx: &egui::Context) {
         match offer {
+            // Nothing starts on top of something already running, for the
+            // reason `install` gives - and nothing is asked or cleared on the
+            // way to not starting it: a question whose `Update` could start
+            // nothing is not worth asking, and a retry that cleared the failure
+            // would say `Download failed` no longer while trying nothing.
+            Offer::Install | Offer::Update | Offer::Retry if self.is_working() => {}
+            // Asked first, and the question starts the fetch if it is answered
+            // yes. A retry of an update that failed is an update too: the item
+            // is registered here, so trying it again replaces a document some
+            // project may be loading, exactly as the first press would have.
+            Offer::Update => self.confirming = Some(Confirming::Update(on)),
+            Offer::Retry if self.updatable(on) => self.confirming = Some(Confirming::Update(on)),
             // A press on a row that failed is a press on the row as it will be
             // once it is tried again, so the failure goes before the attempt
             // starts. Leaving it would draw `Download failed` over a download
@@ -3419,13 +3487,15 @@ impl App {
     }
 
     /// Fetch a published item, prove it is the one the index described, and
-    /// register it.
+    /// register it - or, where its identity is registered already, put it in
+    /// place of the version that is.
     ///
     /// The fetch is a worker of its own and the registration is the [`Applying`]
     /// every other write goes through - which is the whole of why installing
-    /// needs no new machinery on this side. The design's own sentence: on a
-    /// prepared installation this is *Update entries* work, so there is no
-    /// backup, no confirmation and no requirement that Bitwig be closed.
+    /// and updating need no new machinery on this side. The design's own
+    /// sentence: on a prepared installation this is *Update entries* work, so
+    /// there is no backup and no requirement that Bitwig be closed. An update
+    /// has been confirmed by the time it gets here; an install is never asked.
     ///
     /// **Nothing starts on top of something already running**, for the reason
     /// `write_words` gives. An install that is queued behind a preparation would
@@ -3455,6 +3525,13 @@ impl App {
         assert!(self.applying.is_none(), "an install was written on top of a run in flight");
         let outcome = finished.outcome.expect("only a finished install is taken");
         let item = finished.item;
+        // Which of the two this is, by whether the identity is registered now
+        // rather than by which press started it: what the write does is what
+        // the list in hand says, and so is what its failure left behind.
+        let errand = match &self.session {
+            Session::Found(found) if found.entries().get(item.uuid).is_some() => Errand::Update,
+            _ => Errand::Install,
+        };
         let document = match outcome {
             Ok(document) => document,
             Err(refused) => {
@@ -3465,6 +3542,7 @@ impl App {
                 // every dropped connection is a window talking over itself.
                 if let catalog::Refused::Verification(why) = &refused {
                     self.outcome = Some(Outcome::Refused {
+                        what: errand,
                         item: item.name.clone(),
                         why: why.clone(),
                     });
@@ -3483,17 +3561,22 @@ impl App {
                 "{} was fetched, and there is no installation to register it in",
                 item.name
             );
-            self.outcome = Some(Outcome::Failed { what: Errand::Install, why });
+            self.outcome = Some(Outcome::Failed { what: errand, why });
             return;
         };
-        let registration = match published_registration(&item, &document) {
+        let registration = match found.entries().get(item.uuid) {
+            Some(entry) => updated_registration(entry, &item, &document),
+            None => published_registration(&item, &document).map_err(|why| why.to_string()),
+        };
+        let registration = match registration {
             Ok(registration) => registration,
             // A published item this machine cannot register under: a name with a
-            // tab in it, or a file name that will not make a library path. The
-            // bytes verified, so this is the catalog carrying something the
-            // entry list cannot hold, and nothing has been written.
+            // tab in it, a file name that will not make a library path, or an
+            // update that is not the kind the entry it replaces is. The bytes
+            // verified, so this is the catalog carrying something the entry
+            // list cannot hold, and nothing has been written.
             Err(why) => {
-                self.outcome = Some(Outcome::Failed { what: Errand::Install, why: why.to_string() });
+                self.outcome = Some(Outcome::Failed { what: errand, why });
                 return;
             }
         };
@@ -3501,7 +3584,7 @@ impl App {
         let mut job = Job::against(Work::Entries, &found.to, found.entries());
         job.add(registration, &document);
         self.applying = Some(Applying::start(
-            Errand::Install,
+            errand,
             found.to.clone(),
             job,
             found.rights.clone(),
@@ -3949,18 +4032,31 @@ impl App {
                 // The one press that confirms. Everything the plan says is
                 // worked out as it is drawn; what the disk has to be asked is
                 // asked now, once.
-                Work::PrepareThenEntries => self.confirming = Some(Confirming::read(found)),
+                Work::PrepareThenEntries => {
+                    self.confirming = Some(Confirming::Preparation(PlanFacts::read(found)));
+                }
                 Work::Entries => self.start(work, ui.ctx()),
             }
         }
     }
 
-    /// The plan, over the window, until it is answered.
+    /// Whichever question is up, over the window, until it is answered.
     fn confirm(&mut self, ui: &mut egui::Ui) {
-        let (Session::Found(found), Some(confirming)) = (&self.session, &self.confirming) else {
+        match self.confirming {
+            Some(Confirming::Preparation(_)) => self.confirm_preparation(ui),
+            Some(Confirming::Update(uuid)) => self.confirm_update(ui, uuid),
+            None => {}
+        }
+    }
+
+    /// The plan, over the window, until it is answered.
+    fn confirm_preparation(&mut self, ui: &mut egui::Ui) {
+        let (Session::Found(found), Some(Confirming::Preparation(facts))) =
+            (&self.session, &self.confirming)
+        else {
             return;
         };
-        let plan = self.plan(found, confirming);
+        let plan = self.plan(found, facts);
         let answer = widget::confirmation_dialog(
             ui,
             self.palette,
@@ -3971,16 +4067,104 @@ impl App {
                 plan: &plan,
                 note: "A Bitwig update resets the installation. Prepare it again afterwards. \
                        Your registered devices are kept.",
-                cancel: "Cancel",
-                primary: PREPARE,
-                icon: icon::PREPARE,
-                elevates: asks_for_rights(found),
+                answers: widget::Answers {
+                    cancel: "Cancel",
+                    primary: PREPARE,
+                    icon: icon::PREPARE,
+                    elevates: asks_for_rights(found),
+                },
             },
         );
         match answer {
             Some(widget::Answer::Proceed) => {
                 self.confirming = None;
                 self.start(Work::PrepareThenEntries, ui.ctx());
+            }
+            Some(widget::Answer::Cancel) => self.confirming = None,
+            None => {}
+        }
+    }
+
+    /// The update's question, over the window, until it is answered.
+    ///
+    /// Asked as it is drawn, from the index and the list in hand. A question
+    /// that stopped being true under the scrim - a catalog refreshed to one that
+    /// no longer publishes anything newer - is put away rather than answered,
+    /// because an `Update` pressed then would update to nothing.
+    ///
+    /// Two strips under the reasons, one the design's and one ours. The
+    /// design's: Bitwig is open and keeps playing the old version. Ours: the
+    /// file on disk was changed since it was installed - the entry list's
+    /// `Changed` - and the update replaces it, which loses that change.
+    /// `design-review.md` round 4, A1.
+    fn confirm_update(&mut self, ui: &mut egui::Ui, uuid: Uuid) {
+        let Session::Found(found) = &self.session else {
+            self.confirming = None;
+            return;
+        };
+        let Some(entry) = found.entries().get(uuid) else {
+            self.confirming = None;
+            return;
+        };
+        let Some((item, installed)) = self.newer(entry) else {
+            self.confirming = None;
+            return;
+        };
+        let kind = widget::kind_tag(entry.kind());
+        let version = &item.version;
+
+        let mut caveats = Vec::new();
+        if found.standing(uuid).content() == Content::Rewritten {
+            caveats.push(widget::Caveat {
+                tone: Tone::Warn,
+                text: "The file on disk was changed after it was installed. Updating replaces \
+                       it, and that change is lost."
+                    .to_owned(),
+            });
+        }
+        if matches!(found.running, RunState::Running(_)) {
+            caveats.push(widget::Caveat {
+                tone: Tone::Neutral,
+                text: format!(
+                    "Bitwig Studio is open, so it keeps playing {installed} until you restart it."
+                ),
+            });
+        }
+        let answer = widget::update_dialog(
+            ui,
+            self.palette,
+            &widget::UpdateQuestion {
+                title: &format!("Update {} to {version}?", item.name),
+                lead: &format!("Projects that already use this {kind} will use the new version."),
+                versions: &format!("installed {installed}  \u{2192}  catalog {version}"),
+                reasons: &[
+                    format!(
+                        "Bitwig finds a {kind} by identity, not by content, so an update reaches \
+                         back into projects you have already saved. The catalog only allows \
+                         updates that keep the parameter set, so those projects will still load \
+                         and sound as saved, but they will play the new version."
+                    ),
+                    format!(
+                        "A change that alters the parameter set is published as a separate \
+                         {kind} instead, and never arrives this way."
+                    ),
+                ],
+                caveats: &caveats,
+                answers: widget::Answers {
+                    cancel: "Cancel",
+                    primary: "Update",
+                    icon: icon::PREPARE,
+                    elevates: asks_for_rights(found),
+                },
+            },
+        );
+        match answer {
+            // The press on a row that failed before is a press on the row as it
+            // will be once it is tried again, as `offer` says of a retry.
+            Some(widget::Answer::Proceed) => {
+                self.confirming = None;
+                self.catalog.retry(uuid);
+                self.install(uuid, ui.ctx());
             }
             Some(widget::Answer::Cancel) => self.confirming = None,
             None => {}
@@ -4001,7 +4185,7 @@ impl App {
     /// rather than written, a removal names whether the file goes with it in
     /// the words its own control used, and the links are counted rather than
     /// assumed to be one. `design-review.md` round 3 item 8.
-    fn plan(&self, found: &Found, confirming: &Confirming) -> Vec<widget::PlanLine> {
+    fn plan(&self, found: &Found, confirming: &PlanFacts) -> Vec<widget::PlanLine> {
         let plain = |text: String| widget::PlanLine { text, modifies_the_installation: false };
         let mut lines = Vec::new();
 
@@ -4148,10 +4332,31 @@ impl App {
     }
 }
 
+/// The two presses in the window that ask before they run.
+enum Confirming {
+    /// The plan, from `Prepare installation` on the bar: the one press that
+    /// modifies Bitwig Studio itself - README, section 6.
+    ///
+    /// What the plan says is worked out as it is drawn, from the same rows the
+    /// press will write: a drop can still land under the scrim, and a plan
+    /// copied out at the press would then describe a press that no longer
+    /// exists. What is held is only what the disk has to be asked about.
+    Preparation(PlanFacts),
+    /// An update, from a catalog row's `Update` or the detail panel's
+    /// `Update...`: the one catalog press that confirms, because it reaches
+    /// back into projects already saved - README, "Install, update,
+    /// supersede".
+    ///
+    /// The identity alone, for the reason the plan holds so little: the
+    /// versions and the caveats are read as the question is drawn, so a
+    /// catalog refreshed under the scrim is asked about as it now is.
+    Update(Uuid),
+}
+
 /// What the plan says that the disk has to be asked about, read once when the
 /// confirmation opens rather than on every frame it is drawn - the rule the
 /// Restore screen's list already follows.
-struct Confirming {
+struct PlanFacts {
     /// Whether `~/.orng/backups` already holds this build's pristine copy. The
     /// preparation then keeps it and patches from it rather than writing one -
     /// the decision is [`orng_tools::Plan`]'s, and the confirmation is where it
@@ -4163,8 +4368,8 @@ struct Confirming {
     links_to_create: usize,
 }
 
-impl Confirming {
-    fn read(found: &Found) -> Confirming {
+impl PlanFacts {
+    fn read(found: &Found) -> PlanFacts {
         let backup_exists = found
             .condition
             .build
@@ -4174,7 +4379,7 @@ impl Confirming {
             .into_iter()
             .filter(|kind| !placement::is_linked(&found.to.install, &found.to.library, *kind))
             .count();
-        Confirming { backup_exists, links_to_create }
+        PlanFacts { backup_exists, links_to_create }
     }
 }
 
@@ -4482,6 +4687,42 @@ fn revised(entry: &Registration, words: &widget::Words) -> Option<Registration> 
         description: words.description.clone(),
         keywords: words.keywords.clone(),
         ..entry.clone()
+    })
+}
+
+/// What to register an update as: the entry it replaces, carrying the new
+/// document and the publication it is.
+///
+/// **The entry's words and the file's place are kept.** The description and the
+/// search keywords may have been edited in the inspector, and an update that
+/// took the new version's would drop that edit without a word - the user's
+/// choice over taking them, 2026-09-24. The library path is kept because the
+/// catalog lets an item be renamed between versions: following the new file
+/// name would leave the old document behind under the same identity, two files
+/// Bitwig takes for one device.
+///
+/// The name is the document's, because the description bundle is keyed by it -
+/// see [`revised`]. Refused where the document is not the entry's kind, which a
+/// kept path would then name wrongly: the kind is the path's extension.
+fn updated_registration(
+    entry: &Registration,
+    item: &orng_catalog::IndexEntry,
+    document: &Document,
+) -> Result<Registration, String> {
+    if document.kind() != entry.kind() {
+        return Err(format!(
+            "{} is published as a {} now, and the entry it would replace is a {}",
+            item.name,
+            widget::kind_tag(document.kind()),
+            widget::kind_tag(entry.kind())
+        ));
+    }
+    let published = published_registration(item, document).map_err(|why| why.to_string())?;
+    Ok(Registration {
+        library_path: entry.library_path.clone(),
+        description: entry.description.clone(),
+        keywords: entry.keywords.clone(),
+        ..published
     })
 }
 

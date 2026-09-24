@@ -694,9 +694,22 @@ fn checked(item: &IndexEntry, bytes: Vec<u8>, url: &str) -> Result<Document, Ref
     // rather than anything the network did. Refused on the same terms, because
     // the remedies are what separate the two states and this one is not fixed by
     // asking again either.
-    Document::parse(Kind::from(item.kind), bytes).map_err(|why| {
+    let document = Document::parse(Kind::from(item.kind), bytes).map_err(|why| {
         Refused::Verification(format!("{url}\nthe published document did not read: {why}"))
-    })
+    })?;
+
+    // The identity the row is registered under is the document's, and an
+    // update decides which entry it replaces by the index's. A document that
+    // is not the identity its row states would be registered beside the entry
+    // it was fetched to replace.
+    let carried = document.identity().uuid;
+    if carried != item.uuid {
+        return Err(Refused::Verification(format!(
+            "{url}\nthe index states {} and the document is {carried}",
+            item.uuid
+        )));
+    }
+    Ok(document)
 }
 
 /// One item being fetched, on another thread.
@@ -1211,6 +1224,14 @@ mod tests {
         let why = checked(&describing(&nonsense), nonsense, "https://example.invalid/d")
             .expect_err("something that is not a document was accepted");
         assert!(matches!(why, Refused::Verification(_)), "{why:?}");
+
+        // And the right bytes under a row that states another identity.
+        let mut elsewhere = describing(&bytes);
+        elsewhere.uuid = "c0ffee00-1111-4222-8333-444455556666".parse().expect("an identity");
+        let why = checked(&elsewhere, bytes, "https://example.invalid/d")
+            .expect_err("a document was accepted under an identity it does not carry");
+        assert!(matches!(why, Refused::Verification(_)), "{why:?}");
+        assert!(why.details().contains(&item.uuid.to_string()), "{}", why.details());
     }
 
     /// The real thing, against the real catalog, end to end: fetch the index,

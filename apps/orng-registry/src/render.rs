@@ -13,7 +13,7 @@ use eframe::egui;
 use egui_kittest::kittest::Queryable as _;
 use egui_kittest::Harness;
 use orng_tools::{
-    Condition, Destination, GuardState, Helper, Manifest, OrngHome, RunState, Strategy,
+    Condition, Content, Destination, GuardState, Helper, Manifest, OrngHome, RunState, Strategy,
     UserLibrary,
 };
 
@@ -2242,6 +2242,303 @@ fn installing_registers_the_item_at_the_version_and_review_the_index_names() {
     );
 }
 
+/// The machine an update is asked about and written on: `BREATH FOLLOWER`
+/// registered a version behind the sample index, placed by copying so that a
+/// write lands, with Bitwig open or not as `running` says.
+///
+/// `content` is what is on disk where the entry says its document is.
+/// `Content::Rewritten` puts other bytes there after the entry was registered,
+/// which is the entry list's `Changed` - reached the way a real machine reaches
+/// it, as [`damaged`] reaches it.
+fn behind(root: &std::path::Path, running: RunState, content: Content) -> Session {
+    let to = Destination { placement: Strategy::Copy, ..destination(root) };
+    let entries = placed(&to, outdated_entries());
+    if content == Content::Rewritten {
+        let entry = entries.get(breath_follower()).expect("the sample list carries it");
+        std::fs::write(entry.library_path.resolve(&to.install), b"edited in Bitwig")
+            .expect("the fixture's modulator could not be rewritten");
+    }
+    Session::Found(Box::new(Found::new(
+        to,
+        Condition { build: build(), helper: Helper::Present, guard: GuardState::Disarmed },
+        running,
+        entries,
+    )))
+}
+
+fn breath_follower() -> orng_tools::Uuid {
+    BREATH_FOLLOWER.parse().expect("a sample identity")
+}
+
+/// The catalog's list over a machine, on a given index.
+fn catalog_over(session: Session, index: orng_catalog::Index) -> Harness<'static, App> {
+    window(session, |app, _| {
+        app.set_catalog(Catalog::just_fetched(index));
+        app.show_view(View::Catalog);
+    })
+}
+
+/// The catalog over [`behind`], with the row's `Update` pressed.
+fn asked_to_update(name: &str, running: RunState, content: Content) -> Harness<'static, App> {
+    let mut harness = catalog_over(behind(&fixture(name), running, content), superseded());
+    harness.get_by_label("Update").click();
+    harness.run();
+    harness
+}
+
+/// The question's own `Update`, which carries its arrow in its label - and
+/// not the row's, which does not. Of the question's two nodes, the lower is the
+/// one drawn in the middle of the window, the other the sizing pass's.
+fn the_update_press<'t>(harness: &'t Harness<'static, App>) -> egui_kittest::Node<'t> {
+    use egui_kittest::kittest::NodeT as _;
+    let press = format!("Update{}", crate::widget::icon::PREPARE);
+    harness
+        .get_all_by_label_contains("Update")
+        .filter(|node| node.accesskit_node().label().as_deref() == Some(press.as_str()))
+        .max_by(|a, b| a.rect().top().total_cmp(&b.rect().top()))
+        .expect("the question offers no press")
+}
+
+fn bitwig_open() -> RunState {
+    RunState::Running(vec!["BitwigStudio".to_owned()])
+}
+
+/// The row's `Update` asks before anything is fetched, and the question is the
+/// design's: both versions, what an update does to projects already saved, and
+/// - with Bitwig open - that the open Bitwig goes on playing the old one.
+///
+/// The design's own state, `catalogupdateopen`. The picture is for the layout;
+/// the words and the two presses are asserted through the tree.
+#[test]
+fn an_update_asks_before_it_fetches_anything() {
+    let mut harness = asked_to_update("update-question", bitwig_open(), Content::AsPlaced);
+    assert!(harness.state().is_confirming(), "the row's Update did not ask");
+    assert!(!harness.state().is_working(), "the row's Update fetched before it asked");
+    for said in [
+        "Update BREATH FOLLOWER to 1.2.0?",
+        "Projects that already use this modulator will use the new version.",
+        "installed 1.0.0  \u{2192}  catalog 1.2.0",
+        "Bitwig Studio is open, so it keeps playing 1.0.0 until you restart it.",
+    ] {
+        assert!(anywhere(&harness, said), "the question did not say {said:?}");
+    }
+    assert!(
+        !harness.query_all_by_label_contains("that change is lost").any(|_| true),
+        "an untouched document was said to have been changed"
+    );
+    look(&mut harness, "update-question");
+
+    // The bundle's own boxes, probed from `UpdateModal.dc.html`: 428 wide, 14
+    // in from either edge, 12 under the heading and 13 over the lead, 10
+    // between every part of the body, a strip padded 8 by 10 whose words start
+    // 10 + 6 + 9 in from the body's edge, 14 under it, and the foot's pair 12
+    // into the foot and 8 apart.
+    let width = 428.0;
+    let left = (metric::WINDOW[0] - width) / 2.0;
+    let drawn = |label: &str| {
+        harness
+            .get_all_by_label_contains(label)
+            .max_by(|a, b| a.rect().top().total_cmp(&b.rect().top()))
+            .unwrap_or_else(|| panic!("the question has no {label:?}"))
+            .rect()
+    };
+    let title = drawn("Update BREATH FOLLOWER to 1.2.0?");
+    let lead = drawn("Projects that already use");
+    let versions = drawn("installed 1.0.0");
+    let first = drawn("Bitwig finds a modulator");
+    let second = drawn("A change that alters");
+    let strip = drawn("Bitwig Studio is open");
+    let press = the_update_press(&harness).rect();
+    let cancel = harness
+        .get_all_by_label("Cancel")
+        .max_by(|a, b| a.rect().top().total_cmp(&b.rect().top()))
+        .expect("the question has no way out")
+        .rect();
+    assert_eq!(title.left(), left + 14.0, "the title is not on the dialog's padding");
+    assert_eq!(lead.top() - title.bottom(), 12.0 + 13.0, "the lead is not 12 + 13 under the title");
+    assert_eq!(versions.top() - lead.bottom(), 10.0, "the versions are not 10 under the lead");
+    assert_eq!(first.top() - versions.bottom(), 10.0, "the reasons are not 10 under the versions");
+    assert_eq!(second.top() - first.bottom(), 10.0, "the reasons are not 10 apart");
+    assert_eq!(strip.top() - second.bottom(), 10.0 + 8.0, "the strip is not 10 under the reasons");
+    assert_eq!(strip.left(), left + 14.0 + 10.0 + 6.0 + 9.0, "the strip's words are not 39 in");
+    assert_eq!(press.top() - 12.0, strip.bottom() + 8.0 + 14.0, "the foot is not 14 under it");
+    assert_eq!(press.right(), left + width - 14.0, "the press is not at the right edge");
+    assert_eq!(cancel.right() + 8.0, press.left(), "the pair is not 8 apart");
+    assert_eq!(cancel.height(), 30.0, "Cancel is not the dialog's 30");
+    assert_eq!(press.height(), 32.0, "the press is not the bar's 32");
+    let (top, bottom) = (title.top() - 14.0, press.bottom() + 12.0);
+    assert!(
+        ((top + bottom) - metric::WINDOW[1]).abs() <= 1.0,
+        "the question is not centred in the window: {top} to {bottom}"
+    );
+
+    in_the_dialog(&harness, "Cancel").click();
+    harness.run();
+    assert!(!harness.state().is_confirming(), "Cancel did not put the question away");
+    assert!(!harness.state().is_working(), "Cancel started the update");
+    assert!(anywhere(&harness, "Update available"), "Cancel changed the row");
+}
+
+/// Nothing is asked while another item's fetch is out: the question's
+/// `Update` could start nothing until it lands.
+#[test]
+fn an_update_is_not_asked_while_another_fetch_is_out() {
+    let session = behind(&fixture("update-while-fetching"), RunState::Clear, Content::AsPlaced);
+    let mut harness = catalog_over(session, superseded());
+    let other = superseded().items.pop().expect("the sample index has a second item");
+    harness.state_mut().set_installing(Install::fetching(other));
+    harness.run();
+    harness.get_by_label("Update").click();
+    harness.run();
+    assert!(!harness.state().is_confirming(), "an update was asked about over a fetch");
+}
+
+/// The detail panel's `Update...` asks the same question the row does.
+#[test]
+fn the_panels_update_asks_the_same_question() {
+    let mut harness = detail_on("update-from-the-panel", outdated_entries(), BREATH_FOLLOWER);
+    harness.get_by_label("Update...").click();
+    harness.run();
+    assert!(harness.state().is_confirming(), "the panel's Update... did not ask");
+    assert!(anywhere(&harness, "Update BREATH FOLLOWER to 1.2.0?"));
+}
+
+/// A document edited since it was installed is the one thing an update loses,
+/// and the question says so before the press rather than the list saying
+/// `Changed` afterwards about a file that is no longer there.
+///
+/// Ours and not the design's: `UpdateModal.dc.html` has no such strip.
+/// `design-review.md` round 4, A1.
+#[test]
+fn an_update_over_an_edited_document_says_the_edit_is_lost() {
+    let harness = asked_to_update("update-over-an-edit", RunState::Clear, Content::Rewritten);
+    assert!(
+        anywhere(
+            &harness,
+            "The file on disk was changed after it was installed. Updating replaces it, and \
+             that change is lost."
+        ),
+        "the question did not say the edit would be lost"
+    );
+    assert!(
+        !harness.query_all_by_label_contains("Bitwig Studio is open").any(|_| true),
+        "a closed Bitwig was said to be open"
+    );
+}
+
+/// The question's `Update` starts the fetch, and a retry of an update that
+/// failed asks again rather than replacing the document unasked.
+///
+/// On an index that names no commit, so the real worker answers without a
+/// socket - which is what shows the press reached it.
+#[test]
+fn the_questions_update_fetches_and_its_retry_asks_again() {
+    let session = behind(&fixture("update-fetching"), RunState::Clear, Content::AsPlaced);
+    let mut index = superseded();
+    index.revision = None;
+    let mut harness = catalog_over(session, index);
+    harness.get_by_label("Update").click();
+    harness.run();
+
+    the_update_press(&harness).click();
+    harness.run();
+    assert!(!harness.state().is_confirming(), "the question stayed up after its press");
+    settle(&mut harness);
+    assert!(anywhere(&harness, "Download failed"), "the question's press fetched nothing");
+
+    harness.get_by_label("Retry").click();
+    harness.run();
+    assert!(harness.state().is_confirming(), "retrying an update did not ask again");
+    assert!(!harness.state().is_working(), "retrying an update fetched before it asked");
+}
+
+/// What an update writes: the new document where the old one was, under the
+/// entry's own words, at the version and review the index names.
+///
+/// The item is renamed in this publication - `BREATHER`, and a new file name -
+/// because that is the case the kept path is for. Following the catalog's new
+/// file name would leave the old document behind under the same identity.
+#[test]
+fn an_update_replaces_the_document_and_keeps_the_entrys_words_and_place() {
+    let root = fixture("updating");
+    let mut harness =
+        catalog_over(behind(&root, RunState::Clear, Content::AsPlaced), superseded());
+    let before = harness.state().registered().expect("an installation").clone();
+    let was = before.get(breath_follower()).expect("the sample list carries it").clone();
+
+    let mut item = superseded().items.remove(0);
+    item.path = "content/mono-lab/breath-follower/BREATHER.bwmodulator".to_owned();
+    let document = orng_tools::testing::document(item.kind.into(), item.uuid, "BREATHER");
+    let bytes = document.bytes().to_vec();
+    harness.state_mut().set_installing(Install::finished(item, Ok(document)));
+    settle(&mut harness);
+
+    assert!(
+        anywhere(&harness, "BREATHER is updated to 1.2.0. Restart Bitwig Studio to load it."),
+        "the update said nothing, or said it about the wrong version"
+    );
+    assert!(!anywhere(&harness, "Update available"), "the row still offers the update");
+
+    let entries = harness.state().registered().expect("an installation").clone();
+    let now = entries.get(breath_follower()).expect("the update unregistered the entry");
+    assert_eq!(
+        now.provenance,
+        orng_tools::Provenance::Catalog {
+            version: "1.2.0".parse().expect("a version"),
+            reviewed_in: orng_tools::Revision::new("8c41d0b9a3e5f7126d4b80ca35fe91d7b2064e83").ok(),
+        }
+    );
+    assert_eq!(now.name, "BREATHER", "the name is not the document's");
+    assert_eq!(now.library_path, was.library_path, "the file moved");
+    assert_eq!(now.description, was.description, "the entry's description was replaced");
+    assert_eq!(now.keywords, was.keywords, "the entry's keywords were replaced");
+    assert_eq!(entries.entries().len(), before.entries().len(), "a row was added");
+    // And the new bytes are what is there: read off the disk, through an
+    // installation opened on the fixture rather than a second fixture built
+    // over it.
+    let install = orng_tools::Installation::at(&install_root(&root)).expect("the fixture");
+    let there = std::fs::read(now.library_path.resolve(&install)).expect("the document is gone");
+    assert_eq!(there, bytes, "the old document is still in place");
+
+    // The Local row says an open Bitwig has not read it, and only that row.
+    harness.state_mut().show_view(View::Local);
+    harness.run();
+    assert_eq!(harness.query_all_by_label("Pending restart").count(), 1);
+}
+
+/// An update that is not the kind of the entry it would replace is refused
+/// before anything is written: the kept path's extension is the entry's kind,
+/// and would name the new document wrongly.
+#[test]
+fn an_update_of_another_kind_is_refused() {
+    let mut harness = catalog_over(
+        behind(&fixture("updating-kind"), RunState::Clear, Content::AsPlaced),
+        superseded(),
+    );
+    // Published as a device, file name and all, so that nothing about the
+    // publication itself is refused and the entry's kind is the only objection.
+    let mut item = superseded().items.remove(0);
+    item.path = "content/mono-lab/breath-follower/BREATH FOLLOWER.bwdevice".to_owned();
+    let document =
+        orng_tools::testing::document(orng_tools::Kind::Device, item.uuid, "BREATH FOLLOWER");
+    harness.state_mut().set_installing(Install::finished(item, Ok(document)));
+    // One frame, which is the one that takes the fetch: refused there, no run
+    // is started. Without the refusal a run is, and dies on the entry list's
+    // own assertion that a row is the kind of its document - the same banner,
+    // reached by a crash on a worker rather than by saying no.
+    harness.step();
+    assert!(!harness.state().is_working(), "a run was started for a document of another kind");
+    settle(&mut harness);
+
+    assert!(anywhere(&harness, "The item was not updated."), "the refusal said nothing");
+    let entries = harness.state().registered().expect("an installation");
+    assert_eq!(
+        entries.get(breath_follower()).expect("the entry is still there").provenance,
+        outdated_entries().get(breath_follower()).expect("the sample carries it").provenance,
+        "the entry moved on to a version that was never written"
+    );
+}
+
 /// A fetch that answers while a run is in flight waits for the run, and is
 /// written the frame the run reports.
 ///
@@ -3258,7 +3555,7 @@ fn the_bar_says_when_applying_asks_for_rights() {
 
 /// The small presses that write into the installation say so where the press
 /// will raise the consent dialog, each the way the designer placed it: the
-/// catalog row's `Install` wears the shield before its word, the Restore press
+/// catalog row's `Install` and `Update` wear the shield before their word, the Restore press
 /// wears it in place of its clock, and `Locate`, a glyph with no room for a
 /// second one, says it on hover. A press that only opens something does not.
 #[test]
@@ -3293,6 +3590,21 @@ fn the_small_presses_that_ask_for_rights_say_so() {
         let replacement = presses.iter().find(|l| l.ends_with("See replacement"));
         let replacement = replacement.expect("the sample offers no replacement");
         assert!(!replacement.contains(crate::widget::icon::ELEVATES), "{replacement:?}");
+
+        // The row's `Update` wears it though it only asks, as the bar's
+        // `Prepare installation` does one step before its plan - and so does
+        // the question's own press, which is the one that raises the dialog.
+        let session = behind(&fixture(&name("shield-update")), RunState::Clear, Content::AsPlaced);
+        let mut updating = catalog_over(rights(session), superseded());
+        let row = updating.get_all_by_role(Role::Button).map(label).find(|l| l.ends_with("Update"));
+        let row = row.expect("the sample offers no update");
+        assert_eq!(row.contains(crate::widget::icon::ELEVATES), asks, "{row:?}");
+        updating.get_by_label(&row).click();
+        updating.run();
+        let asked = format!("Update{}", crate::widget::icon::PREPARE);
+        let press = updating.get_all_by_role(Role::Button).map(label).find(|l| l.contains(&asked));
+        let press = press.expect("the question offers no press");
+        assert_eq!(press.contains(crate::widget::icon::ELEVATES), asks, "{press:?}");
 
         let root = fixture(&name("shield-restore"));
         let session = rights(found(&root, Helper::Absent, GuardState::Armed));

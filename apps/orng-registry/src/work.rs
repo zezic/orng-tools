@@ -91,6 +91,14 @@ pub enum Errand {
     /// so installing writes files and asks nothing. Preparing the installation
     /// is the other press, and the action bar goes on offering it.
     Install,
+    /// A newer version of a published item already registered here was fetched,
+    /// proved, and put in place of the one registered.
+    ///
+    /// Entries only, as an install is: the README's *Update entries* work, so
+    /// Bitwig may stay open. What makes it a different errand is what a failure
+    /// leaves behind - an entry still naming the old version, rather than no
+    /// entry at all.
+    Update,
 }
 
 impl Errand {
@@ -98,9 +106,11 @@ impl Errand {
     pub fn work(self) -> Work {
         match self {
             Errand::Preparation => Work::PrepareThenEntries,
-            Errand::Registration | Errand::Edit | Errand::Locate | Errand::Install => {
-                Work::Entries
-            }
+            Errand::Registration
+            | Errand::Edit
+            | Errand::Locate
+            | Errand::Install
+            | Errand::Update => Work::Entries,
         }
     }
 

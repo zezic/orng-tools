@@ -3706,6 +3706,12 @@ impl App {
             // the preparing mode: its plan lists every change, hidden or not,
             // before anything is written, and the backup is the cost to know.
             Some(Work::Entries) => match self.hidden_changes(found) {
+                // Where the press raises the consent dialog, that is the thing
+                // to know before pressing. Bitwig may still stay open.
+                0 if asks_for_rights(found) => (
+                    format!("Update entries {separator} asks for administrator rights"),
+                    Tone::Neutral,
+                ),
                 0 => (format!("Update entries {separator} Bitwig may stay open"), Tone::Neutral),
                 1 => ("1 change hidden by the current filter".to_owned(), Tone::Neutral),
                 hidden => (format!("{hidden} changes hidden by the current filter"), Tone::Neutral),

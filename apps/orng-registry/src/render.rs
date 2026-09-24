@@ -3151,6 +3151,33 @@ fn a_press_that_asks_for_rights_wears_the_shield() {
     }
 }
 
+/// Where Apply will raise the consent dialog, the bar's note says so in place
+/// of `Bitwig may stay open` - the designer's `windowslocal` state. Where the
+/// rights are held, or nothing can ask, it does not.
+#[test]
+fn the_bar_says_when_applying_asks_for_rights() {
+    for withheld in [false, true] {
+        let root = fixture(if withheld { "asks-note-withheld" } else { "asks-note-held" });
+        let to = destination(&root);
+        let entries = entries();
+        let staged = dropped(&root, &to, &entries);
+        let mut session = found_with(&root, Helper::Present, GuardState::Disarmed, entries);
+        if withheld && let Session::Found(found) = &mut session {
+            found.rights = orng_tools::Rights::Withheld {
+                directory: found.to.install.root().to_path_buf(),
+                why: "this account may not write there".to_owned(),
+            };
+        }
+        let harness = window(session, |app, _| app.set_staged(staged));
+        let separator = crate::widget::SEPARATOR;
+        let says = |what: &str| anywhere(&harness, &format!("Update entries {separator} {what}"));
+        let (asks, open) = (says("asks for administrator rights"), says("Bitwig may stay open"));
+        let expected = withheld && crate::elevate::can_ask();
+        assert_eq!(asks, expected, "the note about rights (withheld: {withheld})");
+        assert_eq!(open, !expected, "the note about Bitwig (withheld: {withheld})");
+    }
+}
+
 /// The words on the preparing press, wherever it is drawn.
 const PREPARING: &str = "Prepare installation";
 

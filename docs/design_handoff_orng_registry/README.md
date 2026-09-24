@@ -1,5 +1,12 @@
 # Handoff: ORNG Registry — custom content manager for Bitwig Studio
 
+> **Revision 8.** Answers `design-round-4-changes.md`; the replies are in
+> `design-round-5-answers.md`, which is the thing to read. New components: `UpdateModal`,
+> `RenameDialog`. New props: `elevate` (shield) on ActionBar, CatalogRow, RestoreScreen,
+> EntryRow; `menuOpen`/`conflict` on EntryRow; `waiting`/`confirmSave` on Inspector;
+> `installed` on SettingsScreen. New tokens `--shadow-menu`, `--shadow-panel`. 39 states.
+> Where this README and the answers disagree, the answers win.
+
 > **Revision 7.** Applies `design-round-3-changes.md`, all six items. No design value moved:
 > the app root is now `~/.orng/`, the product name is **ORNG Registry**, the guard reads as
 > three states with no version string, the stale name-matching provenance rule is gone, the
@@ -55,7 +62,7 @@ installation so it loads that entry list at startup, places the documents in the
 library, and writes descriptions and search keywords so the devices are findable in
 Bitwig's browser.
 
-This bundle documents the **UI** for that app: **32 states** across two primary views
+This bundle documents the **UI** for that app: **39 states** across two primary views
 (`Local` and `Catalog`), three full-window secondary screens, two modals and a drag
 overlay, in dark and light appearance.
 
@@ -129,8 +136,8 @@ Specific claims worth testing against the real implementation:
 
 1. **The two views must agree.** A Local entry is catalog-sourced iff a catalog item **with
    the same UUID** reports `Installed`, `Superseded` or `Update available` — never a name
-   match; names are allowed to collide in the repository and the app renames entries when
-   they do. The rule is stated in full under *What the Local view gains*.
+   match; names are allowed to collide in the repository, and a name collision in the
+   Local list is a `Conflict` the user resolves with Rename. The rule is stated in full under *What the Local view gains*.
 2. **Per-kind library folders.** The design states `devices/My Devices/*.bwdevice`,
    `modulators/My Modulators/*.bwmodulator`, `modules/My Modules/*.bwmodule`. Confirm those
    are the real paths and the real extensions.
@@ -301,6 +308,8 @@ Minimum text size is 10px, all of it non-essential mono data; all text was verif
   1× displays. Large display glyphs use Phosphor **light**: 54px (empty states), 56px (drag
   overlay), 28px (About mark).
 - Modal shadow: `0 30px 80px rgba(0,0,0,.85)` dark, `0 26px 60px rgba(0,0,0,.22)` light
+- Menu shadow `--shadow-menu`: `0 18px 40px rgba(0,0,0,.7)` dark, `0 12px 28px rgba(0,0,0,.16)` light
+- Panel shadow `--shadow-panel`: `-18px 0 40px rgba(0,0,0,.5)` dark, `-14px 0 32px rgba(0,0,0,.12)` light
 
 ## Screens / views
 
@@ -852,10 +861,10 @@ kinds, and the inspector states the same per-kind destination one panel away.
   **Provenance is derived, and keyed on UUID.** An entry is catalog-sourced when a catalog
   item **with the same UUID** reports an installed-ish status (`Installed`, `Superseded` or
   `Update available`) — so the two views cannot disagree about what is installed. It must not
-  key on the display name: names are allowed to collide in the repository and the app renames
-  entries when they do, precisely because the name is not the identity. A UUID is exact, is
+  key on the display name: names are allowed to collide in the repository, and a collision in the
+  Local list is a `Conflict` the user resolves with Rename — the name is not the identity. A UUID is exact, is
   already in both records, and cannot be renamed — name matching would eventually mark the
-  wrong row, and would do it first to the user who hit the rename path. Building
+  wrong row, and would do it first to the user who had just renamed one. Building
   this from a hand-maintained name list means Local and Catalog drift apart the first time a
   catalog status changes, which is exactly what happened during design: the catalog claimed
   an item was installed that the Local list did not contain, and a superseded item lost its
@@ -979,7 +988,9 @@ browser; child files also render standalone.
 
 | File | Contents |
 |---|---|
-| `ORNG Registry.dc.html` | Root: window shell, all 32 states, state picker, theme toggle, drag overlay, plan/progress/update modals, banner |
+| `ORNG Registry.dc.html` | Root: window shell, all 39 states, state picker, theme toggle, drag overlay, plan/progress modals, banner |
+| `UpdateModal.dc.html` | Catalog update confirmation: versions, Bitwig-open note, shield |
+| `RenameDialog.dc.html` | Rename with the name-taken error; staged vs registered write note |
 | `EntryRow.dc.html` | One Local row: 10 statuses, 3 kinds, hover/selected/factory/narrow, catalog provenance marker |
 | `InstallBar.dc.html` | Single-row install bar: Local/Catalog switch, conditional state chip, catalog freshness, overflow menu |
 | `ListToolbar.dc.html` | Local toolbar: search, kind filters with counts, factory toggle, Add files |
@@ -994,7 +1005,7 @@ browser; child files also render standalone.
 | `AboutScreen.dc.html` | About |
 | `support.js` | Prototype runtime — **not part of the design**, required only to open the HTML |
 
-Open `ORNG Registry.dc.html` and use the picker above the window to reach any of the 32 states; the
+Open `ORNG Registry.dc.html` and use the picker above the window to reach any of the 39 states; the
 `Dark`/`Light` toggle beside the title switches appearance. The child files are the same
 components in isolation, each with editable properties.
 

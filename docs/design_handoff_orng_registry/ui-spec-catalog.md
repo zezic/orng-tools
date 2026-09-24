@@ -198,8 +198,8 @@ exist, and it should be handled in the least alarming way that is still honest.
   offer `Copy details`. It is the one genuinely alarming case here and deserves its own
   treatment.
 
-Refresh should be automatic and quiet on view entry with a cached index, never a modal,
-never blocking the list.
+Refresh runs on every launch and on `Refresh`, never on view entry, never a modal, never
+blocking the list. (Revised in round five.)
 
 ---
 

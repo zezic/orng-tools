@@ -17,16 +17,21 @@
 html,body{margin:0;padding:0;background:#000}
 a{color:#ff5a1f;text-decoration:none}
 a:hover{color:#ff7a45}
-:root{--page:#000000;--bg:#0a0a0a;--panel:#161616;--panel-2:#1e1e1e;--row:#0a0a0a;--row-alt:#1e1e1e;--row-hover:#262626;--zebra:rgba(255,255,255,.05);--line:#242424;--line-soft:#1a1a1a;--ink:#f2f2f2;--ink-2:#bcbcbc;--ink-3:#949494;--ink-2-warm:#c6b6aa;--ink-3-warm:#9e9089;--ink-2-err:#c9b4b1;--ink-3-err:#9d8c8a;--accent:#ff5a1f;--accent-text:#ff7a45;--accent-ink:#0a0a0a;--accent-soft:rgba(255,90,31,.10);--k-device:#a9a9a9;--k-device-bg:transparent;--k-mod:#a9a9a9;--k-mod-bg:transparent;--k-module:#a9a9a9;--k-module-bg:transparent;--ok:#f2f2f2;--ok-bg:rgba(242,242,242,.07);--warn:#ff5a1f;--warn-bg:rgba(255,90,31,.10);--err:#ff4036;--err-text:#ff6259;--err-bg:rgba(255,64,54,.10);--info:#a9a9a9;--info-bg:rgba(169,169,169,.08);--field:#000000;--btn:#282828;--btn-hover:#333333;--scrim:rgba(0,0,0,.74);--shadow:0 30px 80px rgba(0,0,0,.8)}
+:root{--page:#000000;--bg:#0a0a0a;--panel:#161616;--panel-2:#1e1e1e;--row:#0a0a0a;--row-alt:#1e1e1e;--row-hover:#262626;--zebra:rgba(255,255,255,.05);--line:#242424;--line-soft:#1a1a1a;--ink:#f2f2f2;--ink-2:#bcbcbc;--ink-3:#949494;--ink-2-warm:#c6b6aa;--ink-3-warm:#9e9089;--ink-2-err:#c9b4b1;--ink-3-err:#9d8c8a;--accent:#ff5a1f;--accent-text:#ff7a45;--accent-ink:#0a0a0a;--accent-soft:rgba(255,90,31,.10);--k-device:#a9a9a9;--k-device-bg:transparent;--k-mod:#a9a9a9;--k-mod-bg:transparent;--k-module:#a9a9a9;--k-module-bg:transparent;--ok:#f2f2f2;--ok-bg:rgba(242,242,242,.07);--warn:#ff5a1f;--warn-bg:rgba(255,90,31,.10);--err:#ff4036;--err-text:#ff6259;--err-bg:rgba(255,64,54,.10);--info:#a9a9a9;--info-bg:rgba(169,169,169,.08);--field:#000000;--btn:#282828;--btn-hover:#333333;--scrim:rgba(0,0,0,.74);--shadow:0 30px 80px rgba(0,0,0,.85);--shadow-menu:0 18px 40px rgba(0,0,0,.7);--shadow-panel:-18px 0 40px rgba(0,0,0,.5)}
 </style>
 </helmet>
-<div style="display:flex; flex-direction:column; width:272px; height:100%; flex:none; background:var(--panel-2); font-family:Inter,'Helvetica Neue',Helvetica,sans-serif; box-shadow:-18px 0 40px rgba(0,0,0,.5)">
+<div style="display:flex; flex-direction:column; width:272px; height:100%; flex:none; background:var(--panel-2); font-family:Inter,'Helvetica Neue',Helvetica,sans-serif; box-shadow:var(--shadow-panel)">
   <div style="display:flex; align-items:center; gap:8px; flex:none; height:40px; padding:0 12px; background:var(--panel)">
     <div style="display:flex; align-items:center; flex:none; width:fit-content; border-radius:2px; background:transparent; color:var(--ink-3)">
       <span style="font-size:11px">{{ kindLabel }}</span>
     </div>
     <span style="flex:1; min-width:0; font-size:12.5px; font-weight:700; color:var(--ink); white-space:nowrap; overflow:hidden; text-overflow:ellipsis">{{ name }}</span>
-    <div onClick="{{ onClose }}" title="Close" style="display:flex; align-items:center; justify-content:center; width:24px; height:24px; border-radius:4px; color:var(--ink-3); cursor:pointer" style-hover="background:var(--btn-hover); color:var(--ink)"><i class="ph-duotone ph-x" style="font-size:16px"></i></div>
+    <sc-if value="{{ closeFree }}" hint-placeholder-val="{{ true }}">
+      <div onClick="{{ onClose }}" title="Close" style="display:flex; align-items:center; justify-content:center; width:24px; height:24px; border-radius:4px; color:var(--ink-3); cursor:pointer" style-hover="background:var(--btn-hover); color:var(--ink)"><i class="ph-duotone ph-x" style="font-size:16px"></i></div>
+    </sc-if>
+    <sc-if value="{{ closeLocked }}" hint-placeholder-val="{{ false }}">
+      <div title="{{ lockedReason }}" style="display:flex; align-items:center; justify-content:center; width:24px; height:24px; border-radius:4px; color:var(--ink-3); opacity:.4; cursor:default"><i class="ph-duotone ph-x" style="font-size:16px"></i></div>
+    </sc-if>
   </div>
 
   <div style="display:flex; flex-direction:column; gap:14px; flex:1; overflow:auto; padding:13px 12px">
@@ -104,6 +109,9 @@ a:hover{color:#ff7a45}
     <div style="height:1px; background:var(--line)"></div>
 
     <div style="display:flex; flex-direction:column; gap:4px">
+      <sc-if value="{{ showRename }}" hint-placeholder-val="{{ true }}">
+        <div style="display:flex; align-items:center; gap:7px; padding:5px 7px; margin:0 -7px; border-radius:4px; font-size:11.5px; color:var(--ink-2); cursor:pointer" style-hover="background:var(--btn-hover); color:var(--ink)"><i class="ph-duotone ph-pencil-simple" style="font-size:16px"></i><span>Rename&hellip;</span></div>
+      </sc-if>
       <sc-if value="{{ showReveal }}" hint-placeholder-val="{{ true }}">
         <div onClick="{{ onReveal }}" style="display:flex; align-items:center; gap:7px; padding:5px 7px; margin:0 -7px; border-radius:4px; font-size:11.5px; color:var(--ink-2); cursor:pointer" style-hover="background:var(--btn-hover); color:var(--ink)"><i class="ph-duotone ph-folder-open" style="font-size:16px"></i><span>Reveal file</span></div>
       </sc-if>
@@ -116,10 +124,31 @@ a:hover{color:#ff7a45}
       <div title="{{ removeTitle }}" style="display:flex; align-items:center; gap:7px; padding:5px 7px; margin:0 -7px; border-radius:4px; font-size:11.5px; color:var(--err); cursor:pointer" style-hover="background:var(--err-bg)"><i class="ph-duotone ph-trash" style="font-size:16px"></i><span>Remove entry</span></div>
     </div>
   </div>
+  <sc-if value="{{ confirmSave }}" hint-placeholder-val="{{ false }}">
+    <div style="display:flex; flex-direction:column; gap:9px; flex:none; padding:11px 12px 12px; background:var(--warn-bg)">
+      <div style="display:flex; flex-direction:column; gap:4px">
+        <span style="font-size:12px; font-weight:600; letter-spacing:-0.01em; color:var(--ink)">Save the changes to {{ name }}?</span>
+        <span style="font-size:10.5px; line-height:1.55; color:var(--ink-2-warm); text-wrap:pretty">{{ installPath }} is not writable by this account, so saving asks Windows for administrator rights. The description and keywords Bitwig shows are kept inside the installation.</span>
+      </div>
+      <div style="display:flex; align-items:center; justify-content:flex-end; gap:6px">
+        <div style="display:flex; align-items:center; height:28px; padding:0 11px; border-radius:3px; background:var(--btn); color:var(--ink-2); font-size:11.5px; cursor:pointer" style-hover="background:var(--btn-hover); color:var(--ink)">Cancel</div>
+        <div style="display:flex; align-items:center; gap:6px; height:28px; padding:0 11px; border-radius:3px; background:var(--accent); color:var(--accent-ink); font-size:11.5px; font-weight:600; cursor:pointer"><i class="ph-light ph-shield" style="font-size:16px"></i><span>Save</span></div>
+      </div>
+    </div>
+  </sc-if>
+  <sc-if value="{{ isWaiting }}" hint-placeholder-val="{{ false }}">
+    <div style="display:flex; align-items:flex-start; gap:10px; flex:none; padding:11px 12px 12px; background:var(--info-bg)">
+      <span style="width:6px; height:6px; flex:none; margin-top:5px; border-radius:50%; background:var(--ink-2)"></span>
+      <div style="display:flex; flex-direction:column; gap:4px; flex:1; min-width:0">
+        <span style="font-size:12px; font-weight:600; letter-spacing:-0.01em; color:var(--ink)">Saved when {{ waiting }} finishes</span>
+        <span style="font-size:10.5px; line-height:1.55; color:var(--ink-2); text-wrap:pretty">Your changes wait here until the other work is over, so the panel stays open until then.</span>
+      </div>
+    </div>
+  </sc-if>
 </div>
 
 </x-dc>
-<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:272,&quot;height&quot;:520},&quot;kind&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;DEVICE&quot;,&quot;MODULATOR&quot;,&quot;MODULE&quot;],&quot;default&quot;:&quot;DEVICE&quot;,&quot;tsType&quot;:&quot;string&quot;},&quot;entryName&quot;:{&quot;editor&quot;:&quot;text&quot;,&quot;default&quot;:&quot;DISPERSER&quot;,&quot;tsType&quot;:&quot;string&quot;},&quot;status&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;Staged&quot;,&quot;Registered&quot;,&quot;Pending restart&quot;,&quot;Missing file&quot;,&quot;Changed&quot;,&quot;Update available&quot;,&quot;Conflict&quot;,&quot;Pending removal&quot;],&quot;default&quot;:&quot;Registered&quot;,&quot;tsType&quot;:&quot;string&quot;,&quot;section&quot;:&quot;Actions&quot;},&quot;description&quot;:{&quot;editor&quot;:&quot;text&quot;,&quot;default&quot;:&quot;Allpass diffusion network for smearing transients.&quot;,&quot;tsType&quot;:&quot;string&quot;},&quot;keywords&quot;:{&quot;editor&quot;:&quot;text&quot;,&quot;default&quot;:&quot;disperser diffusion reverb smear allpass&quot;,&quot;tsType&quot;:&quot;string&quot;},&quot;uuid&quot;:{&quot;editor&quot;:&quot;text&quot;,&quot;default&quot;:&quot;21882ab0-7c41-4d0b-9a10-ff3e5d2e77a1&quot;,&quot;tsType&quot;:&quot;string&quot;},&quot;libpath&quot;:{&quot;editor&quot;:&quot;text&quot;,&quot;default&quot;:&quot;devices/My Devices/DISPERSER.bwdevice&quot;,&quot;tsType&quot;:&quot;string&quot;},&quot;placement&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;linked&quot;,&quot;copied&quot;,&quot;unresolved&quot;],&quot;default&quot;:&quot;linked&quot;,&quot;tsType&quot;:&quot;string&quot;},&quot;registered&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:true,&quot;tsType&quot;:&quot;boolean&quot;,&quot;section&quot;:&quot;Actions&quot;},&quot;deleteFile&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:false,&quot;tsType&quot;:&quot;boolean&quot;,&quot;section&quot;:&quot;Settings in force&quot;},&quot;source&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;local&quot;,&quot;catalog&quot;],&quot;default&quot;:&quot;local&quot;,&quot;tsType&quot;:&quot;string&quot;,&quot;section&quot;:&quot;Provenance&quot;},&quot;sourceVersion&quot;:{&quot;editor&quot;:&quot;text&quot;,&quot;default&quot;:&quot;1.2.0&quot;,&quot;tsType&quot;:&quot;string&quot;,&quot;section&quot;:&quot;Provenance&quot;},&quot;provenance&quot;:{&quot;editor&quot;:&quot;text&quot;,&quot;default&quot;:&quot;orng-catalog@3f9a1c2&quot;,&quot;tsType&quot;:&quot;string&quot;,&quot;section&quot;:&quot;Provenance&quot;},&quot;provenanceUrl&quot;:{&quot;editor&quot;:&quot;text&quot;,&quot;default&quot;:&quot;https://github.com/zezic/orng-catalog/commit/3f9a1c2e8b4d7a61c05f2d93ab7e14c8f6021b5d&quot;,&quot;tsType&quot;:&quot;string&quot;},&quot;onClose&quot;:{&quot;editor&quot;:null,&quot;tsType&quot;:&quot;() =&gt; void&quot;},&quot;onReveal&quot;:{&quot;editor&quot;:null,&quot;tsType&quot;:&quot;() =&gt; void&quot;}}">
+<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:272,&quot;height&quot;:520},&quot;kind&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;DEVICE&quot;,&quot;MODULATOR&quot;,&quot;MODULE&quot;],&quot;default&quot;:&quot;DEVICE&quot;,&quot;tsType&quot;:&quot;string&quot;},&quot;entryName&quot;:{&quot;editor&quot;:&quot;text&quot;,&quot;default&quot;:&quot;DISPERSER&quot;,&quot;tsType&quot;:&quot;string&quot;},&quot;status&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;Staged&quot;,&quot;Registered&quot;,&quot;Pending restart&quot;,&quot;Missing file&quot;,&quot;Changed&quot;,&quot;Update available&quot;,&quot;Conflict&quot;,&quot;Pending removal&quot;],&quot;default&quot;:&quot;Registered&quot;,&quot;tsType&quot;:&quot;string&quot;,&quot;section&quot;:&quot;Actions&quot;},&quot;description&quot;:{&quot;editor&quot;:&quot;text&quot;,&quot;default&quot;:&quot;Allpass diffusion network for smearing transients.&quot;,&quot;tsType&quot;:&quot;string&quot;},&quot;keywords&quot;:{&quot;editor&quot;:&quot;text&quot;,&quot;default&quot;:&quot;disperser diffusion reverb smear allpass&quot;,&quot;tsType&quot;:&quot;string&quot;},&quot;uuid&quot;:{&quot;editor&quot;:&quot;text&quot;,&quot;default&quot;:&quot;21882ab0-7c41-4d0b-9a10-ff3e5d2e77a1&quot;,&quot;tsType&quot;:&quot;string&quot;},&quot;libpath&quot;:{&quot;editor&quot;:&quot;text&quot;,&quot;default&quot;:&quot;devices/My Devices/DISPERSER.bwdevice&quot;,&quot;tsType&quot;:&quot;string&quot;},&quot;placement&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;linked&quot;,&quot;copied&quot;,&quot;unresolved&quot;],&quot;default&quot;:&quot;linked&quot;,&quot;tsType&quot;:&quot;string&quot;},&quot;registered&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:true,&quot;tsType&quot;:&quot;boolean&quot;,&quot;section&quot;:&quot;Actions&quot;},&quot;deleteFile&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:false,&quot;tsType&quot;:&quot;boolean&quot;,&quot;section&quot;:&quot;Settings in force&quot;},&quot;source&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;local&quot;,&quot;catalog&quot;],&quot;default&quot;:&quot;local&quot;,&quot;tsType&quot;:&quot;string&quot;,&quot;section&quot;:&quot;Provenance&quot;},&quot;sourceVersion&quot;:{&quot;editor&quot;:&quot;text&quot;,&quot;default&quot;:&quot;1.2.0&quot;,&quot;tsType&quot;:&quot;string&quot;,&quot;section&quot;:&quot;Provenance&quot;},&quot;provenance&quot;:{&quot;editor&quot;:&quot;text&quot;,&quot;default&quot;:&quot;orng-catalog@3f9a1c2&quot;,&quot;tsType&quot;:&quot;string&quot;,&quot;section&quot;:&quot;Provenance&quot;},&quot;provenanceUrl&quot;:{&quot;editor&quot;:&quot;text&quot;,&quot;default&quot;:&quot;https://github.com/zezic/orng-catalog/commit/3f9a1c2e8b4d7a61c05f2d93ab7e14c8f6021b5d&quot;,&quot;tsType&quot;:&quot;string&quot;},&quot;waiting&quot;:{&quot;editor&quot;:&quot;text&quot;,&quot;default&quot;:&quot;&quot;,&quot;tsType&quot;:&quot;string&quot;,&quot;section&quot;:&quot;Pending save&quot;},&quot;confirmSave&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:false,&quot;tsType&quot;:&quot;boolean&quot;,&quot;section&quot;:&quot;Pending save&quot;},&quot;installPath&quot;:{&quot;editor&quot;:&quot;text&quot;,&quot;default&quot;:&quot;C:\\Program Files\\Bitwig Studio&quot;,&quot;tsType&quot;:&quot;string&quot;,&quot;section&quot;:&quot;Pending save&quot;},&quot;onClose&quot;:{&quot;editor&quot;:null,&quot;tsType&quot;:&quot;() =&gt; void&quot;},&quot;onReveal&quot;:{&quot;editor&quot;:null,&quot;tsType&quot;:&quot;() =&gt; void&quot;}}">
 const KIND = {
   DEVICE: ["var(--k-device)", "var(--k-device-bg)", "ph-duotone ph-sliders"],
   MODULATOR: ["var(--k-mod)", "var(--k-mod-bg)", "ph-duotone ph-wave-sine"],
@@ -166,6 +195,14 @@ class Component extends DCLogic {
       libpath: p.libpath ?? ("devices/My Devices/" + name + ".bwdevice"),
       placement, placeFg, placeBg, placeIcon,
       onClose: () => p.onClose && p.onClose(),
+      confirmSave: !!p.confirmSave,
+      isWaiting: !!p.waiting && !p.confirmSave,
+      waiting: p.waiting ?? "",
+      installPath: p.installPath ?? "C:\\Program Files\\Bitwig Studio",
+      closeLocked: !!p.waiting || !!p.confirmSave,
+      closeFree: !p.waiting && !p.confirmSave,
+      lockedReason: p.confirmSave ? "Save or cancel the changes first" : "Your changes are saved when " + (p.waiting || "the work") + " finishes",
+      showRename: (p.source ?? "local") !== "catalog" && status !== "Rejected" && status !== "Pending removal",
       onReveal: () => p.onReveal && p.onReveal()
     };
   }

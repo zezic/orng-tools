@@ -17,7 +17,7 @@
 html,body{margin:0;padding:0;background:#000}
 a{color:#ff5a1f;text-decoration:none}
 a:hover{color:#ff7a45}
-:root{--page:#000000;--bg:#0a0a0a;--panel:#161616;--panel-2:#1e1e1e;--row:#0a0a0a;--row-alt:#1e1e1e;--row-hover:#262626;--zebra:rgba(255,255,255,.05);--line:#242424;--line-soft:#1a1a1a;--ink:#f2f2f2;--ink-2:#bcbcbc;--ink-3:#949494;--ink-2-warm:#c6b6aa;--ink-3-warm:#9e9089;--ink-2-err:#c9b4b1;--ink-3-err:#9d8c8a;--accent:#ff5a1f;--accent-text:#ff7a45;--accent-ink:#0a0a0a;--accent-soft:rgba(255,90,31,.10);--k-device:#a9a9a9;--k-device-bg:transparent;--k-mod:#a9a9a9;--k-mod-bg:transparent;--k-module:#a9a9a9;--k-module-bg:transparent;--ok:#f2f2f2;--ok-bg:rgba(242,242,242,.07);--warn:#ff5a1f;--warn-bg:rgba(255,90,31,.10);--err:#ff4036;--err-text:#ff6259;--err-bg:rgba(255,64,54,.10);--info:#a9a9a9;--info-bg:rgba(169,169,169,.08);--field:#000000;--btn:#282828;--btn-hover:#333333;--scrim:rgba(0,0,0,.74);--shadow:0 30px 80px rgba(0,0,0,.8)}
+:root{--page:#000000;--bg:#0a0a0a;--panel:#161616;--panel-2:#1e1e1e;--row:#0a0a0a;--row-alt:#1e1e1e;--row-hover:#262626;--zebra:rgba(255,255,255,.05);--line:#242424;--line-soft:#1a1a1a;--ink:#f2f2f2;--ink-2:#bcbcbc;--ink-3:#949494;--ink-2-warm:#c6b6aa;--ink-3-warm:#9e9089;--ink-2-err:#c9b4b1;--ink-3-err:#9d8c8a;--accent:#ff5a1f;--accent-text:#ff7a45;--accent-ink:#0a0a0a;--accent-soft:rgba(255,90,31,.10);--k-device:#a9a9a9;--k-device-bg:transparent;--k-mod:#a9a9a9;--k-mod-bg:transparent;--k-module:#a9a9a9;--k-module-bg:transparent;--ok:#f2f2f2;--ok-bg:rgba(242,242,242,.07);--warn:#ff5a1f;--warn-bg:rgba(255,90,31,.10);--err:#ff4036;--err-text:#ff6259;--err-bg:rgba(255,64,54,.10);--info:#a9a9a9;--info-bg:rgba(169,169,169,.08);--field:#000000;--btn:#282828;--btn-hover:#333333;--scrim:rgba(0,0,0,.74);--shadow:0 30px 80px rgba(0,0,0,.85);--shadow-menu:0 18px 40px rgba(0,0,0,.7);--shadow-panel:-18px 0 40px rgba(0,0,0,.5)}
 </style>
 </helmet>
 <div style="display:flex; flex-direction:column; width:100%; height:100%; background:var(--bg); font-family:Inter,'Helvetica Neue',Helvetica,sans-serif">
@@ -27,7 +27,7 @@ a:hover{color:#ff7a45}
     </div>
     <div style="width:1px; height:16px; background:var(--line)"></div>
     <i class="ph-duotone ph-clock-counter-clockwise" style="font-size:16px; color:var(--ink-2)"></i>
-    <span style="font-size:13.5px; font-weight:600; letter-spacing:-0.02em; color:var(--ink)">Restore backup</span>
+    <span style="font-size:13.5px; font-weight:600; letter-spacing:-0.015em; color:var(--ink)">Restore backup</span>
     <div style="flex:1"></div>
     <div style="display:flex; align-items:center; gap:5px; padding:4px 9px; border-radius:4px; background:var(--btn); color:var(--ink-2); font-size:11px; cursor:pointer" style-hover="background:var(--btn-hover); color:var(--ink)"><i class="ph-duotone ph-folder-open" style="font-size:16px"></i><span>Open backups folder</span></div>
   </div>
@@ -78,13 +78,15 @@ a:hover{color:#ff7a45}
     <span style="flex:1; font-size:11px; color:var(--ink-3)">{{ footNote }}</span>
     <div onClick="{{ onBack }}" style="display:flex; align-items:center; height:29px; padding:0 12px; border-radius:4px; background:var(--btn); color:var(--ink-2); font-size:11.5px; cursor:pointer" style-hover="background:var(--btn-hover); color:var(--ink)">Cancel</div>
     <div style="{{ primaryStyle }}">
-      <i class="ph-duotone ph-clock-counter-clockwise" style="font-size:16px"></i><span>Restore this backup</span>
+      <sc-if value="{{ elevate }}" hint-placeholder-val="{{ false }}"><i class="ph-light ph-shield" style="font-size:16px"></i></sc-if>
+      <sc-if value="{{ plain }}" hint-placeholder-val="{{ true }}"><i class="ph-duotone ph-clock-counter-clockwise" style="font-size:16px"></i></sc-if>
+      <span>Restore this backup</span>
     </div>
   </div>
 </div>
 
 </x-dc>
-<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:820,&quot;height&quot;:560},&quot;backup&quot;:{&quot;editor&quot;:&quot;text&quot;,&quot;default&quot;:&quot;Backup: 14 Sep 2026&quot;,&quot;tsType&quot;:&quot;string&quot;},&quot;onBack&quot;:{&quot;editor&quot;:null,&quot;tsType&quot;:&quot;() =&gt; void&quot;}}">
+<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:820,&quot;height&quot;:560},&quot;backup&quot;:{&quot;editor&quot;:&quot;text&quot;,&quot;default&quot;:&quot;Backup: 14 Sep 2026&quot;,&quot;tsType&quot;:&quot;string&quot;},&quot;onBack&quot;:{&quot;editor&quot;:null,&quot;tsType&quot;:&quot;() =&gt; void&quot;},&quot;elevate&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:false,&quot;tsType&quot;:&quot;boolean&quot;}}">
 const DATA = [
   { date: "14 September 2026, 18:42", meta: "Bitwig Studio 6.1 (94a90411) \u00b7 jar + description bundles", size: "35.1 MB" },
   { date: "02 July 2026, 09:17", meta: "Bitwig Studio 6.1 (2c7f18be) \u00b7 jar + description bundles", size: "34.8 MB" },
@@ -120,7 +122,8 @@ class Component extends DCLogic {
           ? "background:transparent; border:1px solid var(--err); color:var(--err); cursor:pointer"
           : "background:var(--btn); color:var(--ink-3); cursor:default"
       ].join(";"),
-      onBack: () => this.props.onBack && this.props.onBack()
+      onBack: () => this.props.onBack && this.props.onBack(),
+      elevate: !!this.props.elevate, plain: !this.props.elevate
     };
   }
 }

@@ -17,7 +17,7 @@
 html,body{margin:0;padding:0;background:#000}
 a{color:#ff5a1f;text-decoration:none}
 a:hover{color:#ff7a45}
-:root{--page:#000000;--bg:#0a0a0a;--panel:#161616;--panel-2:#1e1e1e;--row:#0a0a0a;--row-alt:#1e1e1e;--row-hover:#262626;--zebra:rgba(255,255,255,.05);--line:#242424;--line-soft:#1a1a1a;--ink:#f2f2f2;--ink-2:#bcbcbc;--ink-3:#949494;--ink-2-warm:#c6b6aa;--ink-3-warm:#9e9089;--ink-2-err:#c9b4b1;--ink-3-err:#9d8c8a;--accent:#ff5a1f;--accent-text:#ff7a45;--accent-ink:#0a0a0a;--accent-soft:rgba(255,90,31,.10);--k-device:#a9a9a9;--k-device-bg:transparent;--k-mod:#a9a9a9;--k-mod-bg:transparent;--k-module:#a9a9a9;--k-module-bg:transparent;--ok:#f2f2f2;--ok-bg:rgba(242,242,242,.07);--warn:#ff5a1f;--warn-bg:rgba(255,90,31,.10);--err:#ff4036;--err-text:#ff6259;--err-bg:rgba(255,64,54,.10);--info:#a9a9a9;--info-bg:rgba(169,169,169,.08);--field:#000000;--btn:#282828;--btn-hover:#333333;--scrim:rgba(0,0,0,.74);--shadow:0 30px 80px rgba(0,0,0,.8)}
+:root{--page:#000000;--bg:#0a0a0a;--panel:#161616;--panel-2:#1e1e1e;--row:#0a0a0a;--row-alt:#1e1e1e;--row-hover:#262626;--zebra:rgba(255,255,255,.05);--line:#242424;--line-soft:#1a1a1a;--ink:#f2f2f2;--ink-2:#bcbcbc;--ink-3:#949494;--ink-2-warm:#c6b6aa;--ink-3-warm:#9e9089;--ink-2-err:#c9b4b1;--ink-3-err:#9d8c8a;--accent:#ff5a1f;--accent-text:#ff7a45;--accent-ink:#0a0a0a;--accent-soft:rgba(255,90,31,.10);--k-device:#a9a9a9;--k-device-bg:transparent;--k-mod:#a9a9a9;--k-mod-bg:transparent;--k-module:#a9a9a9;--k-module-bg:transparent;--ok:#f2f2f2;--ok-bg:rgba(242,242,242,.07);--warn:#ff5a1f;--warn-bg:rgba(255,90,31,.10);--err:#ff4036;--err-text:#ff6259;--err-bg:rgba(255,64,54,.10);--info:#a9a9a9;--info-bg:rgba(169,169,169,.08);--field:#000000;--btn:#282828;--btn-hover:#333333;--scrim:rgba(0,0,0,.74);--shadow:0 30px 80px rgba(0,0,0,.85);--shadow-menu:0 18px 40px rgba(0,0,0,.7);--shadow-panel:-18px 0 40px rgba(0,0,0,.5)}
 </style>
 </helmet>
 <div style="display:flex; flex-direction:column; width:100%; height:100%; background:var(--bg); font-family:Inter,'Helvetica Neue',Helvetica,sans-serif">
@@ -27,7 +27,7 @@ a:hover{color:#ff7a45}
     </div>
     <div style="width:1px; height:16px; background:var(--line)"></div>
     <i class="ph-duotone ph-gear-six" style="font-size:16px; color:var(--ink-2)"></i>
-    <span style="font-size:13.5px; font-weight:600; letter-spacing:-0.02em; color:var(--ink)">Settings</span>
+    <span style="font-size:13.5px; font-weight:600; letter-spacing:-0.015em; color:var(--ink)">Settings</span>
   </div>
 
   <div style="flex:1; overflow:auto; padding:16px 12px 20px">
@@ -38,7 +38,7 @@ a:hover{color:#ff7a45}
         <div style="display:flex; flex-direction:column; gap:9px; padding:11px 12px; background:var(--panel); border-radius:4px">
           <div style="display:grid; grid-template-columns:128px minmax(0,1fr) auto auto; align-items:center; gap:8px">
             <span style="font-size:11.5px; color:var(--ink-2)">Bitwig install</span>
-            <span style="font-family:'Iosevka Extended',Iosevka,'SF Mono',Menlo,monospace; letter-spacing:-0.05em; font-size:10.5px; color:var(--ink); padding:5px 8px; background:var(--field); border-radius:4px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis">/Applications/Bitwig Studio.app</span>
+            <span style="font-family:'Iosevka Extended',Iosevka,'SF Mono',Menlo,monospace; letter-spacing:-0.05em; font-size:10.5px; color:{{ installInk }}; padding:5px 8px; background:var(--field); border-radius:4px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis">{{ installPath }}</span>
             <span style="display:flex; align-items:center; gap:5px; font-size:11px; color:var(--ink-2); padding:4px 8px; background:var(--btn); border-radius:4px; cursor:pointer" style-hover="background:var(--btn-hover); color:var(--ink)"><i class="ph-duotone ph-folder-open" style="font-size:16px"></i>Browse</span>
             <span title="Reset to auto-detected" style="display:flex; align-items:center; justify-content:center; width:26px; height:25px; color:var(--ink-3); background:var(--btn); border-radius:4px; cursor:pointer" style-hover="background:var(--btn-hover); color:var(--ink)"><i class="ph-duotone ph-arrow-counter-clockwise" style="font-size:16px"></i></span>
           </div>
@@ -50,7 +50,7 @@ a:hover{color:#ff7a45}
           </div>
           <div style="display:grid; grid-template-columns:128px minmax(0,1fr) auto auto; align-items:center; gap:8px">
             <span style="font-size:11.5px; color:var(--ink-2)">Backups</span>
-            <span style="font-family:'Iosevka Extended',Iosevka,'SF Mono',Menlo,monospace; letter-spacing:-0.05em; font-size:10.5px; color:var(--ink); padding:5px 8px; background:var(--field); border-radius:4px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis">~/.orng/backups/6.1-94a90411/</span>
+            <span style="font-family:'Iosevka Extended',Iosevka,'SF Mono',Menlo,monospace; letter-spacing:-0.05em; font-size:10.5px; color:{{ installInk }}; padding:5px 8px; background:var(--field); border-radius:4px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis">{{ backupPath }}</span>
             <sc-if value="{{ hasBackup }}" hint-placeholder-val="{{ true }}">
               <span onClick="{{ onRestore }}" style="display:flex; align-items:center; gap:5px; font-size:11px; color:var(--ink-2); padding:4px 8px; background:var(--btn); border-radius:4px; cursor:pointer" style-hover="background:var(--btn-hover); color:var(--ink)"><i class="ph-duotone ph-clock-counter-clockwise" style="font-size:16px"></i>Restore&hellip;</span>
             </sc-if>
@@ -127,7 +127,7 @@ a:hover{color:#ff7a45}
 </div>
 
 </x-dc>
-<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:820,&quot;height&quot;:560},&quot;placement&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;link&quot;,&quot;copy&quot;],&quot;default&quot;:&quot;link&quot;,&quot;tsType&quot;:&quot;string&quot;},&quot;deleteFile&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:false,&quot;tsType&quot;:&quot;boolean&quot;},&quot;guard&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;Armed&quot;,&quot;Disarmed&quot;,&quot;Unknown&quot;],&quot;default&quot;:&quot;Disarmed&quot;,&quot;tsType&quot;:&quot;string&quot;,&quot;section&quot;:&quot;Diagnostics&quot;},&quot;backup&quot;:{&quot;editor&quot;:&quot;text&quot;,&quot;default&quot;:&quot;Backup: 14 Sep 2026&quot;,&quot;tsType&quot;:&quot;string&quot;,&quot;section&quot;:&quot;Diagnostics&quot;},&quot;resolved&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:true,&quot;tsType&quot;:&quot;boolean&quot;,&quot;section&quot;:&quot;Diagnostics&quot;},&quot;version&quot;:{&quot;editor&quot;:&quot;text&quot;,&quot;default&quot;:&quot;6.1&quot;,&quot;tsType&quot;:&quot;string&quot;,&quot;section&quot;:&quot;Diagnostics&quot;},&quot;build&quot;:{&quot;editor&quot;:&quot;text&quot;,&quot;default&quot;:&quot;94a90411&quot;,&quot;tsType&quot;:&quot;string&quot;,&quot;section&quot;:&quot;Diagnostics&quot;},&quot;entryCount&quot;:{&quot;editor&quot;:&quot;int&quot;,&quot;default&quot;:6,&quot;tsType&quot;:&quot;number&quot;,&quot;section&quot;:&quot;Diagnostics&quot;},&quot;onPlacement&quot;:{&quot;editor&quot;:null,&quot;tsType&quot;:&quot;(v: string) =&gt; void&quot;},&quot;onToggleDelete&quot;:{&quot;editor&quot;:null,&quot;tsType&quot;:&quot;() =&gt; void&quot;},&quot;onBack&quot;:{&quot;editor&quot;:null,&quot;tsType&quot;:&quot;() =&gt; void&quot;},&quot;onAbout&quot;:{&quot;editor&quot;:null,&quot;tsType&quot;:&quot;() =&gt; void&quot;},&quot;onRestore&quot;:{&quot;editor&quot;:null,&quot;tsType&quot;:&quot;() =&gt; void&quot;},&quot;onTheme&quot;:{&quot;editor&quot;:null,&quot;tsType&quot;:&quot;(t: string) =&gt; void&quot;}}">
+<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:820,&quot;height&quot;:560},&quot;placement&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;link&quot;,&quot;copy&quot;],&quot;default&quot;:&quot;link&quot;,&quot;tsType&quot;:&quot;string&quot;},&quot;deleteFile&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:false,&quot;tsType&quot;:&quot;boolean&quot;},&quot;guard&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;Armed&quot;,&quot;Disarmed&quot;,&quot;Unknown&quot;],&quot;default&quot;:&quot;Disarmed&quot;,&quot;tsType&quot;:&quot;string&quot;,&quot;section&quot;:&quot;Diagnostics&quot;},&quot;backup&quot;:{&quot;editor&quot;:&quot;text&quot;,&quot;default&quot;:&quot;Backup: 14 Sep 2026&quot;,&quot;tsType&quot;:&quot;string&quot;,&quot;section&quot;:&quot;Diagnostics&quot;},&quot;installed&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:true,&quot;tsType&quot;:&quot;boolean&quot;,&quot;section&quot;:&quot;Diagnostics&quot;},&quot;resolved&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:true,&quot;tsType&quot;:&quot;boolean&quot;,&quot;section&quot;:&quot;Diagnostics&quot;},&quot;version&quot;:{&quot;editor&quot;:&quot;text&quot;,&quot;default&quot;:&quot;6.1&quot;,&quot;tsType&quot;:&quot;string&quot;,&quot;section&quot;:&quot;Diagnostics&quot;},&quot;build&quot;:{&quot;editor&quot;:&quot;text&quot;,&quot;default&quot;:&quot;94a90411&quot;,&quot;tsType&quot;:&quot;string&quot;,&quot;section&quot;:&quot;Diagnostics&quot;},&quot;entryCount&quot;:{&quot;editor&quot;:&quot;int&quot;,&quot;default&quot;:6,&quot;tsType&quot;:&quot;number&quot;,&quot;section&quot;:&quot;Diagnostics&quot;},&quot;onPlacement&quot;:{&quot;editor&quot;:null,&quot;tsType&quot;:&quot;(v: string) =&gt; void&quot;},&quot;onToggleDelete&quot;:{&quot;editor&quot;:null,&quot;tsType&quot;:&quot;() =&gt; void&quot;},&quot;onBack&quot;:{&quot;editor&quot;:null,&quot;tsType&quot;:&quot;() =&gt; void&quot;},&quot;onAbout&quot;:{&quot;editor&quot;:null,&quot;tsType&quot;:&quot;() =&gt; void&quot;},&quot;onRestore&quot;:{&quot;editor&quot;:null,&quot;tsType&quot;:&quot;() =&gt; void&quot;},&quot;onTheme&quot;:{&quot;editor&quot;:null,&quot;tsType&quot;:&quot;(t: string) =&gt; void&quot;}}">
 class Component extends DCLogic {
   state = { appearance: "System" };
   seg(on) {
@@ -145,15 +145,16 @@ class Component extends DCLogic {
   }
   renderVals() {
     const guard = (this.props.guard ?? "Disarmed").toLowerCase();
-    const guardLine = guard === "disarmed" ? "disarmed" : guard === "armed" ? "armed  \u00b7  installation not prepared" : "unknown  \u00b7  guard site not recognised  \u00b7  preparation refuses";
-    const resolved = this.props.resolved ?? true;
+    const guardLine = !(this.props.installed ?? true) ? "\u2014" : guard === "disarmed" ? "disarmed" : guard === "armed" ? "armed  \u00b7  installation not prepared" : "unknown  \u00b7  guard site not recognised  \u00b7  preparation refuses";
+    const installed = this.props.installed ?? true;
+    const resolved = installed && (this.props.resolved ?? true);
     const entryCount = this.props.entryCount ?? 6;
     const version = this.props.version ?? "6.1";
     const build = this.props.build ?? "94a90411";
-    const versionLine = resolved ? version + "  (" + build + ")" : "\u2014  (unresolved)";
-    const archiveLine = resolved ? "Contents/Java/bitwig.jar  34 MB" : "Contents/Java/bitwig.jar  not read";
-    const factoryLine = resolved ? "152 devices  \u00b7  43 modulators  \u00b7  233 modules" : "not read  \u00b7  the registry anchor was not located";
-    const anchorsLine = resolved
+    const versionLine = !installed ? "\u2014" : resolved ? version + "  (" + build + ")" : "\u2014  (unresolved)";
+    const archiveLine = !installed ? "\u2014" : resolved ? "Contents/Java/bitwig.jar  34 MB" : "Contents/Java/bitwig.jar  not read";
+    const factoryLine = !installed ? "\u2014" : resolved ? "152 devices  \u00b7  43 modulators  \u00b7  233 modules" : "not read  \u00b7  the registry anchor was not located";
+    const anchorsLine = !installed ? "\u2014" : resolved
       ? "registry ok  \u00b7  descriptions ok  \u00b7  library ok"
       : "registry NOT LOCATED  \u00b7  descriptions ok  \u00b7  library ok";
     const entriesLine = entryCount > 0
@@ -188,7 +189,7 @@ class Component extends DCLogic {
       pickLight: () => { this.setState({ appearance: "Light" }); this.props.onTheme && this.props.onTheme("light"); },
       pickDark: () => { this.setState({ appearance: "Dark" }); this.props.onTheme && this.props.onTheme("dark"); },
       report: [
-        "install    /Applications/Bitwig Studio.app",
+        installed ? "install    /Applications/Bitwig Studio.app" : "install    not found  \u00b7  searched /Applications, ~/Applications",
         "version    " + versionLine,
         "archive    " + archiveLine,
         "anchors    " + anchorsLine,
@@ -200,6 +201,9 @@ class Component extends DCLogic {
       ].join("\n"),
       onBack: () => this.props.onBack && this.props.onBack(),
       hasBackup, noBackup: !hasBackup,
+      installPath: installed ? "/Applications/Bitwig Studio.app" : "\u2014",
+      backupPath: installed ? "~/.orng/backups/6.1-94a90411/" : "\u2014",
+      installInk: installed ? "var(--ink)" : "var(--ink-3)",
       onRestore: () => this.props.onRestore && this.props.onRestore(),
       onAbout: () => this.props.onAbout && this.props.onAbout()
     };

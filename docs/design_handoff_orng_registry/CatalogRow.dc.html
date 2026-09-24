@@ -15,7 +15,7 @@
 html,body{margin:0;padding:0;background:#000}
 a{color:#ff5a1f;text-decoration:none}
 a:hover{color:#ff7a45}
-:root{--page:#000000;--bg:#0a0a0a;--panel:#161616;--panel-2:#1e1e1e;--row:#0a0a0a;--row-alt:#1e1e1e;--row-hover:#262626;--line:#242424;--line-soft:#1a1a1a;--ink:#f2f2f2;--ink-2:#bcbcbc;--ink-3:#949494;--ink-3-warm:#9e9089;--accent:#ff5a1f;--accent-text:#ff7a45;--accent-ink:#0a0a0a;--accent-soft:rgba(255,90,31,.10);--err:#ff4036;--err-text:#ff6259;--err-bg:rgba(255,64,54,.10);--field:#000000;--btn:#282828;--btn-hover:#333333}
+:root{--page:#000000;--bg:#0a0a0a;--panel:#161616;--panel-2:#1e1e1e;--row:#0a0a0a;--row-alt:#1e1e1e;--row-hover:#262626;--line:#242424;--line-soft:#1a1a1a;--ink:#f2f2f2;--ink-2:#bcbcbc;--ink-3:#949494;--ink-3-warm:#9e9089;--accent:#ff5a1f;--accent-text:#ff7a45;--accent-ink:#0a0a0a;--accent-soft:rgba(255,90,31,.10);--err:#ff4036;--err-text:#ff6259;--err-bg:rgba(255,64,54,.10);--field:#000000;--btn:#282828;--btn-hover:#333333;--shadow-menu:0 18px 40px rgba(0,0,0,.7);--shadow-panel:-18px 0 40px rgba(0,0,0,.5)}
 </style>
 </helmet>
 <div style="font-family:Inter,'Helvetica Neue',Helvetica,sans-serif">
@@ -34,14 +34,14 @@ a:hover{color:#ff7a45}
     <span style="font-size:11px; color:{{ statusFg }}; white-space:nowrap; overflow:hidden; text-overflow:ellipsis">{{ statusLabel }}</span>
     <div style="display:flex; align-items:center; justify-content:flex-end; gap:4px">
       <sc-if value="{{ hasAction }}" hint-placeholder-val="{{ true }}">
-        <div onClick="{{ act }}" style="{{ actionStyle }}">{{ action }}</div>
+        <div onClick="{{ act }}" style="{{ actionStyle }}"><sc-if value="{{ shield }}" hint-placeholder-val="{{ false }}"><i class="ph-light ph-shield" style="font-size:16px"></i></sc-if><span>{{ action }}</span></div>
       </sc-if>
     </div>
   </div>
 </div>
 
 </x-dc>
-<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:796,&quot;height&quot;:48},&quot;kind&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;DEVICE&quot;,&quot;MODULATOR&quot;,&quot;MODULE&quot;],&quot;default&quot;:&quot;DEVICE&quot;,&quot;tsType&quot;:&quot;string&quot;},&quot;itemName&quot;:{&quot;editor&quot;:&quot;text&quot;,&quot;default&quot;:&quot;DISPERSER&quot;,&quot;tsType&quot;:&quot;string&quot;},&quot;description&quot;:{&quot;editor&quot;:&quot;text&quot;,&quot;default&quot;:&quot;Allpass diffusion network for smearing transients.&quot;,&quot;tsType&quot;:&quot;string&quot;},&quot;author&quot;:{&quot;editor&quot;:&quot;text&quot;,&quot;default&quot;:&quot;kirkwood&quot;,&quot;tsType&quot;:&quot;string&quot;},&quot;version&quot;:{&quot;editor&quot;:&quot;text&quot;,&quot;default&quot;:&quot;1.2.0&quot;,&quot;tsType&quot;:&quot;string&quot;},&quot;status&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;Available&quot;,&quot;Installed&quot;,&quot;Update available&quot;,&quot;Superseded&quot;,&quot;Incompatible&quot;,&quot;Download failed&quot;,&quot;Verification failed&quot;],&quot;default&quot;:&quot;Available&quot;,&quot;tsType&quot;:&quot;string&quot;},&quot;requires&quot;:{&quot;editor&quot;:&quot;text&quot;,&quot;default&quot;:&quot;6.2&quot;,&quot;tsType&quot;:&quot;string&quot;},&quot;action&quot;:{&quot;editor&quot;:&quot;text&quot;,&quot;default&quot;:&quot;&quot;,&quot;tsType&quot;:&quot;string&quot;,&quot;section&quot;:&quot;Overrides&quot;},&quot;narrow&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:false,&quot;tsType&quot;:&quot;boolean&quot;,&quot;section&quot;:&quot;Layout&quot;},&quot;selected&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:false,&quot;tsType&quot;:&quot;boolean&quot;},&quot;forceHover&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:false,&quot;tsType&quot;:&quot;boolean&quot;},&quot;onOpen&quot;:{&quot;editor&quot;:null,&quot;tsType&quot;:&quot;(name: string) =&gt; void&quot;},&quot;onAction&quot;:{&quot;editor&quot;:null,&quot;tsType&quot;:&quot;(action: string, name: string) =&gt; void&quot;}}">
+<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:796,&quot;height&quot;:48},&quot;kind&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;DEVICE&quot;,&quot;MODULATOR&quot;,&quot;MODULE&quot;],&quot;default&quot;:&quot;DEVICE&quot;,&quot;tsType&quot;:&quot;string&quot;},&quot;itemName&quot;:{&quot;editor&quot;:&quot;text&quot;,&quot;default&quot;:&quot;DISPERSER&quot;,&quot;tsType&quot;:&quot;string&quot;},&quot;description&quot;:{&quot;editor&quot;:&quot;text&quot;,&quot;default&quot;:&quot;Allpass diffusion network for smearing transients.&quot;,&quot;tsType&quot;:&quot;string&quot;},&quot;author&quot;:{&quot;editor&quot;:&quot;text&quot;,&quot;default&quot;:&quot;kirkwood&quot;,&quot;tsType&quot;:&quot;string&quot;},&quot;version&quot;:{&quot;editor&quot;:&quot;text&quot;,&quot;default&quot;:&quot;1.2.0&quot;,&quot;tsType&quot;:&quot;string&quot;},&quot;status&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;Available&quot;,&quot;Installed&quot;,&quot;Update available&quot;,&quot;Superseded&quot;,&quot;Incompatible&quot;,&quot;Download failed&quot;,&quot;Verification failed&quot;],&quot;default&quot;:&quot;Available&quot;,&quot;tsType&quot;:&quot;string&quot;},&quot;requires&quot;:{&quot;editor&quot;:&quot;text&quot;,&quot;default&quot;:&quot;6.2&quot;,&quot;tsType&quot;:&quot;string&quot;},&quot;action&quot;:{&quot;editor&quot;:&quot;text&quot;,&quot;default&quot;:&quot;&quot;,&quot;tsType&quot;:&quot;string&quot;,&quot;section&quot;:&quot;Overrides&quot;},&quot;narrow&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:false,&quot;tsType&quot;:&quot;boolean&quot;,&quot;section&quot;:&quot;Layout&quot;},&quot;selected&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:false,&quot;tsType&quot;:&quot;boolean&quot;},&quot;forceHover&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:false,&quot;tsType&quot;:&quot;boolean&quot;},&quot;onOpen&quot;:{&quot;editor&quot;:null,&quot;tsType&quot;:&quot;(name: string) =&gt; void&quot;},&quot;onAction&quot;:{&quot;editor&quot;:null,&quot;tsType&quot;:&quot;(action: string, name: string) =&gt; void&quot;},&quot;elevate&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:false,&quot;tsType&quot;:&quot;boolean&quot;,&quot;section&quot;:&quot;Layout&quot;}}">
 const KIND = { DEVICE: "Device", MODULATOR: "Modulator", MODULE: "Module" };
 const STATUS = {
   "Available":        { fg: "var(--ink-3)",       label: "Available",             action: "Install" },
@@ -50,7 +50,8 @@ const STATUS = {
   "Superseded":       { fg: "var(--ink-2)",       label: "Replacement available", action: "See replacement" },
   "Incompatible":     { fg: "var(--ink-3)",       label: "Needs Bitwig ",         action: "" },
   "Download failed":  { fg: "var(--err-text)",    label: "Download failed",       action: "Retry" },
-  "Verification failed": { fg: "var(--err-text)", label: "Verification failed",   action: "Copy details" }
+  "Verification failed": { fg: "var(--err-text)", label: "Verification failed",   action: "Copy details" },
+  "Fetching":         { fg: "var(--ink-2)",       label: "Fetching\u2026",       action: "" }
 };
 
 class Component extends DCLogic {
@@ -77,9 +78,10 @@ class Component extends DCLogic {
       secondaryInk: selected ? "var(--ink-3-warm)" : "var(--ink-3)",
       wide: !p.narrow,
       hasAction: !!action,
+      shield: !!p.elevate && ["Install", "Update", "Retry"].includes(action),
       action,
       actionStyle: [
-        "display:flex", "align-items:center", "height:24px", "padding:0 10px", "border-radius:3px",
+        "display:flex", "align-items:center", "gap:6px", "height:24px", "padding:0 10px", "border-radius:3px",
         "font-size:11px", "font-weight:500", "cursor:pointer", "white-space:nowrap",
         status === "Update available"
           ? "background:var(--btn); color:var(--accent-text)"

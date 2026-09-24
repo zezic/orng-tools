@@ -17,7 +17,7 @@
 html,body{margin:0;padding:0;background:#000}
 a{color:#ff5a1f;text-decoration:none}
 a:hover{color:#ff7a45}
-:root{--page:#000000;--bg:#0a0a0a;--panel:#161616;--panel-2:#1e1e1e;--row:#0a0a0a;--row-alt:#1e1e1e;--row-hover:#262626;--zebra:rgba(255,255,255,.05);--line:#242424;--line-soft:#1a1a1a;--ink:#f2f2f2;--ink-2:#bcbcbc;--ink-3:#949494;--ink-2-warm:#c6b6aa;--ink-3-warm:#9e9089;--ink-2-err:#c9b4b1;--ink-3-err:#9d8c8a;--accent:#ff5a1f;--accent-text:#ff7a45;--accent-ink:#0a0a0a;--accent-soft:rgba(255,90,31,.10);--k-device:#a9a9a9;--k-device-bg:transparent;--k-mod:#a9a9a9;--k-mod-bg:transparent;--k-module:#a9a9a9;--k-module-bg:transparent;--ok:#f2f2f2;--ok-bg:rgba(242,242,242,.07);--warn:#ff5a1f;--warn-bg:rgba(255,90,31,.10);--err:#ff4036;--err-text:#ff6259;--err-bg:rgba(255,64,54,.10);--info:#a9a9a9;--info-bg:rgba(169,169,169,.08);--field:#000000;--btn:#282828;--btn-hover:#333333;--scrim:rgba(0,0,0,.74);--shadow:0 30px 80px rgba(0,0,0,.8)}
+:root{--page:#000000;--bg:#0a0a0a;--panel:#161616;--panel-2:#1e1e1e;--row:#0a0a0a;--row-alt:#1e1e1e;--row-hover:#262626;--zebra:rgba(255,255,255,.05);--line:#242424;--line-soft:#1a1a1a;--ink:#f2f2f2;--ink-2:#bcbcbc;--ink-3:#949494;--ink-2-warm:#c6b6aa;--ink-3-warm:#9e9089;--ink-2-err:#c9b4b1;--ink-3-err:#9d8c8a;--accent:#ff5a1f;--accent-text:#ff7a45;--accent-ink:#0a0a0a;--accent-soft:rgba(255,90,31,.10);--k-device:#a9a9a9;--k-device-bg:transparent;--k-mod:#a9a9a9;--k-mod-bg:transparent;--k-module:#a9a9a9;--k-module-bg:transparent;--ok:#f2f2f2;--ok-bg:rgba(242,242,242,.07);--warn:#ff5a1f;--warn-bg:rgba(255,90,31,.10);--err:#ff4036;--err-text:#ff6259;--err-bg:rgba(255,64,54,.10);--info:#a9a9a9;--info-bg:rgba(169,169,169,.08);--field:#000000;--btn:#282828;--btn-hover:#333333;--scrim:rgba(0,0,0,.74);--shadow:0 30px 80px rgba(0,0,0,.85);--shadow-menu:0 18px 40px rgba(0,0,0,.7);--shadow-panel:-18px 0 40px rgba(0,0,0,.5)}
 </style>
 </helmet>
 <div style="font-family:Inter,'Helvetica Neue',Helvetica,sans-serif">
@@ -45,8 +45,11 @@ a:hover{color:#ff7a45}
       <sc-if value="{{ showAssign }}" hint-placeholder-val="{{ false }}">
         <div title="Assign new UUID" style="display:flex; align-items:center; justify-content:center; width:22px; height:22px; border-radius:3px; color:var(--ink-2); cursor:pointer" style-hover="background:var(--btn-hover); color:var(--ink)"><i class="ph-duotone ph-fingerprint" style="font-size:16px"></i></div>
       </sc-if>
+      <sc-if value="{{ showRename }}" hint-placeholder-val="{{ false }}">
+        <div onClick="{{ rename }}" title="Rename&hellip;" style="display:flex; align-items:center; justify-content:center; width:22px; height:22px; border-radius:3px; color:var(--accent); cursor:pointer" style-hover="background:var(--accent-soft)"><i class="ph-duotone ph-pencil-simple" style="font-size:16px"></i></div>
+      </sc-if>
       <sc-if value="{{ showLocate }}" hint-placeholder-val="{{ false }}">
-        <div title="Locate file" style="display:flex; align-items:center; justify-content:center; width:22px; height:22px; border-radius:3px; color:var(--accent); cursor:pointer" style-hover="background:var(--accent-soft)"><i class="ph-duotone ph-file-magnifying-glass" style="font-size:16px"></i></div>
+        <div title="{{ locateTitle }}" style="display:flex; align-items:center; justify-content:center; width:22px; height:22px; border-radius:3px; color:var(--accent); cursor:pointer" style-hover="background:var(--accent-soft)"><i class="ph-duotone ph-file-magnifying-glass" style="font-size:16px"></i></div>
       </sc-if>
       <sc-if value="{{ showUndo }}" hint-placeholder-val="{{ false }}">
         <div title="Undo removal" style="display:flex; align-items:center; justify-content:center; width:22px; height:22px; border-radius:3px; color:var(--ink-2); cursor:pointer" style-hover="background:var(--btn-hover); color:var(--ink)"><i class="ph-duotone ph-arrow-u-up-left" style="font-size:16px"></i></div>
@@ -57,13 +60,29 @@ a:hover{color:#ff7a45}
       <sc-if value="{{ showRemove }}" hint-placeholder-val="{{ false }}">
         <div title="{{ removeLabel }}" style="display:flex; align-items:center; justify-content:center; width:22px; height:22px; border-radius:3px; color:var(--ink-2); cursor:pointer" style-hover="background:var(--err-bg); color:var(--err)"><i class="ph-duotone ph-trash" style="font-size:16px"></i></div>
       </sc-if>
-      <div title="More" style="display:flex; align-items:center; justify-content:center; width:22px; height:22px; border-radius:3px; color:var(--ink-3); cursor:pointer" style-hover="background:var(--btn-hover); color:var(--ink)"><i class="ph-duotone ph-dots-three-vertical" style="font-size:16px"></i></div>
+      <sc-if value="{{ hasMenu }}" hint-placeholder-val="{{ true }}">
+        <div onClick="{{ toggleMenu }}" title="More" style="display:flex; align-items:center; justify-content:center; width:22px; height:22px; border-radius:3px; color:var(--ink-3); cursor:pointer" style-hover="background:var(--btn-hover); color:var(--ink)"><i class="ph-duotone ph-dots-three-vertical" style="font-size:16px"></i></div>
+      </sc-if>
     </div>
+    <sc-if value="{{ menuOpen }}" hint-placeholder-val="{{ false }}">
+      <div onClick="{{ stop }}" style="position:absolute; top:31px; right:10px; z-index:30; display:flex; flex-direction:column; min-width:184px; padding:4px; background:var(--panel-2); border:1px solid var(--line); border-radius:6px; box-shadow:var(--shadow-menu); cursor:default">
+        <sc-if value="{{ menuRename }}" hint-placeholder-val="{{ true }}">
+          <div onClick="{{ rename }}" style="display:flex; align-items:center; gap:9px; padding:6px 8px; border-radius:3px; font-size:11.5px; color:var(--ink); cursor:pointer" style-hover="background:var(--btn-hover)"><i class="ph-duotone ph-pencil-simple" style="font-size:16px; color:var(--ink-2)"></i><span>Rename&hellip;</span></div>
+        </sc-if>
+        <sc-if value="{{ menuRenameLocked }}" hint-placeholder-val="{{ false }}">
+          <div title="A catalog item keeps the catalog's name" style="display:flex; align-items:center; gap:9px; padding:6px 8px; border-radius:3px; font-size:11.5px; color:var(--ink-3); cursor:default"><i class="ph-duotone ph-pencil-simple" style="font-size:16px"></i><span>Rename&hellip;</span></div>
+        </sc-if>
+        <div style="display:flex; align-items:center; gap:9px; padding:6px 8px; border-radius:3px; font-size:11.5px; color:var(--ink); cursor:pointer" style-hover="background:var(--btn-hover)"><i class="ph-duotone ph-copy" style="font-size:16px; color:var(--ink-2)"></i><span>Copy UUID</span></div>
+        <sc-if value="{{ fromCatalog }}" hint-placeholder-val="{{ false }}">
+          <div style="display:flex; align-items:center; gap:9px; padding:6px 8px; border-radius:3px; font-size:11.5px; color:var(--ink); cursor:pointer" style-hover="background:var(--btn-hover)"><i class="ph-duotone ph-package" style="font-size:16px; color:var(--ink-2)"></i><span>Show in catalog</span></div>
+        </sc-if>
+      </div>
+    </sc-if>
   </div>
 </div>
 
 </x-dc>
-<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:796,&quot;height&quot;:36},&quot;kind&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;DEVICE&quot;,&quot;MODULATOR&quot;,&quot;MODULE&quot;],&quot;default&quot;:&quot;DEVICE&quot;,&quot;tsType&quot;:&quot;string&quot;},&quot;entryName&quot;:{&quot;editor&quot;:&quot;text&quot;,&quot;default&quot;:&quot;DISPERSER&quot;,&quot;tsType&quot;:&quot;string&quot;},&quot;uuid&quot;:{&quot;editor&quot;:&quot;text&quot;,&quot;default&quot;:&quot;21882ab0-7c41-4d0b-9a10-ff3e5d2e77a1&quot;,&quot;tsType&quot;:&quot;string&quot;},&quot;status&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;Staged&quot;,&quot;Registered&quot;,&quot;Pending restart&quot;,&quot;Missing file&quot;,&quot;Changed&quot;,&quot;Update available&quot;,&quot;Conflict&quot;,&quot;Rejected&quot;,&quot;Pending removal&quot;,&quot;Factory&quot;],&quot;default&quot;:&quot;Registered&quot;,&quot;tsType&quot;:&quot;string&quot;},&quot;reason&quot;:{&quot;editor&quot;:&quot;text&quot;,&quot;default&quot;:&quot;&quot;,&quot;tsType&quot;:&quot;string&quot;},&quot;source&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;local&quot;,&quot;catalog&quot;],&quot;default&quot;:&quot;local&quot;,&quot;tsType&quot;:&quot;string&quot;,&quot;section&quot;:&quot;Provenance&quot;},&quot;sourceVersion&quot;:{&quot;editor&quot;:&quot;text&quot;,&quot;default&quot;:&quot;1.2.0&quot;,&quot;tsType&quot;:&quot;string&quot;,&quot;section&quot;:&quot;Provenance&quot;},&quot;deleteFile&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:false,&quot;tsType&quot;:&quot;boolean&quot;,&quot;section&quot;:&quot;Settings in force&quot;},&quot;narrow&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:false,&quot;tsType&quot;:&quot;boolean&quot;,&quot;section&quot;:&quot;Layout&quot;},&quot;factory&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:false,&quot;tsType&quot;:&quot;boolean&quot;},&quot;forceActions&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:false,&quot;tsType&quot;:&quot;boolean&quot;},&quot;selected&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:false,&quot;tsType&quot;:&quot;boolean&quot;},&quot;onOpen&quot;:{&quot;editor&quot;:null,&quot;tsType&quot;:&quot;(name: string) =&gt; void&quot;}}">
+<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:796,&quot;height&quot;:36},&quot;kind&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;DEVICE&quot;,&quot;MODULATOR&quot;,&quot;MODULE&quot;],&quot;default&quot;:&quot;DEVICE&quot;,&quot;tsType&quot;:&quot;string&quot;},&quot;entryName&quot;:{&quot;editor&quot;:&quot;text&quot;,&quot;default&quot;:&quot;DISPERSER&quot;,&quot;tsType&quot;:&quot;string&quot;},&quot;uuid&quot;:{&quot;editor&quot;:&quot;text&quot;,&quot;default&quot;:&quot;21882ab0-7c41-4d0b-9a10-ff3e5d2e77a1&quot;,&quot;tsType&quot;:&quot;string&quot;},&quot;status&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;Staged&quot;,&quot;Registered&quot;,&quot;Pending restart&quot;,&quot;Missing file&quot;,&quot;Changed&quot;,&quot;Update available&quot;,&quot;Conflict&quot;,&quot;Rejected&quot;,&quot;Pending removal&quot;,&quot;Factory&quot;],&quot;default&quot;:&quot;Registered&quot;,&quot;tsType&quot;:&quot;string&quot;},&quot;reason&quot;:{&quot;editor&quot;:&quot;text&quot;,&quot;default&quot;:&quot;&quot;,&quot;tsType&quot;:&quot;string&quot;},&quot;source&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;local&quot;,&quot;catalog&quot;],&quot;default&quot;:&quot;local&quot;,&quot;tsType&quot;:&quot;string&quot;,&quot;section&quot;:&quot;Provenance&quot;},&quot;sourceVersion&quot;:{&quot;editor&quot;:&quot;text&quot;,&quot;default&quot;:&quot;1.2.0&quot;,&quot;tsType&quot;:&quot;string&quot;,&quot;section&quot;:&quot;Provenance&quot;},&quot;deleteFile&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:false,&quot;tsType&quot;:&quot;boolean&quot;,&quot;section&quot;:&quot;Settings in force&quot;},&quot;narrow&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:false,&quot;tsType&quot;:&quot;boolean&quot;,&quot;section&quot;:&quot;Layout&quot;},&quot;factory&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:false,&quot;tsType&quot;:&quot;boolean&quot;},&quot;forceActions&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:false,&quot;tsType&quot;:&quot;boolean&quot;},&quot;selected&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:false,&quot;tsType&quot;:&quot;boolean&quot;},&quot;onOpen&quot;:{&quot;editor&quot;:null,&quot;tsType&quot;:&quot;(name: string) =&gt; void&quot;},&quot;conflict&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;&quot;,&quot;uuid&quot;,&quot;name&quot;],&quot;default&quot;:&quot;&quot;,&quot;tsType&quot;:&quot;string&quot;},&quot;menuOpen&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:false,&quot;tsType&quot;:&quot;boolean&quot;},&quot;elevate&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:false,&quot;tsType&quot;:&quot;boolean&quot;,&quot;section&quot;:&quot;Settings in force&quot;},&quot;onRename&quot;:{&quot;editor&quot;:null,&quot;tsType&quot;:&quot;(name: string) => void&quot;}}">
 const KIND = { DEVICE: "Device", MODULATOR: "Modulator", MODULE: "Module" };
 const STATUS = {
   "Staged": "var(--ink-2)",
@@ -79,13 +98,16 @@ const STATUS = {
 };
 
 class Component extends DCLogic {
-  state = { hover: false };
+  state = { hover: false, menu: false };
   renderVals() {
     const p = this.props;
     const status = p.status ?? "Registered";
     const kind = p.kind ?? "DEVICE";
     const factory = !!p.factory;
-    const hot = this.state.hover || !!p.forceActions;
+    const menuOpen = this.state.menu || !!p.menuOpen;
+    const hot = this.state.hover || !!p.forceActions || menuOpen;
+    const nameConflict = status === "Conflict" && p.conflict === "name";
+    const fromCat = (p.source ?? "local") === "catalog";
     const uuid = p.uuid ?? "00000000-0000-0000-0000-000000000000";
     const statusFg = STATUS[status] || STATUS.Registered;
     const selected = !!p.selected;
@@ -113,6 +135,7 @@ class Component extends DCLogic {
         "align-items:center",
         "gap:12px",
         "height:36px",
+        "position:relative",
         "padding:0 12px",
         "cursor:" + (factory ? "default" : "pointer"),
         "background-color:" + (selected ? "rgba(255,90,31,.09)" : hot && !factory ? "var(--row-hover)" : "transparent")
@@ -125,11 +148,20 @@ class Component extends DCLogic {
         : p.deleteFile
           ? "Remove entry \u00b7 the document file is deleted too"
           : "Remove entry \u00b7 the document file is kept",
-      showAssign: status === "Staged" || status === "Conflict",
+      showAssign: status === "Staged" || (status === "Conflict" && !nameConflict),
+      showRename: nameConflict,
+      locateTitle: p.elevate ? "Locate file \u00b7 asks Windows for administrator rights" : "Locate file",
+      hasMenu: !rejected,
+      menuOpen,
+      menuRename: !fromCat && status !== "Pending removal",
+      menuRenameLocked: fromCat,
+      toggleMenu: ev => { if (ev && ev.stopPropagation) ev.stopPropagation(); this.setState({ menu: !this.state.menu }); },
+      stop: ev => { if (ev && ev.stopPropagation) ev.stopPropagation(); },
+      rename: ev => { if (ev && ev.stopPropagation) ev.stopPropagation(); this.setState({ menu: false }); p.onRename && p.onRename(p.entryName ?? p.name); },
       showLocate: status === "Missing file",
       showUndo: status === "Pending removal",
       enter: () => this.setState({ hover: true }),
-      leave: () => this.setState({ hover: false }),
+      leave: () => this.setState({ hover: false, menu: false }),
       open: () => { if (!factory && this.props.onOpen) this.props.onOpen(p.entryName ?? p.name); }
     };
   }

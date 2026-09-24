@@ -18,8 +18,8 @@
 html,body{margin:0;padding:0;background:#000}
 a{color:#ff5a1f;text-decoration:none}
 a:hover{color:#ff7a45}
-#ordoc{--page:#000000;--bg:#0a0a0a;--panel:#161616;--panel-2:#1e1e1e;--row:#0a0a0a;--row-alt:#1e1e1e;--row-hover:#262626;--zebra:rgba(255,255,255,.05);--line:#242424;--line-soft:#1a1a1a;--ink:#f2f2f2;--ink-2:#bcbcbc;--ink-3:#949494;--ink-2-warm:#c6b6aa;--ink-3-warm:#9e9089;--ink-2-err:#c9b4b1;--ink-3-err:#9d8c8a;--accent:#ff5a1f;--accent-text:#ff7a45;--accent-ink:#0a0a0a;--accent-soft:rgba(255,90,31,.10);--ok:#f2f2f2;--ok-bg:rgba(242,242,242,.06);--warn:#ff5a1f;--warn-bg:rgba(255,90,31,.10);--err:#ff4036;--err-text:#ff6259;--err-bg:rgba(255,64,54,.10);--info:#a9a9a9;--info-bg:rgba(169,169,169,.07);--field:#000000;--btn:#282828;--btn-hover:#333333;--scrim:rgba(0,0,0,.74);--shadow:0 30px 80px rgba(0,0,0,.85)}
-#ordoc[data-theme="light"]{--page:#e6e6e6;--bg:#f2f2f2;--panel:#fafafa;--panel-2:#ffffff;--row:#f2f2f2;--row-alt:#e4e4e4;--row-hover:#dcdcdc;--zebra:rgba(0,0,0,.045);--line:#c6c6c6;--line-soft:#dadada;--ink:#171717;--ink-2:#3e3e3e;--ink-3:#5e5e5e;--ink-2-warm:#463c34;--ink-3-warm:#665c53;--ink-2-err:#453a38;--ink-3-err:#655a58;--accent:#e8500f;--accent-text:#9e3809;--accent-ink:#0a0a0a;--accent-soft:rgba(232,80,15,.10);--ok:#171717;--ok-bg:rgba(23,23,23,.05);--warn:#e8500f;--warn-bg:rgba(232,80,15,.10);--err:#bf2a1c;--err-text:#a32316;--err-bg:rgba(191,42,28,.09);--info:#3e3e3e;--info-bg:rgba(62,62,62,.07);--field:#ececec;--btn:#e2e2e2;--btn-hover:#d8d8d8;--scrim:rgba(255,255,255,.66);--shadow:0 26px 60px rgba(0,0,0,.22)}
+#ordoc{--page:#000000;--bg:#0a0a0a;--panel:#161616;--panel-2:#1e1e1e;--row:#0a0a0a;--row-alt:#1e1e1e;--row-hover:#262626;--zebra:rgba(255,255,255,.05);--line:#242424;--line-soft:#1a1a1a;--ink:#f2f2f2;--ink-2:#bcbcbc;--ink-3:#949494;--ink-2-warm:#c6b6aa;--ink-3-warm:#9e9089;--ink-2-err:#c9b4b1;--ink-3-err:#9d8c8a;--accent:#ff5a1f;--accent-text:#ff7a45;--accent-ink:#0a0a0a;--accent-soft:rgba(255,90,31,.10);--ok:#f2f2f2;--ok-bg:rgba(242,242,242,.06);--warn:#ff5a1f;--warn-bg:rgba(255,90,31,.10);--err:#ff4036;--err-text:#ff6259;--err-bg:rgba(255,64,54,.10);--info:#a9a9a9;--info-bg:rgba(169,169,169,.07);--field:#000000;--btn:#282828;--btn-hover:#333333;--scrim:rgba(0,0,0,.74);--shadow:0 30px 80px rgba(0,0,0,.85);--shadow-menu:0 18px 40px rgba(0,0,0,.7);--shadow-panel:-18px 0 40px rgba(0,0,0,.5)}
+#ordoc[data-theme="light"]{--page:#e6e6e6;--bg:#f2f2f2;--panel:#fafafa;--panel-2:#ffffff;--row:#f2f2f2;--row-alt:#e4e4e4;--row-hover:#dcdcdc;--zebra:rgba(0,0,0,.045);--line:#c6c6c6;--line-soft:#dadada;--ink:#171717;--ink-2:#3e3e3e;--ink-3:#5e5e5e;--ink-2-warm:#463c34;--ink-3-warm:#665c53;--ink-2-err:#453a38;--ink-3-err:#655a58;--accent:#e8500f;--accent-text:#9e3809;--accent-ink:#0a0a0a;--accent-soft:rgba(232,80,15,.10);--ok:#171717;--ok-bg:rgba(23,23,23,.05);--warn:#e8500f;--warn-bg:rgba(232,80,15,.10);--err:#bf2a1c;--err-text:#a32316;--err-bg:rgba(191,42,28,.09);--info:#3e3e3e;--info-bg:rgba(62,62,62,.07);--field:#ececec;--btn:#e2e2e2;--btn-hover:#d8d8d8;--scrim:rgba(255,255,255,.66);--shadow:0 26px 60px rgba(0,0,0,.22);--shadow-menu:0 12px 28px rgba(0,0,0,.16);--shadow-panel:-14px 0 32px rgba(0,0,0,.12)}
 </style>
 </helmet>
 <div id="ordoc" data-theme="{{ theme }}" style="min-height:100vh; padding:30px 22px 52px; background:var(--page); font-family:Inter,'Helvetica Neue',Helvetica,sans-serif; -webkit-font-smoothing:antialiased">
@@ -28,7 +28,7 @@ a:hover{color:#ff7a45}
     <div style="display:flex; align-items:flex-end; gap:16px; flex-wrap:wrap">
       <div style="display:flex; flex-direction:column; gap:5px; flex:1; min-width:240px">
         <span style="font-size:21px; font-weight:600; color:var(--ink); letter-spacing:-0.025em">ORNG Registry</span>
-        <span style="font-family:'Iosevka Extended',Iosevka,monospace; letter-spacing:-0.05em; font-size:11px; color:var(--ink-3)">Desktop UI &middot; 820&times;560 &middot; 32 states</span>
+        <span style="font-family:'Iosevka Extended',Iosevka,monospace; letter-spacing:-0.05em; font-size:11px; color:var(--ink-3)">Desktop UI &middot; 820&times;560 &middot; 39 states</span>
       </div>
       <div style="display:flex; gap:2px; padding:3px; background:var(--panel); border-radius:4px">
         <div onClick="{{ setDark }}" style="{{ darkBtn }}">Dark</div>
@@ -66,10 +66,10 @@ a:hover{color:#ff7a45}
         </div>
 
         <sc-if value="{{ isSettings }}" hint-placeholder-val="{{ false }}">
-          <div style="display:grid; grid-template-rows:minmax(0,1fr); grid-template-columns:minmax(0,1fr); flex:1; min-height:0"><dc-import name="SettingsScreen" version="{{ aboutVersion }}" build="{{ installBuild }}" placement="{{ placement }}" onPlacement="{{ onPlacement }}" deleteFile="{{ deleteFile }}" onToggleDelete="{{ onToggleDelete }}" guard="{{ guard }}" backup="{{ backup }}" resolved="{{ resolved }}" entryCount="{{ entryCount }}" onBack="{{ goMain }}" onAbout="{{ goAbout }}" onRestore="{{ goRestore }}" onTheme="{{ setTheme }}" hint-size="100%,100%"></dc-import></div>
+          <div style="display:grid; grid-template-rows:minmax(0,1fr); grid-template-columns:minmax(0,1fr); flex:1; min-height:0"><dc-import name="SettingsScreen" installed="{{ settingsInstalled }}" version="{{ aboutVersion }}" build="{{ installBuild }}" placement="{{ placement }}" onPlacement="{{ onPlacement }}" deleteFile="{{ deleteFile }}" onToggleDelete="{{ onToggleDelete }}" guard="{{ guard }}" backup="{{ backup }}" resolved="{{ resolved }}" entryCount="{{ entryCount }}" onBack="{{ goMain }}" onAbout="{{ goAbout }}" onRestore="{{ goRestore }}" onTheme="{{ setTheme }}" hint-size="100%,100%"></dc-import></div>
         </sc-if>
         <sc-if value="{{ isRestore }}" hint-placeholder-val="{{ false }}">
-          <div style="display:grid; grid-template-rows:minmax(0,1fr); grid-template-columns:minmax(0,1fr); flex:1; min-height:0"><dc-import name="RestoreScreen" backup="{{ backup }}" onBack="{{ goMain }}" hint-size="100%,100%"></dc-import></div>
+          <div style="display:grid; grid-template-rows:minmax(0,1fr); grid-template-columns:minmax(0,1fr); flex:1; min-height:0"><dc-import name="RestoreScreen" elevate="{{ elevate }}" backup="{{ backup }}" onBack="{{ goMain }}" hint-size="100%,100%"></dc-import></div>
         </sc-if>
         <sc-if value="{{ isAbout }}" hint-placeholder-val="{{ false }}">
           <div style="display:grid; grid-template-rows:minmax(0,1fr); grid-template-columns:minmax(0,1fr); flex:1; min-height:0"><dc-import name="AboutScreen" resolved="{{ resolved }}" version="{{ aboutVersion }}" build="{{ installBuild }}" onBack="{{ goMain }}" hint-size="100%,100%"></dc-import></div>
@@ -82,7 +82,7 @@ a:hover{color:#ff7a45}
               <dc-import name="InstallBar" view="{{ view }}" freshness="{{ freshness }}" stale="{{ stale }}" onLocal="{{ goEntries }}" onCatalog="{{ goCatalog }}" state="{{ installState }}" title="{{ installTitle }}" build="{{ installBuild }}" menuOpen="{{ menuOpen }}" onToggleMenu="{{ toggleMenu }}" onSettings="{{ goSettings }}" onRestore="{{ goRestore }}" onAbout="{{ goAbout }}" hint-size="100%,70px"></dc-import>
             </sc-if>
             <sc-if value="{{ noInstall }}" hint-placeholder-val="{{ false }}">
-              <div style="position:relative; display:flex; align-items:center; gap:12px; flex:none; padding:13px 12px; background:var(--panel)">
+              <div style="position:relative; display:flex; align-items:center; gap:12px; flex:none; padding:9px 12px; background:var(--panel)">
                 <div style="display:flex; align-items:center; gap:2px; flex:none">
                   <div onClick="{{ goEntries }}" style="{{ localTab }}">Local</div>
                   <div onClick="{{ goCatalog }}" style="{{ catalogTab }}">Catalog</div>
@@ -101,7 +101,7 @@ a:hover{color:#ff7a45}
                   <dc-import name="CatalogToolbar" narrow="{{ detailOpen }}" query="{{ query }}" filter="{{ catalogFilter }}" kinds="{{ kinds }}" onFilter="{{ onCatalogFilter }}" onToggleKind="{{ onToggleKind }}" devices="{{ catDevices }}" modulators="{{ catModulators }}" modules="{{ catModules }}" hint-size="100%,42px"></dc-import>
                   <div style="flex:1; min-height:0; overflow:auto; background:var(--row)">
                     <sc-for list="{{ items }}" as="it" hint-placeholder-count="6">
-                      <dc-import name="CatalogRow" kind="{{ it.kind }}" item-name="{{ it.name }}" description="{{ it.description }}" author="{{ it.author }}" version="{{ it.version }}" status="{{ it.status }}" requires="{{ it.requires }}" selected="{{ it.selected }}" forceHover="{{ it.forceHover }}" narrow="{{ detailOpen }}" onOpen="{{ openDetail }}" onAction="{{ catalogAction }}" hint-size="100%,48px"></dc-import>
+                      <dc-import name="CatalogRow" elevate="{{ elevate }}" kind="{{ it.kind }}" item-name="{{ it.name }}" description="{{ it.description }}" author="{{ it.author }}" version="{{ it.version }}" status="{{ it.status }}" requires="{{ it.requires }}" selected="{{ it.selected }}" forceHover="{{ it.forceHover }}" narrow="{{ detailOpen }}" onOpen="{{ openDetail }}" onAction="{{ catalogAction }}" hint-size="100%,48px"></dc-import>
                     </sc-for>
                   </div>
                 </sc-if>
@@ -117,7 +117,7 @@ a:hover{color:#ff7a45}
                         <span style="font-family:'Iosevka Extended',Iosevka,monospace; letter-spacing:-0.05em; font-size:10.5px; color:var(--ink-3)">{{ stagedCount }}</span>
                       </div>
                       <sc-for list="{{ staged }}" as="r" hint-placeholder-count="3">
-                        <dc-import name="EntryRow" deleteFile="{{ deleteFile }}" kind="{{ r.kind }}" entry-name="{{ r.name }}" uuid="{{ r.uuid }}" status="{{ r.status }}" reason="{{ r.reason }}" narrow="{{ inspectorOpen }}" forceActions="{{ r.forceActions }}" onOpen="{{ openInspector }}" hint-size="100%,36px"></dc-import>
+                        <dc-import name="EntryRow" deleteFile="{{ deleteFile }}" kind="{{ r.kind }}" entry-name="{{ r.name }}" uuid="{{ r.uuid }}" status="{{ r.status }}" reason="{{ r.reason }}" conflict="{{ r.conflict }}" elevate="{{ elevate }}" narrow="{{ inspectorOpen }}" forceActions="{{ r.forceActions }}" onOpen="{{ openInspector }}" onRename="{{ openRename }}" hint-size="100%,36px"></dc-import>
                       </sc-for>
                     </sc-if>
                     <div style="display:flex; align-items:center; gap:9px; height:26px; padding:0 12px; background:var(--row-alt); position:sticky; top:0; z-index:2">
@@ -126,7 +126,7 @@ a:hover{color:#ff7a45}
                       <span style="font-family:'Iosevka Extended',Iosevka,monospace; letter-spacing:-0.05em; font-size:10.5px; color:var(--ink-3)">{{ countPad }}</span>
                     </div>
                     <sc-for list="{{ userRows }}" as="r" hint-placeholder-count="7">
-                      <dc-import name="EntryRow" deleteFile="{{ deleteFile }}" kind="{{ r.kind }}" entry-name="{{ r.name }}" uuid="{{ r.uuid }}" status="{{ r.status }}" reason="{{ r.reason }}" source="{{ r.source }}" selected="{{ r.selected }}" narrow="{{ inspectorOpen }}" factory="{{ r.factory }}" forceActions="{{ r.forceActions }}" onOpen="{{ openInspector }}" hint-size="100%,36px"></dc-import>
+                      <dc-import name="EntryRow" deleteFile="{{ deleteFile }}" kind="{{ r.kind }}" entry-name="{{ r.name }}" uuid="{{ r.uuid }}" status="{{ r.status }}" reason="{{ r.reason }}" source="{{ r.source }}" selected="{{ r.selected }}" narrow="{{ inspectorOpen }}" factory="{{ r.factory }}" forceActions="{{ r.forceActions }}" menuOpen="{{ r.menuOpen }}" elevate="{{ elevate }}" onOpen="{{ openInspector }}" onRename="{{ openRename }}" hint-size="100%,36px"></dc-import>
                     </sc-for>
                     <sc-if value="{{ hasFactory }}" hint-placeholder-val="{{ false }}">
                       <div style="display:flex; align-items:center; gap:9px; height:26px; padding:0 12px; background:var(--row-alt); position:sticky; top:0; z-index:3">
@@ -158,7 +158,7 @@ a:hover{color:#ff7a45}
               </div>
 
               <sc-if value="{{ inspectorOpen }}" hint-placeholder-val="{{ false }}">
-                <dc-import name="Inspector" kind="{{ inspKind }}" deleteFile="{{ deleteFile }}" registered="{{ inspRegistered }}" entry-name="{{ inspName }}" status="{{ inspStatus }}" uuid="{{ inspUuid }}" description="{{ inspDescription }}" keywords="{{ inspKeywords }}" libpath="{{ inspLibpath }}" placement="{{ inspPlacement }}" source="{{ inspSource }}" sourceVersion="{{ inspSourceVersion }}" provenance="{{ inspProvenance }}" provenanceUrl="{{ inspProvenanceUrl }}" onClose="{{ closeInspector }}" hint-size="272px,100%"></dc-import>
+                <dc-import name="Inspector" kind="{{ inspKind }}" deleteFile="{{ deleteFile }}" registered="{{ inspRegistered }}" entry-name="{{ inspName }}" status="{{ inspStatus }}" uuid="{{ inspUuid }}" description="{{ inspDescription }}" keywords="{{ inspKeywords }}" libpath="{{ inspLibpath }}" placement="{{ inspPlacement }}" source="{{ inspSource }}" sourceVersion="{{ inspSourceVersion }}" provenance="{{ inspProvenance }}" provenanceUrl="{{ inspProvenanceUrl }}" waiting="{{ inspWaiting }}" confirmSave="{{ inspConfirmSave }}" installPath="{{ installPath }}" onClose="{{ closeInspector }}" hint-size="272px,100%"></dc-import>
               </sc-if>
               <sc-if value="{{ detailOpen }}" hint-placeholder-val="{{ false }}">
                 <dc-import name="CatalogDetail" item-name="{{ detailName }}" kind="{{ detailKind }}" status="{{ detailStatus }}" author="{{ detailAuthor }}" version="{{ detailVersion }}" description="{{ detailDescription }}" keywords="{{ detailKeywords }}" licence="{{ detailLicence }}" provenance="{{ detailProvenance }}" provenanceUrl="{{ detailProvenanceUrl }}" homepage="{{ detailHomepage }}" uuid="{{ detailUuid }}" requires="{{ detailRequires }}" compatible="{{ detailCompatible }}" replacementName="{{ detailReplacement }}" onClose="{{ closeDetail }}" onPrimary="{{ detailPrimary }}" onReplacement="{{ openReplacement }}" hint-size="272px,100%"></dc-import>
@@ -183,7 +183,7 @@ a:hover{color:#ff7a45}
               </div>
             </sc-if>
 
-            <dc-import name="ActionBar" summary="{{ summary }}" note="{{ note }}" tone="{{ tone }}" primary="{{ primaryLabel }}" mode="{{ mode }}" disabled="{{ primaryDisabled }}" disabledReason="{{ disabledReason }}" secondary="{{ secondaryLabel }}" secondaryIcon="{{ secondaryIcon }}" onPrimary="{{ goConfirm }}" hint-size="100%,52px"></dc-import>
+            <dc-import name="ActionBar" elevate="{{ elevate }}" summary="{{ summary }}" note="{{ note }}" tone="{{ tone }}" primary="{{ primaryLabel }}" mode="{{ mode }}" disabled="{{ primaryDisabled }}" disabledReason="{{ disabledReason }}" secondary="{{ secondaryLabel }}" secondaryIcon="{{ secondaryIcon }}" onPrimary="{{ goConfirm }}" hint-size="100%,52px"></dc-import>
           </div>
         </sc-if>
 
@@ -244,7 +244,8 @@ a:hover{color:#ff7a45}
                 
                 <div style="flex:1"></div>
                 <div onClick="{{ goMain }}" style="display:flex; align-items:center; height:30px; padding:0 13px; border-radius:3px; background:var(--btn); color:var(--ink-2); font-size:11.5px; cursor:pointer" style-hover="background:var(--btn-hover); color:var(--ink)">Cancel</div>
-                <div onClick="{{ goProgress }}" style="display:flex; align-items:center; gap:8px; height:32px; padding:0 14px; border-radius:3px; background:var(--accent); border:1px solid var(--accent); color:var(--accent-ink); font-size:12px; font-weight:600; letter-spacing:-0.01em; cursor:pointer">
+                <div onClick="{{ goProgress }}" style="display:flex; align-items:center; gap:8px; height:32px; padding:0 14px; border-radius:3px; background:var(--accent); color:var(--accent-ink); font-size:12px; font-weight:600; letter-spacing:-0.01em; cursor:pointer">
+                  <sc-if value="{{ elevate }}" hint-placeholder-val="{{ false }}"><i class="ph-light ph-shield" style="font-size:16px"></i></sc-if>
                   <span>Prepare installation</span><i class="ph-duotone ph-arrow-right" style="font-size:16px"></i>
                 </div>
               </div>
@@ -298,24 +299,13 @@ a:hover{color:#ff7a45}
 
         <sc-if value="{{ isUpdateConfirm }}" hint-placeholder-val="{{ false }}">
           <div style="position:absolute; inset:0; z-index:70; display:flex; align-items:center; justify-content:center; padding:26px; background:var(--scrim)">
-            <div style="display:flex; flex-direction:column; width:428px; overflow:hidden; background:var(--panel-2); border-radius:8px; box-shadow:var(--shadow)">
-              <div style="display:flex; align-items:center; gap:10px; flex:none; padding:14px 14px 12px; background:var(--bg)">
-                <span style="flex:1; font-size:14px; font-weight:600; letter-spacing:-0.02em; color:var(--ink)">{{ updateTitle }}</span>
-              </div>
-              <div style="display:flex; flex-direction:column; gap:10px; flex:1; padding:13px 14px 14px">
-                <span style="font-size:11.5px; line-height:1.55; color:var(--ink); text-wrap:pretty">Projects that already use this device will use the new version.</span>
-                <span style="font-family:'Iosevka Extended',Iosevka,monospace; letter-spacing:-0.05em; font-size:10.5px; color:var(--ink-3)">{{ updateVersions }}</span>
-                <span style="font-size:10.5px; line-height:1.5; color:var(--ink-3); text-wrap:pretty">Bitwig finds a device by identity, not by content, so an update reaches back into projects you have already saved. The catalog only allows updates that keep the parameter set, so those projects will still load and sound as saved — but they will play the new version.</span>
-                <span style="font-size:10.5px; line-height:1.5; color:var(--ink-3); text-wrap:pretty">A change that alters the parameter set is published as a separate device instead, and never arrives this way.</span>
-              </div>
-              <div style="display:flex; align-items:center; gap:8px; flex:none; padding:12px 14px; background:var(--bg)">
-                <div style="flex:1"></div>
-                <div onClick="{{ goCatalog }}" style="display:flex; align-items:center; height:30px; padding:0 13px; border-radius:3px; background:var(--btn); color:var(--ink-2); font-size:11.5px; cursor:pointer" style-hover="color:var(--ink)">Cancel</div>
-                <div onClick="{{ goCatalog }}" style="display:flex; align-items:center; gap:8px; height:32px; padding:0 14px; border-radius:3px; background:var(--accent); color:var(--accent-ink); font-size:12px; font-weight:600; letter-spacing:-0.01em; cursor:pointer">
-                  <span>Update</span><i class="ph-duotone ph-arrow-right" style="font-size:16px"></i>
-                </div>
-              </div>
-            </div>
+            <dc-import name="UpdateModal" item-name="{{ detailName }}" kind="{{ detailKind }}" installed="{{ updateInstalled }}" version="{{ detailVersion }}" bitwigOpen="{{ updateBitwigOpen }}" elevate="{{ elevate }}" onCancel="{{ goCatalog }}" onConfirm="{{ goCatalog }}" hint-size="428px,360px"></dc-import>
+          </div>
+        </sc-if>
+
+        <sc-if value="{{ isRename }}" hint-placeholder-val="{{ false }}">
+          <div style="position:absolute; inset:0; z-index:70; display:flex; align-items:center; justify-content:center; padding:26px; background:var(--scrim)">
+            <dc-import name="RenameDialog" entry-name="{{ renameName }}" kind="{{ renameKind }}" value="{{ renameValue }}" taken="{{ renameTaken }}" staged="{{ renameStaged }}" elevate="{{ elevate }}" onCancel="{{ goMain }}" onConfirm="{{ goMain }}" hint-size="404px,300px"></dc-import>
           </div>
         </sc-if>
 
@@ -357,7 +347,7 @@ const DETAIL = {
 
 const STAGED = [
   { kind: "DEVICE", name: "WAVESHAPER ALPHA", uuid: "1f6c85d4-9a02-47be-83c1-d5e70b14a629", status: "Staged" },
-  { kind: "MODULE", name: "SLEW LIMITER", uuid: "4b71c8d9-21f0-4ab3-8c77-1e9b0d4a6f22", status: "Conflict", reason: "UUID already used by a factory module" },
+  { kind: "MODULE", name: "SLEW LIMITER", uuid: "4b71c8d9-21f0-4ab3-8c77-1e9b0d4a6f22", status: "Conflict", reason: "UUID already used by a factory module", conflict: "uuid" },
   { kind: "DEVICE", name: "notes.txt", uuid: "00000000-0000-0000-0000-000000000000", status: "Rejected", reason: "Not a Bitwig device document" }
 ];
 const FACTORY = [
@@ -447,6 +437,40 @@ const SCREENS = {
     installState: "Unknown build", count: 0, guard: "Unknown", backup: "No backup yet", title: "Bitwig Studio", build: "",
     action: { summary: "Installation not recognised", tone: "warn", primary: "Prepare installation", mode: "prepare", disabled: true, disabledReason: "This installation could not be read" }
   },
+  rowmenu: {
+    caption: ["Row overflow menu", "The actions that do not depend on the row's state: Rename, Copy UUID (the only way to reach the UUID once the narrow grid drops that column), and Show in catalog for catalog-sourced rows, where Rename is shown disabled because a catalog item keeps the catalog's name."],
+    list: true, staged: true, hoverRow: 2, menuRow: 2,
+    action: { summary: "2 to add, 1 to remove, 2 to fix", note: "Update entries \u00b7 Bitwig may stay open", primary: "Apply 5 changes", mode: "update" }
+  },
+  renameconflict: {
+    caption: ["Name conflict \u00b7 rename", "Bitwig's browser matches on the name, so a dropped document whose name is taken is a Conflict whose remedy is Rename, not Assign new UUID. The row offers the pencil in place of the fingerprint; the dialog keeps Rename disabled until the name is free."],
+    list: true, staged: true, stagedPatch: { "WAVESHAPER ALPHA": { name: "DISPERSER", status: "Conflict", reason: "Name already used by a registered device", conflict: "name" } },
+    rename: { name: "DISPERSER", kind: "DEVICE", value: "DISPERSER", taken: true, staged: true },
+    action: { summary: "2 to add, 1 to remove, 2 to fix", note: "Update entries \u00b7 Bitwig may stay open", primary: "Apply 5 changes", mode: "update" }
+  },
+  catalogupdateopen: {
+    caption: ["Update while Bitwig is open", "An update is entries work, so Bitwig may stay open. The modal says once what that means for the running Bitwig; afterwards the row reads Pending restart until Bitwig starts again."],
+    view: "catalog", list: true, updateConfirm: true, bitwigOpen: true, detail: "BREATH FOLLOWER", catalogFilter: "Updatable",
+    action: { summary: "Catalog \u00b7 1 update available", primary: "Apply changes", mode: "update", disabled: true, disabledReason: "Nothing to apply" }
+  },
+  windowslocal: {
+    caption: ["Windows \u00b7 installation not writable", "Every press that will end in Windows' consent dialog wears the shield before its words. An inspector edit waits behind the Save question instead of being written when a field is left, and the panel cannot close while it is open."],
+    list: true, staged: true, inspector: true, selected: "TAPE DRIVE", elevate: true, confirmSave: true,
+    action: { summary: "2 to add, 1 to remove, 2 to fix", note: "Update entries \u00b7 asks for administrator rights", primary: "Apply 5 changes", mode: "update" }
+  },
+  windowscatalog: {
+    caption: ["Windows \u00b7 catalog, fetching", "Install, Update and Retry wear the shield. An item being downloaded reads Fetching on its row and on the bar; the Local primary is disabled for those seconds with In progress on its hover."],
+    view: "catalog", list: true, elevate: true, hoverItem: 3, itemStatus: { "TILT SHELF": "Fetching" },
+    action: { summary: "Fetching TILT SHELF", primary: "Apply changes", mode: "update", disabled: true, disabledReason: "In progress" }
+  },
+  inspectorwaiting: {
+    caption: ["Inspector waiting to save", "An edit made while other work runs waits in the panel. The footer says so where the Save question would sit, and the close control is dimmed with the reason on its hover."],
+    list: true, staged: true, inspector: true, selected: "CURVECOMP", waiting: "the registration",
+    action: { summary: "Registering 2 entries\u2026", primary: "Apply 5 changes", mode: "update", disabled: true, disabledReason: "In progress" }
+  },
+  settingsnoinstall: {
+    noInstall: true, count: 0, guard: "Unknown", backup: "No backup yet"
+  },
   catalogdetail: {
     caption: ["Item detail", "The same 272px panel the Local view uses. Author, version, required Bitwig version, licence and the keywords that will become search terms \u2014 plus provenance: a link to the merged change, which is what makes review the trust boundary rather than a claim about one."],
     view: "catalog", list: true, detail: "TILT SHELF",
@@ -480,14 +504,14 @@ const SCREENS = {
     action: { summary: "Install refused", tone: "err", primary: "Apply changes", mode: "update", disabled: true, disabledReason: "Nothing to apply" }
   },
   catalognomatch: {
-    caption: ["Catalog search matches nothing", "Browsing deserves a way onward, not just a way back \u2014 so Clear filters is joined by Browse all."],
+    caption: ["Catalog search matches nothing", "Same treatment as the Local view: one way out, Clear filters. Browse all would have done the same thing."],
     view: "catalog", empty: "nocatalogmatch", toolbar: true, query: "granular",
     action: { summary: "Catalog \u00b7 9 items", note: "No item matches the current search and filters", primary: "Apply changes", mode: "update", disabled: true, disabledReason: "Nothing to apply" }
   },
   nomatch: {
     caption: ["Filter matches nothing", "Minor state. The toolbar stays put and offers a way out."],
     empty: "nomatch", toolbar: true, query: "wavesh",
-    action: { summary: "2 to add, 1 to remove, 2 to fix", note: "5 entries hidden by the current filter", primary: "Apply 5 changes", mode: "update" }
+    action: { summary: "2 to add, 1 to remove, 2 to fix", note: "5 changes hidden by the current filter", primary: "Apply 5 changes", mode: "update" }
   },
   drag: {
     caption: ["Drag over the window", "The whole window is the target. Accept and reject are stated per file before the drop, and a dropped folder is read one level deep."],
@@ -547,12 +571,13 @@ const SCREENS = {
 };
 
 const GROUPS = [
-  { label: "List", keys: ["main", "hover", "inspector", "factory", "nomatch"] },
+  { label: "List", keys: ["main", "hover", "rowmenu", "renameconflict", "inspector", "factory", "nomatch"] },
   { label: "First run", keys: ["onboarding", "noinstall", "unknownbuild", "drag"] },
   { label: "Apply", keys: ["confirm", "progress", "auth", "activate", "success", "restart", "failure", "running"] },
-  { label: "Catalog", keys: ["catalog", "catalogdetail", "catalogupdate", "catalogupdateconfirm", "catalogsuperseded", "catalogincompatible"] },
+  { label: "Catalog", keys: ["catalog", "catalogdetail", "catalogupdate", "catalogupdateconfirm", "catalogupdateopen", "catalogsuperseded", "catalogincompatible"] },
   { label: "Catalog \u00b7 network", keys: ["catalogstale", "catalognever", "catalogverify", "catalognomatch"] },
-  { label: "Screens", keys: ["reapply", "settings", "settingsunknown", "restore", "about"] }
+  { label: "Rights \u00b7 waiting", keys: ["windowslocal", "windowscatalog", "inspectorwaiting"] },
+  { label: "Screens", keys: ["reapply", "settings", "settingsunknown", "settingsnoinstall", "restore", "about"] }
 ];
 const CHIP = {
   main: "Entry list", hover: "Row hover", inspector: "Inspector", factory: "Factory shown", nomatch: "No match",
@@ -562,11 +587,14 @@ const CHIP = {
   catalog: "Browse", catalogdetail: "Item detail", catalogupdate: "Update available",
   catalogupdateconfirm: "Update confirm", catalogsuperseded: "Replacement", catalogincompatible: "Incompatible",
   catalogstale: "Cached / offline", catalognever: "Never fetched", catalogverify: "Verification failed", catalognomatch: "No results",
-  reapply: "Needs re-apply", settings: "Settings", settingsunknown: "Settings \u00b7 unknown guard", restore: "Restore backup", about: "About"
+  reapply: "Needs re-apply", settings: "Settings", settingsunknown: "Settings \u00b7 unknown guard", settingsnoinstall: "Settings \u00b7 no install",
+  rowmenu: "Row menu", renameconflict: "Name conflict", catalogupdateopen: "Update \u00b7 Bitwig open",
+  windowslocal: "Windows \u00b7 Local", windowscatalog: "Windows \u00b7 Catalog", inspectorwaiting: "Inspector waiting", restore: "Restore backup", about: "About"
 };
 const FULL = {
   settings: ["Settings", "One screen, no tabs. Diagnostics live here because that is what a user sends when a new Bitwig build is not recognised."],
   settingsunknown: ["Settings \u00b7 unknown guard", "The refusal state. The guard site is present but not in a shape the app recognises, so preparation refuses rather than editing blind \u2014 reporting 'armed' here would send the user to press Prepare and collect an unexplained refusal."],
+  settingsnoinstall: ["Settings \u00b7 no install", "The state somebody is most likely in when they open Settings. Rows keep their height with a dash where there is nothing to say; the report states the places searched."],
   restore: ["Restore backup", "Deliberate, behind the overflow control, and explicit about the cost: projects stop recalling custom devices afterwards."],
   about: ["About", "Detected version, build and whether resolution succeeded, plus the disclaimer. Deliberately no list of supported builds \u2014 the app resolves by structure, so such a list would be stale on release day."]
 };
@@ -648,7 +676,7 @@ class Component extends DCLogic {
     const catalogSource = uuid => CATALOG.find(i => i.uuid === uuid && INSTALLED_STATES.includes(i.status)) || null;
     const openEntry = this.state.inspectorItem ?? s.selected ?? null;
     const entry = STAGED.concat(REGISTERED).concat(FACTORY).find(x => x.name === openEntry) || REGISTERED[0];
-    const stagedRows = STAGED.filter(x => kindOn(x.kind)).map(x => ({ ...x, forceActions: false }));
+    const stagedRows = STAGED.map(x => ({ ...x, ...((s.stagedPatch || {})[x.name] || {}) })).filter(x => kindOn(x.kind)).map(x => ({ conflict: "", ...x, forceActions: false }));
     const rows = [];
     REGISTERED.filter(x => kindOn(x.kind)).forEach((r, i) => rows.push({
       ...r,
@@ -656,6 +684,7 @@ class Component extends DCLogic {
       sourceVersion: (catalogSource(r.uuid) || {}).installed ?? (catalogSource(r.uuid) || {}).version ?? "",
       selected: openEntry === r.name,
       forceActions: s.hoverRow === i,
+      menuOpen: s.menuRow === i,
       factory: false
     }));
     if (factoryOn) FACTORY.filter(x => kindOn(x.kind)).forEach(r => rows.push({ ...r, selected: false, forceActions: false }));
@@ -701,7 +730,21 @@ class Component extends DCLogic {
         items: g.keys.map(k => ({ label: CHIP[k], style: this.chipStyle(screen === k), go: go(k) }))
       })),
 
-      isSettings: screen === "settings" || screen === "settingsunknown",
+      isSettings: screen === "settings" || screen === "settingsunknown" || screen === "settingsnoinstall",
+      settingsInstalled: !facts.noInstall,
+      elevate: !!s.elevate,
+      installPath: s.elevate ? "C:\\Program Files\\Bitwig Studio" : "/Applications/Bitwig Studio.app",
+      inspWaiting: s.waiting ?? "",
+      inspConfirmSave: !!s.confirmSave,
+      updateInstalled: item.installed ?? "\u2014",
+      updateBitwigOpen: !!s.bitwigOpen,
+      isRename: !!s.rename,
+      renameName: (s.rename || {}).name ?? "",
+      renameKind: (s.rename || {}).kind ?? "DEVICE",
+      renameValue: (s.rename || {}).value ?? "",
+      renameTaken: !!(s.rename || {}).taken,
+      renameStaged: !!(s.rename || {}).staged,
+      openRename: name => { const x = STAGED.concat(REGISTERED).find(e => e.name === name) || {}; this.setState({ screen: "renameconflict" }); },
       isRestore: screen === "restore",
       isAbout: screen === "about",
       isApp: !full,
@@ -713,7 +756,7 @@ class Component extends DCLogic {
       installBuild: facts.build ?? "94a90411",
       aboutVersion: ((facts.title ?? "Bitwig Studio 6.1").match(/Bitwig Studio\s+(\S.*)$/) || [, "\u2014"])[1],
       countPad: rows.filter(x => !x.factory).length,
-      resolved: (facts.installState ?? "Registered") !== "Unknown build",
+      resolved: !facts.noInstall && (facts.installState ?? "Registered") !== "Unknown build",
       entryCount: facts.count ?? 6,
       guard: facts.guard ?? "Disarmed",
       backup: facts.backup ?? "Backup: 14 Sep 2026",

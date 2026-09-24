@@ -56,6 +56,8 @@ pub enum Error {
     LengthChanged { expected: usize, got: usize },
     #[error("{0:?} cannot be written as a document's name")]
     UnrepresentableName(String),
+    #[error("{0} cannot be a file name")]
+    UnplaceableName(String),
     #[error("a document of {0} bytes is past what its header can address")]
     TooLarge(usize),
     #[error(

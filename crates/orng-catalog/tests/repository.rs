@@ -9,7 +9,8 @@
 use std::path::{Path, PathBuf};
 
 use orng_catalog::{
-    CONTENT_DIR, Digest, History, Index, Item, Problem, Revision, Severity, scan, validate,
+    AuthorId, CONTENT_DIR, Digest, History, Index, Item, Problem, Revision, Severity, Slug, scan,
+    validate,
 };
 
 /// Documents to build a tree from.
@@ -77,6 +78,16 @@ impl Fixture {
         assert!(failures.is_empty(), "scan failures: {failures:?}");
         items
     }
+}
+
+/// The one document in an item directory.
+fn document_in(dir: &Path) -> PathBuf {
+    std::fs::read_dir(dir)
+        .unwrap()
+        .flatten()
+        .map(|e| e.path())
+        .find(|p| bitwig_document::Kind::from_path(p).is_some())
+        .unwrap()
 }
 
 impl Drop for Fixture {
@@ -225,12 +236,7 @@ fn changed_content_must_raise_the_version() {
 
     // Re-identify the document in place: same slug, same version, new bytes.
     // This is the update that would reach back into existing projects.
-    let document_path = std::fs::read_dir(&dir)
-        .unwrap()
-        .flatten()
-        .map(|e| e.path())
-        .find(|p| bitwig_document::Kind::from_path(p).is_some())
-        .unwrap();
+    let document_path = document_in(&dir);
     let kind = bitwig_document::Kind::from_path(&document_path).unwrap();
     let original = bitwig_document::Document::read(&document_path).unwrap();
     let rewritten = original.with_uuid(uuid::Uuid::new_v4()).unwrap();
@@ -273,12 +279,7 @@ fn a_name_collision_warns_without_blocking() {
     // Same display name, different identity: legal, but two entries would appear
     // under one name in Bitwig's flat browser.
     let dir = fixture.add("someone", "same-name", &sources[0], "1.0.0");
-    let document_path = std::fs::read_dir(&dir)
-        .unwrap()
-        .flatten()
-        .map(|e| e.path())
-        .find(|p| bitwig_document::Kind::from_path(p).is_some())
-        .unwrap();
+    let document_path = document_in(&dir);
     let rewritten = bitwig_document::Document::read(&document_path)
         .unwrap()
         .with_uuid(uuid::Uuid::new_v4())
@@ -294,6 +295,38 @@ fn a_name_collision_warns_without_blocking() {
         report.problems
     );
     assert_eq!(warnings[0].severity(), Severity::Warning);
+}
+
+/// A name some platform cannot hold as a file is refused here, where the
+/// author can change it, and not at install, where the user cannot: an
+/// installed document is placed as `<name>.<extension>`.
+#[test]
+fn a_name_that_cannot_be_a_file_is_refused() {
+    let sources = sources_or_skip!();
+    let fixture = Fixture::new("unplaceable-name");
+    let dir = fixture.add("example", "item", &sources[0], "1.0.0");
+    let document_path = document_in(&dir);
+    let renamed = bitwig_document::Document::read(&document_path)
+        .unwrap()
+        .with_name("Filter: Wide")
+        .unwrap();
+    std::fs::write(&document_path, renamed.bytes()).unwrap();
+
+    let report = validate::check(&fixture.items());
+    assert!(!report.is_mergeable(), "{:?}", report.problems);
+    let item = validate::ItemRef {
+        author: AuthorId::new("example").unwrap(),
+        slug: Slug::new("item").unwrap(),
+    };
+    let refusal = report.errors().find(|p| p.item() == Some(&item));
+    let Some(refusal) = refusal else { panic!("{:?}", report.problems) };
+    assert!(
+        matches!(refusal, Problem::UnplaceableName { name, .. } if name == "Filter: Wide"),
+        "{refusal:?}"
+    );
+    // What the lint prints, and all a contributor reading a failed check sees.
+    let shown = refusal.to_string();
+    assert!(shown.contains("example/item") && shown.contains("Filter: Wide"), "{shown}");
 }
 
 #[test]

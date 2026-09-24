@@ -54,6 +54,10 @@ pub enum Problem {
     DuplicateIdentity { uuid: Uuid, items: Vec<ItemRef> },
     /// Two items would appear under one name in Bitwig's flat browser.
     DuplicateName { name: String, items: Vec<ItemRef> },
+    /// The document's name cannot be a file on some platform. An installed
+    /// document is placed as `<name>.<extension>`, so this item would fail on
+    /// the machine of whoever installed it rather than here.
+    UnplaceableName { item: ItemRef, name: String },
     /// `supersedes` names an identity the catalog does not publish.
     UnknownSupersedes { item: ItemRef, uuid: Uuid },
     /// An item declares itself as its own replacement.
@@ -83,6 +87,7 @@ impl Problem {
     pub fn item(&self) -> Option<&ItemRef> {
         match self {
             Problem::AuthorMismatch { item, .. }
+            | Problem::UnplaceableName { item, .. }
             | Problem::UnknownSupersedes { item, .. }
             | Problem::SelfSupersedes { item }
             | Problem::IdentityChanged { item, .. }
@@ -105,6 +110,9 @@ impl std::fmt::Display for Problem {
             }
             Problem::DuplicateName { name, items } => {
                 write!(f, "{name:?} is used by {}; Bitwig's browser is flat", join(items))
+            }
+            Problem::UnplaceableName { item, name } => {
+                write!(f, "{item}: {name:?} cannot be a file name, so it cannot be installed")
             }
             Problem::UnknownSupersedes { item, uuid } => {
                 write!(f, "{item}: supersedes {uuid}, which the catalog does not publish")
@@ -161,6 +169,12 @@ pub fn check(items: &[Item]) -> Report {
             problems.push(Problem::AuthorMismatch {
                 item: reference(item),
                 declared: item.manifest.author.clone(),
+            });
+        }
+        if item.kind.file_name(&item.identity.name).is_err() {
+            problems.push(Problem::UnplaceableName {
+                item: reference(item),
+                name: item.identity.name.clone(),
             });
         }
         if item.manifest.supersedes.contains(&item.identity.uuid) {

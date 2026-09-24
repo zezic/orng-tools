@@ -18,6 +18,11 @@ use eframe::egui::{
     self, Color32, CornerRadius, FontData, FontDefinitions, FontFamily, Stroke, TextStyle,
 };
 
+/// A shadow as the design writes one: `x y blur`, in black at `alpha`.
+const fn shadow(x: i8, y: i8, blur: u8, alpha: u8) -> egui::epaint::Shadow {
+    egui::epaint::Shadow { offset: [x, y], blur, spread: 0, color: hexa(0x000000, alpha) }
+}
+
 /// A colour as the design writes one, so the two can be compared by eye.
 const fn hex(rgb: u32) -> Color32 {
     Color32::from_rgb((rgb >> 16) as u8, (rgb >> 8) as u8, rgb as u8)
@@ -84,18 +89,15 @@ pub struct Palette {
     /// it reads as out of reach rather than merely dimmed.
     pub scrim: Color32,
     /// Under the overflow menu, which floats over the window without a scrim
-    /// and needs an edge of its own to sit on.
+    /// and needs an edge of its own to sit on. `--shadow-menu`.
     ///
-    /// The design writes this one as a literal rather than as a token, so it
-    /// states only the dark value: `rgba(0,0,0,.7)`. The light value is the
-    /// same shadow under the ratio the design's own two `--shadow` tokens
-    /// state between the themes, .85 to .22, which is the nearest thing the
-    /// bundle says about how a shadow behaves in light.
-    pub menu_shadow: Color32,
-    /// Under the inspector, which slides over the right of the list rather than
-    /// beside it. Written as a literal in the design too, and given the light
-    /// value the same way [`Palette::menu_shadow`] is.
-    pub panel_shadow: Color32,
+    /// A whole shadow rather than a colour, because the design moves the
+    /// geometry between the themes as well as the alpha: a wide pale shadow on
+    /// the light page reads as a smudge.
+    pub menu_shadow: egui::epaint::Shadow,
+    /// Under the inspector, cast to the left because the panel slides over the
+    /// right of the list rather than standing beside it. `--shadow-panel`.
+    pub panel_shadow: egui::epaint::Shadow,
     /// The row the inspector is about. The design writes this one as a literal
     /// as well - the accent at nine per cent, which is a shade softer than the
     /// `--accent-soft` token beside it - so that a selected row and a hovered
@@ -142,8 +144,8 @@ impl Palette {
         btn: hex(0x282828),
         btn_hover: hex(0x333333),
         scrim: hexa(0x000000, 189),
-        menu_shadow: hexa(0x000000, 179),
-        panel_shadow: hexa(0x000000, 128),
+        menu_shadow: shadow(0, 18, 40, 179),
+        panel_shadow: shadow(-18, 0, 40, 128),
         row_selected: hexa(0xff5a1f, 23),
         zebra: hexa(0xffffff, 13),
         ok_bg: hexa(0xf2f2f2, 15),
@@ -189,8 +191,8 @@ impl Palette {
         btn: hex(0xe2e2e2),
         btn_hover: hex(0xd8d8d8),
         scrim: hexa(0xffffff, 168),
-        menu_shadow: hexa(0x000000, 46),
-        panel_shadow: hexa(0x000000, 33),
+        menu_shadow: shadow(0, 12, 28, 41),
+        panel_shadow: shadow(-14, 0, 32, 31),
         row_selected: hexa(0xe8500f, 23),
         zebra: hexa(0x000000, 11),
         ok_bg: hexa(0x171717, 13),
@@ -292,9 +294,6 @@ pub mod metric {
     /// eight from the window where the control's is twelve.
     pub const MENU_DROP: f32 = 5.0;
     pub const MENU_OVERHANG: f32 = 4.0;
-    /// The menu's shadow, `0 18px 40px` in the design.
-    pub const MENU_SHADOW_DROP: i8 = 18;
-    pub const MENU_SHADOW_BLUR: u8 = 40;
 
     /// Corner of a control. The design rounds by three, not by six: at these
     /// sizes a six-pixel radius reads as a pill rather than as a soft corner.
@@ -424,10 +423,6 @@ pub mod metric {
     pub const PANEL_REMOVE_PAD_X: f32 = 11.0;
     pub const PANEL_PRIMARY: f32 = 32.0;
     pub const PANEL_PRIMARY_PAD_X: f32 = 14.0;
-    /// The inspector's shadow, `-18px 0 40px` in the design: cast to the left,
-    /// because the panel is over the list rather than beside it.
-    pub const PANEL_SHADOW_REACH: i8 = -18;
-    pub const PANEL_SHADOW_BLUR: u8 = 40;
 
     /// A full-window surface behind the overflow: Settings, Restore, About.
     ///

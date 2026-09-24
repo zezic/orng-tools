@@ -664,12 +664,7 @@ fn menu_frame(palette: Palette) -> egui::Frame {
         .stroke(Stroke::new(metric::HAIRLINE, palette.line))
         .corner_radius(CornerRadius::same(metric::MENU_RADIUS))
         .inner_margin(egui::Margin::same(metric::MENU_MARGIN))
-        .shadow(egui::epaint::Shadow {
-            offset: [0, metric::MENU_SHADOW_DROP],
-            blur: metric::MENU_SHADOW_BLUR,
-            spread: 0,
-            color: palette.menu_shadow,
-        })
+        .shadow(palette.menu_shadow)
 }
 
 /// The icons the design names, by the job each does here rather than by the
@@ -1420,15 +1415,9 @@ impl Aside {
     /// rectangle with a blur on it: in a frame the fill is painted over the
     /// middle of it afterwards, and here there is nothing left to do that.
     pub fn shadow(self, ui: &Ui, palette: Palette) {
-        let shadow = egui::epaint::Shadow {
-            offset: [metric::PANEL_SHADOW_REACH, 0],
-            blur: metric::PANEL_SHADOW_BLUR,
-            spread: 0,
-            color: palette.panel_shadow,
-        };
         ui.painter()
             .with_clip_rect(Rect::everything_left_of(self.0.left()))
-            .add(shadow.as_shape(self.0, CornerRadius::ZERO));
+            .add(palette.panel_shadow.as_shape(self.0, CornerRadius::ZERO));
     }
 }
 

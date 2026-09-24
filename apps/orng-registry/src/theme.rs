@@ -110,6 +110,10 @@ pub struct Palette {
     pub warn_bg: Color32,
     pub err_bg: Color32,
     pub info_bg: Color32,
+    /// A panel's close while the panel is holding words it cannot let go of:
+    /// `--ink-3` at .4, as `Inspector.dc.html` dims it. A token rather than a
+    /// factor at the draw site, so the light value is stated too.
+    pub held_close: Color32,
 }
 
 impl Palette {
@@ -152,6 +156,7 @@ impl Palette {
         warn_bg: hexa(0xff5a1f, 26),
         err_bg: hexa(0xff4036, 26),
         info_bg: hexa(0xa9a9a9, 18),
+        held_close: hexa(0x949494, 102),
     };
 
     /// Drawn, and not yet reachable from the interface. Kept here because a
@@ -199,6 +204,7 @@ impl Palette {
         warn_bg: hexa(0xe8500f, 26),
         err_bg: hexa(0xbf2a1c, 23),
         info_bg: hexa(0x3e3e3e, 18),
+        held_close: hexa(0x5e5e5e, 102),
     };
 }
 
@@ -345,9 +351,10 @@ pub mod metric {
     /// offers - `Install`, `See replacement` - cannot be read off an icon.
     pub const CATALOG_ACTION: f32 = 24.0;
     pub const CATALOG_ACTION_PAD_X: f32 = 10.0;
-    /// From the shield to the word, on a press that asks for rights:
-    /// `CatalogRow.dc.html:84`.
-    pub const CATALOG_ACTION_GAP: f32 = 6.0;
+    /// From the shield to the word, on the small presses that ask for rights:
+    /// `CatalogRow.dc.html:84`, and the inspector's `Save`
+    /// (`Inspector.dc.html:135`).
+    pub const SHIELD_GAP: f32 = 6.0;
     /// A panel over the right of the list: the inspector in Local, the item's
     /// detail in Catalog. Everything under here is shared by both, read off
     /// `Inspector.dc.html` and `CatalogDetail.dc.html` - which agree on all
@@ -419,6 +426,17 @@ pub mod metric {
     /// `CatalogDetail.dc.html:89`.
     pub const PANEL_FOOT_PAD_X: f32 = 12.0;
     pub const PANEL_FOOT_PAD_Y: f32 = 11.0;
+    /// The inspector's foot while it holds words it cannot write yet:
+    /// `padding:11px 12px 12px`, so one less above than beside and below.
+    pub const HOLD_PAD_TOP: f32 = 11.0;
+    /// From the question to its two presses.
+    pub const ABOVE_HOLD_PRESSES: f32 = 9.0;
+    /// The two presses, which are a banner's size rather than a panel foot's.
+    pub const HOLD_PRESS: f32 = 28.0;
+    pub const HOLD_PRESS_PAD_X: f32 = 11.0;
+    pub const BETWEEN_HOLD_PRESSES: f32 = 6.0;
+    /// From the waiting foot's dot to its words.
+    pub const BESIDE_THE_HOLD_DOT: f32 = 10.0;
     pub const ALONG_A_PANEL_FOOT: f32 = 8.0;
     /// Its two controls, which are two heights on purpose: the primary is the
     /// taller, and it is the only accent fill in either panel.
@@ -792,6 +810,9 @@ pub mod font {
         /// The diagnostics block, looser still, so that a column of monospaced
         /// lines reads across as well as down.
         Reporting,
+        /// The sentence under the inspector's foot while it holds words: the
+        /// question about saving them, or the work they wait for.
+        Holding,
         /// A line of the plan a preparation confirms with, and the note under
         /// the plan. Set as a notice is, and kept apart from it because a plan
         /// is read down as a list where a notice is read as a sentence.
@@ -812,6 +833,8 @@ pub mod font {
                 Leading::Introducing => 1.6,
                 // `SettingsScreen.dc.html`, the report block.
                 Leading::Reporting => 1.65,
+                // `Inspector.dc.html:131` and `:144`.
+                Leading::Holding => 1.55,
                 // `ORNG Registry.dc.html:237` and `:241`.
                 Leading::Planning => 1.5,
             }

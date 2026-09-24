@@ -440,23 +440,6 @@ pub struct App {
     /// out at the press would then describe a press that no longer exists.
     /// What is held is only what the disk has to be asked about.
     confirming: Option<Confirming>,
-    /// Words the user has edited for one entry that have not been written yet,
-    /// because writing them would ask for rights this process does not hold.
-    ///
-    /// Apart from every other edit, which is written the moment a field is
-    /// left and announced nowhere. Where the installation is not this account's
-    /// to write, that same write is carried to a child process and Windows
-    /// raises its consent dialog - and a consent dialog that arrives because
-    /// the pointer moved out of a text box is one people learn to dismiss
-    /// without reading. So the words wait here behind a named `Save`, and
-    /// nothing is lost if the answer is `Cancel`: the entry is still what it
-    /// was. Never set where [`elevate::can_ask`] is false, because there is no
-    /// dialog there to put off.
-    ///
-    /// The words and not the entry they would make. The question can stand
-    /// while a run changes that entry, and `Save` revises it as it is by then
-    /// rather than putting back a copy taken before the run.
-    asking: Option<Unsaved>,
     /// What the last press came to. Stated as a banner until the user puts it
     /// away, because nothing else will stop being true and take it off screen.
     outcome: Option<Outcome>,
@@ -546,7 +529,6 @@ impl App {
             reading: None,
             applying: None,
             confirming: None,
-            asking: None,
             outcome: None,
             inspecting: None,
             detailing: None,
@@ -1432,10 +1414,6 @@ impl App {
         // a document to register wherever this application is pointed, and a
         // removal is an instruction about one particular list.
         self.pending.removing.clear();
-        // With it goes a description waiting to be saved. It revises one row of
-        // the list that has just been replaced, and the panel it was typed in
-        // is about to be settled against the new one.
-        self.asking = None;
         self.settle_screen();
     }
 
@@ -1503,8 +1481,10 @@ impl App {
         };
         let identity = uuid.to_string();
         // Before the panel is borrowed to type into, for the reason `document`
-        // is: this asks the same `self` the words are held in.
+        // is: these ask the same `self` the words are held in.
         let status = self.status_of(found, entry);
+        let held = self.held();
+        let install = widget::drawn_path(found.to.install.root());
         // Split apart so the fields can be borrowed separately: the panel
         // states the placement and types into the words in one call.
         let Inspection { words, placement, .. } =
@@ -1520,6 +1500,10 @@ impl App {
             placement,
             status,
             document,
+            hold: held.map(|held| match held {
+                Held::Asking => widget::Hold::Asking { install: &install },
+                Held::Waiting(work) => widget::Hold::Waiting { work },
+            }),
         };
 
         let (panel, pressed) =
@@ -1554,6 +1538,8 @@ impl App {
             widget::Inspecting::Acted(action) => {
                 self.act(Acting::Registered(uuid), action, ui.ctx());
             }
+            widget::Inspecting::Saved => self.save_words(ui.ctx()),
+            widget::Inspecting::Cancelled => self.cancel_words(),
             widget::Inspecting::Nothing => {}
         }
         Some(panel)
@@ -1671,52 +1657,98 @@ impl App {
     /// Silent when nothing changed, which is most of the time - leaving a field
     /// untouched is still leaving it.
     ///
-    /// **Answers whether the panel's words are settled**: written, asked about,
-    /// or nothing to write. `false` is words still waiting in the panel, behind
-    /// a run or behind the question about another entry, and the panel is then
-    /// kept rather than closed or turned to another row. Closed over them, it
-    /// would drop the one copy of them there is without a word.
+    /// **Answers whether the panel's words are settled**: written, or nothing
+    /// to write. `false` is words still waiting in the panel - behind a run, or
+    /// behind the question whether to save them - and the panel is then kept
+    /// rather than closed or turned to another row. Closed over them, it would
+    /// drop the one copy of them there is without a word. [`App::held`] says
+    /// which, and the panel's foot says it to the user.
     fn write_words(&mut self, ctx: &egui::Context) -> bool {
-        let Some(open) = &self.inspecting else { return true };
+        let working = self.is_working();
+        let Some(open) = &mut self.inspecting else { return true };
         let Session::Found(found) = &self.session else { return true };
         let Some(entry) = found.entries().get(open.uuid) else {
             return true;
         };
-        let Some(revised) = revised(entry, &open.words) else { return true };
+        let Some(revised) = revised(entry, &open.words) else {
+            // Typed back to what the entry says: there is nothing left to ask
+            // about.
+            open.asked = false;
+            return true;
+        };
         // Nothing starts on top of something already running. The window has
         // one piece of work at a time, and a preparation must not be replaced
         // by a description. The buffer keeps what was typed and the next time
         // a field is left it is written, so nothing is lost and nothing is
         // claimed to have been saved that was not.
-        if self.is_working() {
+        if working {
             return false;
         }
         // Where the write has to be carried to a process holding rights this
         // one does not, it is not made here. A field losing focus is not a
         // press, and this write raises Windows' consent dialog - so the words
-        // wait for one. See [`App::asking`]. Only where there is a dialog to
-        // raise: elsewhere the write is made and refused, and a `Save` that
-        // could only fail would be an offer that leads nowhere.
+        // wait for one, in the panel. See [`Inspection::asked`]. Only where
+        // there is a dialog to raise: elsewhere the write is made and refused,
+        // and a `Save` that could only fail would be an offer that leads
+        // nowhere.
         if asks_for_rights(found) {
-            // One question at a time, and a second entry's words do not take
-            // the first one's place: that would drop words the user was asked
-            // about and never answered. They wait in the panel, as they wait
-            // behind a run, and are asked about when a field is next left.
-            if self.asking.as_ref().is_some_and(|asked| asked.uuid != open.uuid) {
-                return false;
-            }
-            self.asking = Some(Unsaved { uuid: open.uuid, words: open.words.clone() });
-            return true;
+            open.asked = true;
+            return false;
         }
         self.write(revised, ctx);
         true
     }
 
+    /// Why the inspector's words cannot be written now, if they cannot.
+    ///
+    /// What the panel's foot states and why its close is held. `None` also
+    /// while the panel's own words are on their way to the disk: they are not
+    /// waiting for anything, and a foot drawn for the moment an edit takes
+    /// would flash on every one.
+    fn held(&self) -> Option<Held> {
+        let open = self.inspecting.as_ref()?;
+        let Session::Found(found) = &self.session else { return None };
+        revised(found.entries().get(open.uuid)?, &open.words)?;
+        if self.installing.is_some() {
+            return Some(Held::Waiting("the download"));
+        }
+        if let Some(applying) = &self.applying {
+            return match applying.errand {
+                Errand::Edit if applying.writing.contains(&open.uuid) => None,
+                Errand::Preparation => Some(Held::Waiting("the preparation")),
+                _ => Some(Held::Waiting("the registration")),
+            };
+        }
+        open.asked.then_some(Held::Asking)
+    }
+
+    /// The answer to the question in the panel's foot: write the words.
+    fn save_words(&mut self, ctx: &egui::Context) {
+        let Some(open) = &mut self.inspecting else { return };
+        open.asked = false;
+        let Session::Found(found) = &self.session else { return };
+        let entry = found.entries().get(open.uuid);
+        let Some(revised) = entry.and_then(|entry| revised(entry, &open.words)) else { return };
+        self.write(revised, ctx);
+    }
+
+    /// The other answer: the words are dropped and the entry is still what it
+    /// was, which is what makes the question safe to ask rather than only a
+    /// delay.
+    fn cancel_words(&mut self) {
+        let Some(open) = &mut self.inspecting else { return };
+        open.asked = false;
+        let Session::Found(found) = &self.session else { return };
+        if let Some(entry) = found.entries().get(open.uuid) {
+            open.words = widget::Words::of(&entry.description, &entry.keywords);
+        }
+    }
+
     /// Write one revised entry, now.
     ///
     /// The tail of [`App::write_words`], apart from it because the answer to
-    /// [`App::asking`] arrives at a different moment and has to do the same
-    /// thing.
+    /// the question in the panel's foot arrives at a different moment and has
+    /// to do the same thing.
     fn write(&mut self, revised: Registration, ctx: &egui::Context) {
         assert!(self.applying.is_none(), "an edit was written on top of a run in flight");
         let Session::Found(found) = &self.session else { return };
@@ -1729,74 +1761,6 @@ impl App {
             found.rights.clone(),
             ctx.clone(),
         ));
-    }
-
-    /// Ask whether to write the words that are waiting, and do it if told to.
-    ///
-    /// Drawn where a banner is drawn and answered before one: this is a
-    /// question about something that has not happened, and [`App::outcome`] is
-    /// a statement about something that has. A question the user has been
-    /// asked outranks a report they have already read.
-    ///
-    /// **Not while a run or a fetch is in flight.** `Save` starts a run, and
-    /// nothing starts beside another - the rule [`App::is_working`] states. A
-    /// run with no steps draws no scrim, so the question would otherwise stand
-    /// pressable over it. It waits, and is asked again when the work is over.
-    fn ask_to_save(&mut self, ui: &mut egui::Ui) -> bool {
-        if self.is_working() {
-            return false;
-        }
-        let (Session::Found(found), Some(waiting)) = (&self.session, &self.asking) else {
-            return false;
-        };
-        // The entry it revises may have gone since - a removal applied while
-        // this sat here. Nothing to save, and `Update::revise` would panic on
-        // an identity the list has no row for. Or it may already say these
-        // words, and then there is nothing to ask.
-        let Some((entry, revised)) = found
-            .entries()
-            .get(waiting.uuid)
-            .and_then(|entry| Some((entry, revised(entry, &waiting.words)?)))
-        else {
-            self.asking = None;
-            return false;
-        };
-        let title = format!("Save the changes to {}?", entry.name);
-        let body = format!(
-            "{} is not writable by this account, so saving asks Windows for administrator \
-             rights. The description and keywords Bitwig shows are kept inside the \
-             installation.",
-            widget::drawn_path(found.to.install.root())
-        );
-
-        let mut answered = widget::Answered::Nothing;
-        egui::Panel::bottom("banner")
-            .frame(egui::Frame::new().fill(self.palette.bg))
-            .show(ui, |ui| {
-                let banner = widget::Banner {
-                    tone: Tone::Warn,
-                    title: &title,
-                    body: &body,
-                    action: Some("Save"),
-                    cancel: Some("Cancel"),
-                    // The two words are the whole answer. A dismiss mark beside
-                    // them would be a third way out that says neither.
-                    dismissible: false,
-                };
-                answered = widget::banner(ui, self.palette, &banner);
-            });
-
-        match answered {
-            widget::Answered::Action => {
-                self.asking = None;
-                self.write(revised, ui.ctx());
-            }
-            // The words are dropped and the entry is still what it was, which
-            // is what makes this safe to offer rather than only a delay.
-            widget::Answered::Cancelled | widget::Answered::Dismissed => self.asking = None,
-            widget::Answered::Nothing => {}
-        }
-        true
     }
 
     /// The one banner the window is carrying, if it is carrying one.
@@ -1812,13 +1776,6 @@ impl App {
             Outcome,
             /// Something that is true of the machine and may stop being.
             Condition,
-        }
-
-        // A question about something that has not happened yet comes before a
-        // statement about something that has: the user is being asked, and the
-        // bottom of the window holds one banner.
-        if self.ask_to_save(ui) {
-            return;
         }
 
         let (about, banner) = match (&self.outcome, self.blocking()) {
@@ -2206,10 +2163,13 @@ fn asks_for_rights(found: &Found) -> bool {
     !found.rights.are_held() && elevate::can_ask()
 }
 
-/// Words typed into the inspector for one entry, waiting on [`App::asking`].
-struct Unsaved {
-    uuid: Uuid,
-    words: widget::Words,
+/// Why the inspector's words cannot be written now. See [`App::held`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Held {
+    /// Behind the question whether to save them.
+    Asking,
+    /// Behind other work, named as the panel's foot names it.
+    Waiting(&'static str),
 }
 
 /// The inspector while it is open: which entry it is about, and the words in
@@ -2234,6 +2194,22 @@ struct Inspection {
     /// is not, and the panel closes when it is not.
     uuid: Uuid,
     words: widget::Words,
+    /// Whether the words wait on the question whether to save them.
+    ///
+    /// Apart from every other edit, which is written the moment a field is
+    /// left and announced nowhere. Where the installation is not this account's
+    /// to write, that same write is carried to a child process and Windows
+    /// raises its consent dialog - and a consent dialog that arrives because
+    /// the pointer moved out of a text box is one people learn to dismiss
+    /// without reading. So the words wait behind a named `Save` in the panel's
+    /// foot, and nothing is lost if the answer is `Cancel`: the entry is still
+    /// what it was. Never set where [`elevate::can_ask`] is false, because there
+    /// is no dialog there to put off.
+    ///
+    /// Held by the panel rather than beside it, because the question is about
+    /// the words the panel shows and the panel does not close while it stands:
+    /// a question that outlived its panel would ask about words nobody can see.
+    asked: bool,
     /// Where the document actually is, as against where the registry says it
     /// is - which is a question about the disk rather than about the entry.
     ///
@@ -2259,6 +2235,7 @@ impl Inspection {
         Inspection {
             uuid: entry.uuid,
             words: widget::Words::of(&entry.description, &entry.keywords),
+            asked: false,
             placement: found.standing(entry.uuid).placement().clone(),
         }
     }

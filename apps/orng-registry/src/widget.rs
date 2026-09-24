@@ -1173,7 +1173,7 @@ pub fn catalog_action(
         };
         text.append(icon::ELEVATES, 0.0, glyph);
     }
-    let leading = if text.is_empty() { 0.0 } else { metric::CATALOG_ACTION_GAP };
+    let leading = if text.is_empty() { 0.0 } else { metric::SHIELD_GAP };
     text.append(
         offer.label(),
         leading,
@@ -1498,6 +1498,22 @@ pub struct Inspected<'a> {
     /// and not a property of the entry. Carried here because the panel's
     /// removal control has to name it, exactly as the row's does.
     pub document: TheDocument,
+    /// Why the panel's words cannot be written yet, if they cannot. The panel
+    /// then says so at its foot and cannot be closed: closed, it would drop
+    /// the one copy of them there is.
+    pub hold: Option<Hold<'a>>,
+}
+
+/// What the inspector's words are waiting for.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Hold<'a> {
+    /// A press. Saving them asks Windows for administrator rights, so leaving
+    /// a field does not write them - `Save` does. Carries the installation
+    /// the question names.
+    Asking { install: &'a str },
+    /// Other work, named as the foot names it: `the preparation`, `the
+    /// registration`, `the download`.
+    Waiting { work: &'a str },
 }
 
 /// What was pressed in the inspector, if anything was.
@@ -1518,6 +1534,10 @@ pub enum Inspecting {
     /// A field was finished with: it lost focus, or a keyword was added or
     /// taken away. Whatever is in [`Words`] is what the entry should now say.
     Edited,
+    /// The answer to [`Hold::Asking`]: write the words.
+    Saved,
+    /// The other answer: drop them, and the entry is what it was.
+    Cancelled,
 }
 
 /// The inspector: everything one entry is, and what can be done about it.
@@ -1537,11 +1557,22 @@ pub fn inspector(
     // allocated widget, and the header and the body below it are two of them:
     // six pixels went in between, and every field in the panel drew six low.
     ui.spacing_mut().item_spacing.y = 0.0;
-    let closed = panel_header(ui, palette, item.name, |ui| {
+    let held = item.hold.map(|hold| match hold {
+        Hold::Asking { .. } => "Save or cancel the changes first".to_owned(),
+        Hold::Waiting { work } => format!("Your changes are saved when {work} finishes"),
+    });
+    let closed = panel_header(ui, palette, item.name, held.as_deref(), |ui| {
         kind_label(ui, palette.ink_3, item.kind);
     });
     if closed.clicked() {
         pressed = Inspecting::Closed;
+    }
+    // Claimed before the body, as a panel's foot is, so the body scrolls in
+    // what is left and the words it holds stay in view above it.
+    if let Some(hold) = item.hold
+        && let Some(answer) = hold_foot(ui, palette, item.name, hold)
+    {
+        pressed = answer;
     }
 
     panel_body(ui, |ui| {
@@ -1603,8 +1634,17 @@ pub fn inspector(
 /// lowercase monospaced tag. Everything else here is one shape in both bundles,
 /// down to the eight between the tag and the name.
 ///
+/// `held` is why the panel cannot close, where it cannot: the close is then
+/// dimmed and says so on hover rather than doing nothing without a word.
+///
 /// Answers whether the close was pressed.
-fn panel_header(ui: &mut Ui, palette: Palette, name: &str, tag: impl FnOnce(&mut Ui)) -> Response {
+fn panel_header(
+    ui: &mut Ui,
+    palette: Palette,
+    name: &str,
+    held: Option<&str>,
+    tag: impl FnOnce(&mut Ui),
+) -> Response {
     let (rect, _) = ui.allocate_exact_size(
         vec2(ui.available_width(), metric::ASIDE_HEADER),
         Sense::hover(),
@@ -1626,7 +1666,10 @@ fn panel_header(ui: &mut Ui, palette: Palette, name: &str, tag: impl FnOnce(&mut
     // The close first, from the right, so the name is truncated by what is
     // left rather than pushing the control off the panel.
     line.with_layout(Layout::right_to_left(Align::Center), |ui| {
-        let closed = dismiss(ui, palette);
+        let closed = match held {
+            Some(why) => held_dismiss(ui, palette, why),
+            None => dismiss(ui, palette),
+        };
         ui.add_space(metric::TOOL_GAP);
         ui.with_layout(Layout::left_to_right(Align::Center), |ui| {
             ui.add(
@@ -1637,6 +1680,138 @@ fn panel_header(ui: &mut Ui, palette: Palette, name: &str, tag: impl FnOnce(&mut
             );
         });
         closed
+    })
+    .inner
+}
+
+/// The inspector's foot while it holds words it cannot write yet.
+///
+/// Where the Save question sits and not across the bottom of the window, so the
+/// words it would save stay in view above it (`Inspector.dc.html:127-148`). The
+/// question is on the warn wash with its two presses under it; the wait is a
+/// banner's shape on the neutral one, with nothing to press.
+fn hold_foot(ui: &mut Ui, palette: Palette, name: &str, hold: Hold<'_>) -> Option<Inspecting> {
+    let tone = match hold {
+        Hold::Asking { .. } => Tone::Warn,
+        Hold::Waiting { .. } => Tone::Neutral,
+    };
+    let margin = Margin {
+        left: metric::PAD as i8,
+        right: metric::PAD as i8,
+        top: metric::HOLD_PAD_TOP as i8,
+        bottom: metric::PAD as i8,
+    };
+    let title = |ui: &mut Ui, text: &str| {
+        ui.label(font::run(text, font::emphasis(ui.ctx(), font::ACTION)).color(palette.ink));
+    };
+    let body = |ui: &mut Ui, text: &str| {
+        ui.add(
+            egui::Label::new(
+                font::wrapping(text, font::NOTE, font::Leading::Holding)
+                    .color(tone.supporting(palette)),
+            )
+            .wrap(),
+        );
+    };
+    let mut answer = None;
+    egui::Panel::bottom("inspector-hold")
+        .frame(Frame::new().fill(tone.wash(palette)).inner_margin(margin))
+        .show_separator_line(false)
+        .show(ui, |ui| {
+            ui.spacing_mut().item_spacing = vec2(0.0, 0.0);
+            match hold {
+                Hold::Asking { install } => {
+                    title(ui, &format!("Save the changes to {name}?"));
+                    ui.add_space(BETWEEN_THE_LINES);
+                    body(
+                        ui,
+                        &format!(
+                            "{install} is not writable by this account, so saving asks Windows \
+                             for administrator rights. The description and keywords Bitwig \
+                             shows are kept inside the installation."
+                        ),
+                    );
+                    ui.add_space(metric::ABOVE_HOLD_PRESSES);
+                    ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                        ui.spacing_mut().item_spacing.x = metric::BETWEEN_HOLD_PRESSES;
+                        if hold_save(ui, palette).clicked() {
+                            answer = Some(Inspecting::Saved);
+                        }
+                        if cancel_button(ui, palette, "Cancel", Foot::Hold).clicked() {
+                            answer = Some(Inspecting::Cancelled);
+                        }
+                    });
+                }
+                Hold::Waiting { work } => {
+                    ui.horizontal_top(|ui| {
+                        dot(ui, palette.ink_2);
+                        ui.add_space(metric::BESIDE_THE_HOLD_DOT);
+                        ui.vertical(|ui| {
+                            title(ui, &format!("Saved when {work} finishes"));
+                            ui.add_space(BETWEEN_THE_LINES);
+                            body(
+                                ui,
+                                "Your changes wait here until the other work is over, so the \
+                                 panel stays open until then.",
+                            );
+                        });
+                    });
+                }
+            }
+        });
+    answer
+}
+
+/// The question's `Save`: the accent fill at a banner's size, with the shield
+/// leading its word, because the one place it is asked is where saving raises
+/// Windows' consent dialog.
+fn hold_save(ui: &mut Ui, palette: Palette) -> Response {
+    let mut text = egui::text::LayoutJob::default();
+    text.append(
+        icon::ELEVATES,
+        0.0,
+        egui::TextFormat {
+            color: palette.accent_ink,
+            valign: Align::Center,
+            ..font::format(font::icon(ui.ctx(), font::ICON))
+        },
+    );
+    text.append(
+        "Save",
+        metric::SHIELD_GAP,
+        egui::TextFormat {
+            color: palette.accent_ink,
+            valign: Align::Center,
+            ..font::format(font::emphasis(ui.ctx(), font::CONTROL))
+        },
+    );
+    let button = egui::Button::new(text)
+        .stroke(Stroke::NONE)
+        .corner_radius(CornerRadius::same(metric::RADIUS))
+        .min_size(vec2(0.0, metric::HOLD_PRESS));
+    ui.scope(|ui| {
+        ui.spacing_mut().button_padding = vec2(metric::HOLD_PRESS_PAD_X, 0.0);
+        filled_button(ui, palette.accent, palette.accent, button)
+            .on_hover_cursor(egui::CursorIcon::PointingHand)
+    })
+    .inner
+}
+
+/// A panel's close while the panel cannot be let go of: dimmed, and saying why
+/// on hover. Disabled rather than merely inert, so the tree says so too.
+fn held_dismiss(ui: &mut Ui, palette: Palette, why: &str) -> Response {
+    let button = egui::Button::new(
+        font::run(icon::DISMISS, font::icon(ui.ctx(), font::ICON)).color(palette.held_close),
+    )
+    .fill(Color32::TRANSPARENT)
+    .stroke(Stroke::NONE)
+    .min_size(vec2(metric::TAB, metric::TAB));
+    ui.scope(|ui| {
+        ui.spacing_mut().button_padding = egui::Vec2::ZERO;
+        // The dimming is the token's, stated once. egui's own fade for a
+        // disabled control would take it down a second time.
+        ui.visuals_mut().disabled_alpha = 1.0;
+        ui.add_enabled(false, button).on_disabled_hover_text(why)
     })
     .inner
 }
@@ -2205,7 +2380,7 @@ pub fn detail(ui: &mut Ui, palette: Palette, item: &Detailed<'_>) -> Detailing {
     // For the reason written on the inspector's: the header and the body under
     // it are two allocated widgets, and egui would put six pixels between them.
     ui.spacing_mut().item_spacing.y = 0.0;
-    let closed = panel_header(ui, palette, item.name, |ui| {
+    let closed = panel_header(ui, palette, item.name, None, |ui| {
         ui.label(font::run(kind_tag(item.kind), font::mono(font::MONO_TIGHT)).color(palette.ink_3));
     });
     if closed.clicked() {
@@ -3361,6 +3536,8 @@ const LATEST: &str = "Latest";
 pub enum Foot {
     Screen,
     Dialog,
+    /// The inspector's foot while it holds words.
+    Hold,
 }
 
 /// The way out of a decision, beside the press that makes it.
@@ -3368,6 +3545,7 @@ pub fn cancel_button(ui: &mut Ui, palette: Palette, label: &str, foot: Foot) -> 
     let (height, pad_x, radius) = match foot {
         Foot::Screen => (metric::CANCEL, metric::CANCEL_PAD_X, metric::FIELD_RADIUS),
         Foot::Dialog => (metric::DIALOG_CANCEL, metric::DIALOG_CANCEL_PAD_X, metric::RADIUS),
+        Foot::Hold => (metric::HOLD_PRESS, metric::HOLD_PRESS_PAD_X, metric::RADIUS),
     };
     let button = egui::Button::new(font::run(label, font::plain(font::CONTROL)).color(palette.ink_2))
         .stroke(Stroke::NONE)

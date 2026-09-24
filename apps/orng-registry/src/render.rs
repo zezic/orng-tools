@@ -2849,11 +2849,12 @@ fn a_word_typed_into_the_inspector_becomes_a_keyword() {
 /// here so that each platform proves the one it can reach.
 #[test]
 fn an_edit_that_needs_rights_waits_for_a_press_only_where_it_can_ask() {
+    use egui_kittest::kittest::NodeT as _;
     let mut harness = without_rights("edit-without-rights", VOLSHAPER);
     add_a_keyword(&mut harness, "tremolo");
 
     if !crate::elevate::can_ask() {
-        assert!(harness.query_by_label("Save").is_none(), "offered a save that can only fail");
+        assert!(!offered_to_save(&harness), "offered a save that can only fail");
         settle(&mut harness);
         assert!(
             harness.query_by_label("The change was not saved.").is_some(),
@@ -2863,16 +2864,56 @@ fn an_edit_that_needs_rights_waits_for_a_press_only_where_it_can_ask() {
     }
 
     assert!(!harness.state().is_working(), "leaving a field asked for rights by itself");
-    assert!(
-        harness.query_by_label("Save").is_some(),
-        "the words were neither written nor offered to be saved"
-    );
+    assert!(offered_to_save(&harness), "the words were neither written nor offered to be saved");
     assert!(harness.query_by_label("Cancel").is_some(), "the offer had no way to refuse it");
+    // In the panel's foot, under the words it would save, which stay in view.
+    let panel = metric::WINDOW[0] - metric::ASIDE;
+    let question = in_the_panel(&harness, "Save the changes to VOLSHAPER?");
+    let keyword = in_the_panel(&harness, "tremolo");
+    assert!(question.left() > panel, "the question is not in the panel");
+    assert!(keyword.bottom() < question.top(), "the words are not in view above the question");
+    let close = panel_close(&harness);
+    assert!(close.accesskit_node().is_disabled(), "the panel could be closed over the question");
 
     harness.get_by_label("Cancel").click();
     harness.run();
-    assert!(harness.query_by_label("Save").is_none(), "Cancel left the question on screen");
+    assert!(!offered_to_save(&harness), "Cancel left the question on screen");
     assert!(!harness.state().is_working(), "Cancel started the write it was refusing");
+    assert!(
+        harness.query_all_by_label("tremolo").next().is_none(),
+        "Cancel kept the words it was refusing"
+    );
+    let close = panel_close(&harness);
+    assert!(!close.accesskit_node().is_disabled(), "the panel stayed held after the answer");
+}
+
+/// Whether the inspector's foot is offering to save its words: the press wears
+/// the shield before its word, as every press that asks for rights does.
+fn offered_to_save(harness: &Harness<'_, App>) -> bool {
+    let save = format!("{}Save", crate::widget::icon::ELEVATES);
+    harness.query_all_by_label(&save).next().is_some()
+}
+
+/// Where something the inspector draws is, found inside the panel's column:
+/// the list beside it may say the same words.
+fn in_the_panel(harness: &Harness<'_, App>, label: &str) -> egui::Rect {
+    let panel = metric::WINDOW[0] - metric::ASIDE;
+    harness
+        .query_all_by_label(label)
+        .map(|node| node.rect())
+        .find(|rect| rect.left() > panel)
+        .unwrap_or_else(|| panic!("the panel does not say {label:?}"))
+}
+
+/// The inspector's close: the topmost mark in the panel's column, since a
+/// banner under it has one too.
+fn panel_close<'a>(harness: &'a Harness<'_, App>) -> egui_kittest::Node<'a> {
+    let panel = metric::WINDOW[0] - metric::ASIDE;
+    harness
+        .get_all_by_label(crate::widget::icon::DISMISS)
+        .filter(|node| node.rect().left() > panel)
+        .min_by(|a, b| a.rect().top().total_cmp(&b.rect().top()))
+        .expect("the panel has no close")
 }
 
 /// And the question stands down while a run is going, and is asked again once
@@ -2889,50 +2930,44 @@ fn a_waiting_edit_is_not_offered_while_a_run_is_going() {
     if !crate::elevate::can_ask() {
         return;
     }
-    assert!(harness.query_by_label("Save").is_some(), "the words were not offered to be saved");
+    assert!(offered_to_save(&harness), "the words were not offered to be saved");
 
     harness.state_mut().set_applying(Applying::frozen(None, Stage::Registering, None));
     harness.run();
-    assert!(harness.query_by_label("Save").is_none(), "Save was offered over a run in flight");
+    assert!(!offered_to_save(&harness), "Save was offered over a run in flight");
+    assert!(
+        anywhere(&harness, "Saved when the registration finishes"),
+        "the panel did not say what its words wait for"
+    );
 
     let written = harness.state().registered().expect("an installation").clone();
     let finished = Applying::frozen(None, Stage::Registering, Some(Ok(written)));
     harness.state_mut().set_applying(finished);
     harness.run();
     assert!(!harness.state().is_working(), "the run did not report");
-    assert!(harness.query_by_label("Save").is_some(), "the question did not come back");
+    assert!(offered_to_save(&harness), "the question did not come back");
 }
 
-/// Words typed for a second entry do not take the place of the first entry's
-/// while the user is being asked about those.
+/// The question holds its panel: another row clicked leaves the panel where
+/// it is, still asking.
 ///
-/// Replacing them dropped the first entry's words without a word said, and the
-/// banner went on asking about the second as if the first had never been
-/// typed. The second waits in its panel and is asked about once the first is
-/// answered.
+/// Before revision 8 the question was a banner across the bottom of the window
+/// and the panel went where it was sent, so a second entry's words could be
+/// typed under a question about the first, and had to wait behind it. Now the
+/// question is in the panel's foot, and the panel cannot be turned from it.
 #[test]
-fn a_second_entrys_words_wait_behind_the_question_about_the_first() {
-    const DISPERSER: &str = "80c0dc4c-d142-53a7-85ee-b91427819b66";
-    let asks_about = |harness: &Harness<'_, App>, name: &str| {
-        let title = format!("Save the changes to {name}?");
-        harness.query_all_by_label(&title).next().is_some()
-    };
-
-    let mut harness = without_rights("edit-behind-an-edit", VOLSHAPER);
+fn the_question_holds_its_panel() {
+    let mut harness = without_rights("edit-holds-the-panel", VOLSHAPER);
     add_a_keyword(&mut harness, "tremolo");
     if !crate::elevate::can_ask() {
         return;
     }
-    harness.state_mut().set_inspecting(DISPERSER.parse().expect("a sample identity"));
-    harness.run();
-    add_a_keyword(&mut harness, "phase");
-    assert!(asks_about(&harness, "VOLSHAPER"), "the first entry's words were dropped");
-    assert!(!asks_about(&harness, "DISPERSER"), "the second entry's words took their place");
+    assert!(offered_to_save(&harness), "the words were not offered to be saved");
 
-    harness.get_by_label("Cancel").click();
+    harness.get_by_label("DISPERSER").click();
     harness.run();
-    add_a_keyword(&mut harness, "rotator");
-    assert!(asks_about(&harness, "DISPERSER"), "the second entry's words were never asked about");
+    in_the_panel(&harness, "Save the changes to VOLSHAPER?");
+    assert!(offered_to_save(&harness), "turning to another row dropped the question");
 }
 
 /// A panel whose words are waiting is not let go of: closed, or turned to
@@ -2955,17 +2990,17 @@ fn a_panel_holding_words_that_wait_is_not_let_go() {
     let open = |harness: &Harness<'_, App>| {
         harness.query_all_by_label_contains(VOLSHAPER).any(|node| node.rect().left() > panel)
     };
-    // The topmost mark in the panel's column: a banner under it has one too.
     let close = |harness: &mut Harness<'_, App>| {
-        harness
-            .get_all_by_label(crate::widget::icon::DISMISS)
-            .filter(|node| node.rect().left() > panel)
-            .min_by(|a, b| a.rect().top().total_cmp(&b.rect().top()))
-            .expect("the panel has no close")
-            .click();
+        panel_close(harness).click();
         harness.run();
     };
     assert!(open(&harness), "the panel this test relies on is not open");
+
+    // It says so, and its close says why it will not.
+    use egui_kittest::kittest::NodeT as _;
+    in_the_panel(&harness, "Saved when the registration finishes");
+    assert!(panel_close(&harness).accesskit_node().is_disabled(), "the close looked pressable");
+    look(&mut harness, "inspector-waiting");
 
     harness.get_by_label("DISPERSER").click();
     harness.run();
@@ -2981,6 +3016,22 @@ fn a_panel_holding_words_that_wait_is_not_let_go() {
     close(&mut harness);
     settle(&mut harness);
     assert!(!open(&harness), "the panel stayed once its words were written");
+}
+
+/// The foot names the work the words wait for: a download is not a
+/// registration, and a user who pressed Install knows it by the first name.
+#[test]
+fn the_waiting_foot_names_the_work() {
+    let root = fixture("words-behind-a-fetch");
+    let session = found(&root, Helper::Present, GuardState::Disarmed);
+    let item = superseded().items.into_iter().next().expect("the sample index has an item");
+    let mut harness = window(session, |app, _| {
+        app.set_inspecting(VOLSHAPER.parse().expect("an identity"));
+        app.set_installing(Install::fetching(item));
+    });
+    harness.run();
+    add_a_keyword(&mut harness, "tremolo");
+    in_the_panel(&harness, "Saved when the download finishes");
 }
 
 /// While an install's fetch is out, the primary action does not start a run.

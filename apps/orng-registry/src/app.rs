@@ -23,8 +23,8 @@ use std::path::{Path, PathBuf};
 use eframe::egui::{self, Align, Layout, vec2};
 use orng_catalog::Index;
 use orng_tools::{
-    Backup, Content, Document, Kind, Placement, Provenance, Registration, RunState, Step,
-    Rights, Strategy, TheDocument, Uuid, placement,
+    Backup, Content, Document, Kind, Manifest, Placement, Provenance, Registration, RunState,
+    Step, Rights, Strategy, TheDocument, Uuid, placement,
 };
 
 use crate::about::About;
@@ -304,6 +304,108 @@ impl<'a> Listing<'a> {
     }
 }
 
+/// The pending work: what one press of the primary action would write.
+///
+/// One value because a press takes both halves and a press that succeeds clears
+/// both, and because what the second half means depends on the first: a queued
+/// removal is only work while no staged row speaks for the same identity.
+#[derive(Default)]
+struct Pending {
+    /// Documents dropped and not yet written.
+    staged: Vec<Staged>,
+    /// Entries the user has asked to be rid of, which are still registered
+    /// until the next apply - the design's `Pending removal`.
+    ///
+    /// Held beside [`Pending::staged`] rather than in it: a staged row is a
+    /// document waiting to be written and this is an identity waiting to be
+    /// forgotten, and the row it draws is the registered one struck through
+    /// rather than a row of its own. A set because queueing the same entry
+    /// twice is queueing it once, and ordered so that a press writes the
+    /// removals in the same order every time.
+    removing: BTreeSet<Uuid>,
+}
+
+impl Pending {
+    /// The rows that are ready to be written.
+    fn ready(&self) -> impl Iterator<Item = &Staged> {
+        self.staged.iter().filter(|staged| staged.is_ready())
+    }
+
+    /// The queued removals the list is actually showing as `Pending removal`.
+    ///
+    /// Filtered rather than trusted, on both counts, so that this answers
+    /// exactly the rows the user can see struck through. Anything else is the
+    /// press doing something no row said it would.
+    ///
+    /// Not in the list at all: the queue is what was asked for and the list is
+    /// what is there, and handing [`Update::remove`] an identity it has no row
+    /// for is a panic rather than a no-op.
+    ///
+    /// Staged under the same identity: re-dropping the document of a queued
+    /// entry replaces its row with the staged one, which is what
+    /// [`App::local`] does to every registered row a drop covers. The row now
+    /// reads `Staged`, so the press must register it and not forget it.
+    fn removals<'a>(&'a self, entries: &'a Manifest) -> impl Iterator<Item = Uuid> + 'a {
+        self.removing.iter().copied().filter(|uuid| {
+            entries.get(*uuid).is_some()
+                && !self
+                    .staged
+                    .iter()
+                    .filter_map(Staged::registration)
+                    .any(|staged| staged.uuid == *uuid)
+        })
+    }
+
+    /// How many entries one press would change: the rows to add plus the rows
+    /// to forget.
+    ///
+    /// A queued removal is work in its own right. Counting only the additions
+    /// is what would leave the primary action disabled beside a list of struck
+    /// through rows, saying there was nothing to apply.
+    fn changes(&self, entries: &Manifest) -> usize {
+        self.ready().count() + self.removals(entries).count()
+    }
+
+    /// Hand all of it to a job.
+    fn onto(&self, job: &mut Job, entries: &Manifest, document: TheDocument) {
+        // Only the rows that are ready. A conflict is pending work the user has
+        // to resolve, and writing it would be resolving it for them.
+        //
+        // Cloned rather than taken. The rows stay in the list until the write
+        // succeeds, so a failure leaves the same pending work rather than
+        // asking the user to find the files again; a document is tens of
+        // kilobytes and the copy is not worth avoiding at that price.
+        for staged in &self.staged {
+            if let crate::staging::State::Ready { registration, document } = &staged.state {
+                job.add(registration.clone(), document);
+            }
+        }
+        // And the rows the user asked to be rid of, which have been struck
+        // through in the list since they were queued. The document goes with
+        // them or does not, as the preference in force says, and the row's own
+        // control named that preference when it was pressed.
+        for uuid in self.removals(entries) {
+            job.remove(uuid, document);
+        }
+    }
+
+    /// What is left once a press has written it: nothing.
+    ///
+    /// Held until then rather than cleared when the press started, so that a
+    /// failure leaves the same rows to press again instead of asking for the
+    /// drop back. The removal queue goes the same way and for the same reason:
+    /// those entries are gone from the list now, so a queue still naming them
+    /// would strike through rows that do not exist.
+    ///
+    /// Everything staged is what the press was built from, which is what
+    /// [`App::read`] and the reader in [`App::pump`] are between them holding
+    /// to: nothing joins the list while a run is in flight, so there is nothing
+    /// here that the run did not consider.
+    fn written(&mut self) {
+        *self = Pending::default();
+    }
+}
+
 pub struct App {
     session: Session,
     /// What the user chose, which outlives the run where the session does not.
@@ -319,19 +421,8 @@ pub struct App {
     /// can answer it differently while the window is open.
     palette: Palette,
     filter: Filter,
-    /// Documents dropped and not yet written. The pending work.
-    staged: Vec<Staged>,
-    /// Entries the user has asked to be rid of, which are still registered
-    /// until the next apply - the design's `Pending removal`, and the other
-    /// half of the pending work.
-    ///
-    /// Held beside [`App::staged`] rather than in it: a staged row is a
-    /// document waiting to be written and this is an identity waiting to be
-    /// forgotten, and the row it draws is the registered one struck through
-    /// rather than a row of its own. A set because queueing the same entry
-    /// twice is queueing it once, and ordered so that a press writes the
-    /// removals in the same order every time.
-    removing: BTreeSet<Uuid>,
+    /// What one press of the primary action would write.
+    pending: Pending,
     /// Entries written into a live installation since the list was last read
     /// off the machine - the design's `Pending restart`.
     ///
@@ -462,8 +553,7 @@ impl App {
             screen: Screen::Browsing,
             palette,
             filter: Filter::default(),
-            staged: Vec::new(),
-            removing: BTreeSet::new(),
+            pending: Pending::default(),
             awaiting_restart: BTreeSet::new(),
             reading: None,
             applying: None,
@@ -612,7 +702,7 @@ impl App {
     /// Stage rows without a drop. Tests only.
     #[cfg(test)]
     pub fn set_staged(&mut self, staged: Vec<Staged>) {
-        self.staged = staged;
+        self.pending.staged = staged;
     }
 
     /// Narrow the list without typing. Tests only.
@@ -1339,7 +1429,7 @@ impl App {
         // rows stay, and the difference is what each one means: a staged row is
         // a document to register wherever this application is pointed, and a
         // removal is an instruction about one particular list.
-        self.removing.clear();
+        self.pending.removing.clear();
         // And so does what was waiting on a restart: it was a statement about
         // rows in the list that has just been replaced.
         self.awaiting_restart.clear();
@@ -1809,7 +1899,7 @@ impl App {
         // registered and then thrown away. The reader holds it instead - the
         // rows are still in its channel.
         if let Some(read) = self.reading.as_mut().and_then(Reading::take) {
-            self.staged.extend(read);
+            self.pending.staged.extend(read);
             self.reading = None;
         }
         // And a finished fetch waits the same way, because it is what *starts*
@@ -1844,9 +1934,9 @@ impl App {
         // Taken before the work is dropped: what a run wrote is the update's
         // own answer, and the update went with the worker.
         let wrote: Vec<Uuid> = applying.writing.iter().copied().collect();
-        let written = self.ready().count();
+        let written = self.pending.ready().count();
         let removed = match &self.session {
-            Session::Found(found) => self.removals(found).count(),
+            Session::Found(found) => self.pending.removals(found.entries()).count(),
             _ => 0,
         };
         self.applying = None;
@@ -1890,20 +1980,8 @@ impl App {
                 self.awaiting_restart.extend(wrote);
             }
             Ok(entries) => {
-                // What was written is no longer pending. Held until here rather
-                // than cleared when the press started, so that a failure leaves
-                // the same rows to press again instead of asking for the drop
-                // back. The removal queue goes the same way and for the same
-                // reason: those entries are gone from the list now, so a queue
-                // still naming them would strike through rows that do not
-                // exist.
-                //
-                // Everything staged is what this run was built from, which is
-                // what `App::read` and the reader below are between them
-                // holding to: nothing joins the list while a run is in flight,
-                // so there is nothing here that the run did not consider.
-                self.staged.clear();
-                self.removing.clear();
+                // What was written is no longer pending.
+                self.pending.written();
                 let in_effect = entries.entries().len();
                 if errand.prepares() {
                     // A preparation changes what is true of the installation:
@@ -1986,7 +2064,7 @@ impl App {
         // What is already staged goes with it, so a second drop collides with
         // the first rather than quietly winning when the list is written.
         let already: Vec<Registration> =
-            self.staged.iter().filter_map(Staged::registration).cloned().collect();
+            self.pending.staged.iter().filter_map(Staged::registration).cloned().collect();
         self.reading = Some(Reading::start(
             paths,
             found.entries().clone(),
@@ -2011,17 +2089,12 @@ impl App {
     fn shows_a_list(&self) -> Option<View> {
         let Session::Found(found) = &self.session else { return None };
         let anything = match self.view {
-            View::Local => !found.entries().is_empty() || !self.staged.is_empty(),
+            View::Local => !found.entries().is_empty() || !self.pending.staged.is_empty(),
             // A catalog that has not arrived, did not verify or is empty has no
             // list under it: the whole region is the one thing there is to say.
             View::Catalog => self.index().is_some_and(|index| !index.items.is_empty()),
         };
         anything.then_some(self.view)
-    }
-
-    /// The rows that are ready to be written.
-    fn ready(&self) -> impl Iterator<Item = &Staged> {
-        self.staged.iter().filter(|staged| staged.is_ready())
     }
 
     /// What one press would do, given what is pending and what the installation
@@ -2030,24 +2103,14 @@ impl App {
     /// `None` when there is nothing to press: a prepared installation with
     /// nothing staged has no work, and the design draws the action disabled
     /// rather than gone.
-    fn pending(&self, found: &Found) -> Option<Work> {
+    fn work(&self, found: &Found) -> Option<Work> {
         if !found.condition.is_prepared() {
             // An installation that does not read the entry list has work to do
             // whether or not anything is staged, because the entries already on
             // record are not in effect until it does.
             return Some(Work::PrepareThenEntries);
         }
-        (self.changes(found) > 0).then_some(Work::Entries)
-    }
-
-    /// How many entries one press would change: the rows to add plus the rows
-    /// to forget.
-    ///
-    /// A queued removal is work in its own right. Counting only the additions
-    /// is what would leave the primary action disabled beside a list of struck
-    /// through rows, saying there was nothing to apply.
-    fn changes(&self, found: &Found) -> usize {
-        self.ready().count() + self.removals(found).count()
+        (self.pending.changes(found.entries()) > 0).then_some(Work::Entries)
     }
 
     /// What stands between the user and the primary action, if anything does.
@@ -2068,7 +2131,7 @@ impl App {
         if self.applying.as_ref().is_some_and(Applying::is_running) {
             return None;
         }
-        let pending = self.pending(found)?;
+        let pending = self.work(found)?;
 
         // First, because it is the one condition that is true of both modes and
         // because it is the one the other two would otherwise hide: an
@@ -2644,6 +2707,7 @@ impl App {
                 let registered =
                     found.entries().entries().iter().filter(|e| e.kind() == kind).count();
                 let staged = self
+                    .pending
                     .staged
                     .iter()
                     .filter_map(Staged::registration)
@@ -2984,9 +3048,9 @@ impl App {
     /// The Local view: what is pending, then what is registered.
     fn local(&mut self, ui: &mut egui::Ui) {
         let Session::Found(found) = &self.session else { return };
-        let listing = Listing::of(&self.staged, found.entries().entries(), &self.filter);
+        let listing = Listing::of(&self.pending.staged, found.entries().entries(), &self.filter);
 
-        if found.entries().is_empty() && self.staged.is_empty() {
+        if found.entries().is_empty() && self.pending.staged.is_empty() {
             // The primary onboarding surface, and the only screen whose icon
             // takes the accent: it is an invitation rather than a report.
             let empty = widget::Empty {
@@ -3129,7 +3193,7 @@ impl App {
     }
 
     fn status_of(&self, found: &Found, entry: &Registration) -> Status {
-        if self.removing.contains(&entry.uuid) {
+        if self.pending.removing.contains(&entry.uuid) {
             return Status::PendingRemoval;
         }
         let standing = found.standing(entry.uuid);
@@ -3247,31 +3311,6 @@ impl App {
         }
     }
 
-    /// The queued removals the list is actually showing as `Pending removal`.
-    ///
-    /// Filtered rather than trusted, on both counts, so that this answers
-    /// exactly the rows the user can see struck through. Anything else is the
-    /// press doing something no row said it would.
-    ///
-    /// Not in the list at all: the queue is what was asked for and the list is
-    /// what is there, and handing [`Update::remove`] an identity it has no row
-    /// for is a panic rather than a no-op.
-    ///
-    /// Staged under the same identity: re-dropping the document of a queued
-    /// entry replaces its row with the staged one, which is what
-    /// [`App::local`] does to every registered row a drop covers. The row now
-    /// reads `Staged`, so the press must register it and not forget it.
-    fn removals<'a>(&'a self, found: &'a Found) -> impl Iterator<Item = Uuid> + 'a {
-        self.removing.iter().copied().filter(|uuid| {
-            found.entries().get(*uuid).is_some()
-                && !self
-                    .staged
-                    .iter()
-                    .filter_map(Staged::registration)
-                    .any(|staged| staged.uuid == *uuid)
-        })
-    }
-
     /// Carry out what a row's own control asked for.
     ///
     /// Taken after the list has been drawn, never during it: three of the five
@@ -3286,27 +3325,27 @@ impl App {
             // The rest are read again, because a row that collided with this
             // one no longer does.
             (Acting::Pending(at), Action::Remove) => {
-                let kept = std::mem::take(&mut self.staged)
+                let kept = std::mem::take(&mut self.pending.staged)
                     .into_iter()
                     .enumerate()
                     .filter(|(which, _)| *which != at)
                     .map(|(_, row)| row)
                     .collect();
-                self.staged = staging::restaged(kept, found.entries(), &found.to);
+                self.pending.staged = staging::restaged(kept, found.entries(), &found.to);
             }
             (Acting::Pending(at), Action::Assign) => {
-                let staged = std::mem::take(&mut self.staged);
-                self.staged = staging::reassign(staged, at, found.entries(), &found.to);
+                let staged = std::mem::take(&mut self.pending.staged);
+                self.pending.staged = staging::reassign(staged, at, found.entries(), &found.to);
             }
             // Queued, not done. The design keeps the entry registered and
             // struck through until the apply that removes it, which is what
             // makes one press of the primary action the confirmation for every
             // removal in the list.
             (Acting::Registered(uuid), Action::Remove) => {
-                self.removing.insert(uuid);
+                self.pending.removing.insert(uuid);
             }
             (Acting::Registered(uuid), Action::Undo) => {
-                self.removing.remove(&uuid);
+                self.pending.removing.remove(&uuid);
             }
             // Where the session found it, which is where the row that offered
             // this control said it was. Asking the disk again on the press
@@ -3592,15 +3631,15 @@ impl App {
         // fix". Each part is left out when it is nothing, so the line never
         // says a count of zero.
         let mut parts = Vec::new();
-        let ready = self.ready().count();
+        let ready = self.pending.ready().count();
         if ready > 0 {
             parts.push(format!("{ready} to add"));
         }
-        let to_remove = self.removals(found).count();
+        let to_remove = self.pending.removals(found.entries()).count();
         if to_remove > 0 {
             parts.push(format!("{to_remove} to remove"));
         }
-        let to_fix = self.staged.len() - ready;
+        let to_fix = self.pending.staged.len() - ready;
         if to_fix > 0 {
             parts.push(format!("{to_fix} to fix"));
         }
@@ -3608,7 +3647,7 @@ impl App {
         // and the thing a user is entitled to know before pressing rather than
         // after.
         let separator = widget::SEPARATOR;
-        let (note, tone) = match self.pending(found) {
+        let (note, tone) = match self.work(found) {
             Some(Work::PrepareThenEntries) => (
                 format!("Prepare install {separator} a backup is written first"),
                 Tone::Warn,
@@ -3638,7 +3677,7 @@ impl App {
         // is the second most common session there is, and saying "nothing
         // pending" beside an enabled button that does something would be wrong.
         let registered = found.entries().entries().len();
-        match (self.pending(found), registered) {
+        match (self.work(found), registered) {
             (Some(Work::PrepareThenEntries), 0) => (
                 "Nothing staged yet".to_owned(),
                 Tone::Neutral,
@@ -3796,7 +3835,7 @@ impl App {
     /// names and identities has nothing to hide it by.
     fn emptied_by_filter(&self, found: &Found) -> Option<usize> {
         let staged: Vec<&Registration> =
-            self.staged.iter().filter_map(Staged::registration).collect();
+            self.pending.staged.iter().filter_map(Staged::registration).collect();
         let drawn = found
             .entries()
             .entries()
@@ -3804,7 +3843,8 @@ impl App {
             .filter(|entry| !staged.iter().any(|pending| pending.uuid == entry.uuid))
             .map(|entry| self.filter.accepts(entry))
             .chain(
-                self.staged
+                self.pending
+                    .staged
                     .iter()
                     .map(|row| row.registration().is_none_or(|row| self.filter.accepts(row))),
             );
@@ -3846,10 +3886,10 @@ impl App {
             return;
         }
 
-        let pending = self.pending(found);
+        let pending = self.work(found);
         let label = match pending {
             Some(Work::PrepareThenEntries) => PREPARE.to_owned(),
-            Some(Work::Entries) => match self.changes(found) {
+            Some(Work::Entries) => match self.pending.changes(found.entries()) {
                 1 => "Apply 1 change".to_owned(),
                 many => format!("Apply {many} changes"),
             },
@@ -3869,7 +3909,9 @@ impl App {
         // Preparing an installation that would then read an empty list is work
         // with no result. The design disables the press and says so, rather
         // than letting a first-run user modify their installation for nothing.
-        if work == Work::PrepareThenEntries && found.entries().is_empty() && self.changes(found) == 0
+        if work == Work::PrepareThenEntries
+            && found.entries().is_empty()
+            && self.pending.changes(found.entries()) == 0
         {
             widget::primary_button(ui, palette, &label, mark, false, "Nothing to register yet");
             return;
@@ -3968,8 +4010,12 @@ impl App {
             modifies_the_installation: true,
         });
 
-        let registered: Vec<&str> =
-            self.ready().filter_map(Staged::registration).map(|row| row.name.as_str()).collect();
+        let registered: Vec<&str> = self
+            .pending
+            .ready()
+            .filter_map(Staged::registration)
+            .map(|row| row.name.as_str())
+            .collect();
         match registered.len() {
             0 => {}
             1 => lines.push(plain(format!("1 entry registered: {}.", registered[0]))),
@@ -3979,7 +4025,8 @@ impl App {
         }
 
         let removed: Vec<&str> = self
-            .removals(found)
+            .pending
+            .removals(found.entries())
             .filter_map(|uuid| found.entries().get(uuid))
             .map(|entry| entry.name.as_str())
             .collect();
@@ -3997,6 +4044,7 @@ impl App {
             .into_iter()
             .filter_map(|kind| {
                 let count = self
+                    .pending
                     .ready()
                     .filter_map(Staged::registration)
                     .filter(|row| row.kind() == kind)
@@ -4037,26 +4085,7 @@ impl App {
     fn start(&mut self, work: Work, ctx: &egui::Context) {
         let Session::Found(found) = &self.session else { return };
         let mut job = Job::against(work, &found.to, found.entries());
-        // Only the rows that are ready. A conflict is pending work the user has
-        // to resolve, and writing it would be resolving it for them.
-        //
-        // Cloned rather than taken. The rows stay in the list until the write
-        // succeeds, so a failure leaves the same pending work rather than
-        // asking the user to find the files again; a document is tens of
-        // kilobytes and the copy is not worth avoiding at that price.
-        for staged in &self.staged {
-            if let crate::staging::State::Ready { registration, document } = &staged.state {
-                job.add(registration.clone(), document);
-            }
-        }
-        // And the rows the user asked to be rid of, which have been struck
-        // through in the list since they were queued. The document goes with
-        // them or does not, as the preference in force says, and the row's own
-        // control named that preference when it was pressed.
-        let document = self.deleting();
-        for uuid in self.removals(found).collect::<Vec<_>>() {
-            job.remove(uuid, document);
-        }
+        self.pending.onto(&mut job, found.entries(), self.deleting());
         // What the last press came to is not what this one will come to.
         self.outcome = None;
         self.applying = Some(Applying::start(

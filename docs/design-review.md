@@ -248,7 +248,7 @@ next reader will see `\u{b7}` and wonder.
   drawn, `EntryRow.dc.html:44-60`, all five of them. What is still missing from
   that group is below.
 - **The update modal, and so `Update` on a catalog row.** *Drawn in revision 8, and
-  built in `2055b89` - round 4, A1, which also corrects this item.* The README is explicit
+  built in `abe0fa6` - round 4, A1, which also corrects this item.* The README is explicit
   that updating confirms where installing does not, and says what the modal has
   to carry: the item and the target version in its title, `installed 2.0.3 ->
   catalog 2.1.0` in mono beneath the lead, and the one sentence that matters -
@@ -342,7 +342,7 @@ next reader will see `\u{b7}` and wonder.
 
   Two things in it are ours and are recorded in item 6 below: when an index
   stops being called current, and how a duration is written.
-- ~~**The entry row's overflow**~~ - *Filled in revision 8 and drawn, `4776678` -
+- ~~**The entry row's overflow**~~ - *Filled in revision 8 and drawn, `a2729db` -
   round 4, A2.* `EntryRow.dc.html:60`, the `ph-dots-three-vertical` control the design
   draws on every row in every state. Nothing in the bundle says what its menu holds:
   not the row section of the README, not the interactions section, not the full-window
@@ -626,7 +626,7 @@ the press rather than in front of Windows' dialog, so the decision above holds.
 Only on Windows: elsewhere there is no `Save` that could succeed, so the edit is
 written, refused, and reported as `The change was not saved.`
 
-*Declining is not a failure.* *Not true of the window until `0650537` - round 4,
+*Declining is not a failure.* *Not true of the window until `f110961` - round 4,
 A3.* `ShellExecuteEx` answers `ERROR_CANCELLED` when the
 consent dialog is dismissed, and the banner says `administrator rights were
 declined, so nothing was changed` rather than reporting an error. It is the one
@@ -671,7 +671,7 @@ Windows without rights. The detail panel's `Update...` opens the same modal.
 full-window mockup drew the modal. The mockup did: revision 7's shell carried it
 inline, state `catalogupdateconfirm`. Only the component was missing.
 
-*Drawn, `2055b89`*, measured against the component's probed boxes: within two pixels
+*Drawn, `abe0fa6`*, measured against the component's probed boxes: within two pixels
 everywhere, the difference being egui rounding each line box up. The row's `Update` and
 the panel's `Update...` open it; only its own press fetches. Decided on the way, none
 of it the designer's:
@@ -713,7 +713,7 @@ catalog` is on catalog-sourced rows only. No `More` on a `Rejected` row. The men
 the install bar menu's surface, row and `--shadow-menu`, at `top:31px; right:10px`,
 184 wide at least, and the pointer leaving the row closes it (`EntryRow.dc.html:67-80`).
 
-*Drawn, `4776678`*, and measured through the tree against the probed component: the
+*Drawn, `a2729db`*, and measured through the tree against the probed component: the
 menu 194 by 94, its top 31 below the row's and its right edge 10 in, lines 184 by 28
 and touching. Its glyphs are `--ink-2` where the install bar's menu has `--ink-3`,
 which is the bundle's own difference. The pointer can go from the row onto the menu,
@@ -743,7 +743,7 @@ with `Copy details` - `administrator rights were declined, so nothing was change
 only what that control copies. The letter repeated the claim. The designer's answer,
 neutral and dismissible and not an error banner, is therefore a change.
 
-*Drawn, `0650537`.* A run now stops with `elevate::Stopped`, `Declined` or
+*Drawn, `f110961`.* A run now stops with `elevate::Stopped`, `Declined` or
 `Failed`, and a declined one is `Outcome::Declined` for any press, a restore
 included. The title is the sentence the letter quoted; the line under it is ours:
 `Windows asks for them because this installation is not writable by this account.
@@ -755,18 +755,18 @@ The rest:
   `Update` and `Retry` (`gap:6px` inside the 24-tall control), the modal's `Update`,
   the inspector's `Save`, `Rename` for a registered entry, and `Restore this backup`,
   which drops its clock for it. *Drawn on `Install`, `Retry` and the Restore press,
-  `73ccdb5`; on the row's `Update` and the modal's, `2055b89`*; `Save` came with A3's
-  footer and `Rename` with A4, `8b4650f`. **Open:** the
+  `0791a29`; on the row's `Update` and the modal's, `abe0fa6`*; `Save` came with A3's
+  footer and `Rename` with A4, `b5354c5`. **Open:** the
   catalog detail panel's `Install` elevates the same way and is not in the list,
   and `CatalogDetail.dc.html` takes no `elevate` - so it wears none yet.
 - **Glyph-only controls do not wear it.** `Locate` keeps its glyph and its tooltip
   becomes `Locate file · asks Windows for administrator rights`. The staging controls
-  write nothing until Apply, and Apply wears it. *Drawn, `73ccdb5`.*
+  write nothing until Apply, and Apply wears it. *Drawn, `0791a29`.*
 - **The Save question moves into the inspector's footer**, below the fields it saves,
   rather than across the bottom of the window where the app draws it now: warn wash,
   `11px 12px 12px`, 28-tall `Cancel` and `Save`. While it is open the panel's close
   control is dimmed to .4 with `Save or cancel the changes first` on hover. *Drawn,
-  `fde26c0`*, measured against the bundle's boxes. The question cannot outlive its
+  `9c9f9eb`*, measured against the bundle's boxes. The question cannot outlive its
   panel now, so it is a flag on the open inspection rather than a window-level
   field, and `Cancel` puts the panel's words back to the entry's. **Ours:** while
   other work runs the foot says what the words wait for instead of asking, where
@@ -774,7 +774,7 @@ The rest:
   could not start. It is asked again when the work is over.
 - **Not in the reply, only in the shell**: state `windowslocal` gives the action
   bar's note as `Update entries · asks for administrator rights` where the window
-  says `Bitwig may stay open`. Taken as a change. *Drawn, `f34d654`.*
+  says `Bitwig may stay open`. Taken as a change. *Drawn, `003b208`.*
 
 ### A4. Renaming - change, and the largest
 
@@ -802,7 +802,7 @@ registered under another identity`). Both are settled below.
 
 The README's two sentences are corrected: the app never renames by itself.
 
-*Drawn, `85fc840` to `8b4650f`*, measured through the tree against the probed component:
+*Drawn, `bc70fba` to `b5354c5`*, measured through the tree against the probed component:
 every block within a pixel of the bundle's box, the foot's presses at their heights and
 eight apart, ending at the design's 390. The first picture of it is
 `rename-question.png`.
@@ -826,7 +826,7 @@ Decided on the way:
   name conflict and no longer a rejection, since the pencil settles it. Round 4 A4 above
   said the file name is made from the display name. It was not when that was written: it
   was the dropped file's own. It is now, for drops and catalog installs both, because of
-  what the browser lists (`0f0b507`).
+  what the browser lists (`5874973`).
 - **The design's reason words are taken** for a name another entry holds, `Name already
   used by a registered device`, with the holder's kind. The rest are ours, capitalised
   to match: `Another dropped document is also called X`, `... has the same identity`,
@@ -843,7 +843,7 @@ Decided on the way:
   state but `Rejected` and `Pending removal`. A missing file has no document to write
   the name into.
 - **A staged document is renamed from the row's menu or the pencil**, since the
-  inspector opens on registered entries only. The menu came with A2, `4776678`.
+  inspector opens on registered entries only. The menu came with A2, `a2729db`.
   Until then only a name conflict could be renamed.
 - **The disabled press says why**: the design's `Choose a name no other entry uses`
   while the name is taken. Ours are `Type the name it should have` for an empty field,
@@ -863,7 +863,7 @@ that needs an installation, its first reading
 window's has two lines, `install none selected` and `searched`.
 
 **The dash stays `-`**: the user's decision on 2026-09-24, over the design's em dash.
-*The report is drawn, `8234b13`*, with the empty path rows in `--ink-3`. It leaves
+*The report is drawn, `9b4edfa`*, with the empty path rows in `--ink-3`. It leaves
 out two of the bundle's lines, `entries` and `placement`: neither depends on an
 installation, and a session that found none carries neither the home nor the
 preferences to state them from. The first picture of this state is
@@ -877,7 +877,7 @@ over, so the panel stays open until then.` The close control dimmed as in A3, wi
 `Your changes are saved when <the work> finishes` on hover. The work is named: `the
 preparation`, `the registration`, `the download`.
 
-*Drawn, `fde26c0`.* `the download` while an install's fetch is out, `the preparation`
+*Drawn, `9c9f9eb`.* `the download` while an install's fetch is out, `the preparation`
 for a preparation, and `the registration` for every other run, an install's second
 half included. **Ours:** no foot while the panel's own words are being written - they
 are not waiting for anything, and a foot for the moment an edit takes would flash on
@@ -890,7 +890,7 @@ No drop target, and no words. The platform's no-drop cursor is the refusal.
 ### B1. The catalog's action bar - yes, and one change
 
 Yes to all six. The change is that `Fetching...` also goes on the row, as an eighth
-published state: `--ink-2`, no action (`CatalogRow.dc.html:54`). *Drawn, `92490f0`*,
+published state: `--ink-2`, no action (`CatalogRow.dc.html:54`). *Drawn, `57ec7e0`*,
 for as long as the fetch is out.
 
 ### B2. The hidden-entries note - change
@@ -898,14 +898,14 @@ for as long as the fetch is out.
 It was meant to count pending work out of sight, because Apply acts on rows the user
 cannot see. `N changes hidden by the current filter`, N the pending changes the
 filter hides, shown whenever N is above zero and not only on an empty list. In the
-preparing mode the cost note keeps the line. *Drawn, `6778a80`.* A change is what
+preparing mode the cost note keeps the line. *Drawn, `91c641c`.* A change is what
 Apply counts - a ready row or a queued removal - so a row still to fix is not one.
 
 ### B3. The plan confirmation - yes, and one line
 
 Yes to the four. One line added after the registrations: `6 entries already
 registered keep their UUIDs; their description bundles are written again.` The press
-has no outline, so the window's 32 is right. *Drawn, `53f61a2`*, counting the entries
+has no outline, so the window's 32 is right. *Drawn, `fd93eee`*, counting the entries
 the press neither registers again nor removes. The singular is ours: `1 entry already
 registered keeps its UUID; its description bundles are written again.`
 
@@ -918,7 +918,7 @@ Dropped from `EmptyState.dc.html`.
 - 13.5px is `-0.015em` everywhere - yes, round 3 item 4 settled.
 - The install bar is 42 on `noinstall` too - yes, round 3 item 1 settled.
 - `--shadow` is `.85` - yes.
-- ~~**The light shadows are stated, and not by ratio.**~~ *Drawn, `833ffa3`.*
+- ~~**The light shadows are stated, and not by ratio.**~~ *Drawn, `1b3a47a`.*
   `--shadow-menu` is `0 12px 28px rgba(0,0,0,.16)` in light, `--shadow-panel`
   `-14px 0 32px rgba(0,0,0,.12)`. The window derived `.18` and `.13` and kept the
   dark geometry; the geometry moves too. `CatalogDetail.dc.html:21` still writes the
@@ -930,7 +930,7 @@ Dropped from `EmptyState.dc.html`.
   `Nothing in the installation changes until the patched archive verifies.` and no
   more; from Activate on, `Once the preparation completes, undoing it means
   Restore.` The window draws one note for every step, and its second sentence is not
-  the bundle's. *Drawn, `a917bff`.*
+  the bundle's. *Drawn, `93c108a`.*
 - Factory entries: yes.
 - `Licences`: yes for now. A public release has to ship the notices for Inter, Iosevka
   and Phosphor, so it comes back before 1.0.

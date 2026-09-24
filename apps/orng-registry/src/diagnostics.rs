@@ -11,7 +11,7 @@
 //! **Answered once, when the screen opens.** Nine of these lines ask the disk -
 //! two file sizes, a directory listing, three bundles and a link - and the screen
 //! they are drawn on is redrawn on every mouse move. Resolving them per frame is
-//! the mistake `eaf5e47` took out of the inspector, and it is larger here.
+//! the mistake `1026139` took out of the inspector, and it is larger here.
 //!
 //! **The content is this application's and only the shape is the design's.**
 //! `docs/design-review.md` round 2 records three paths the bundle gets wrong and

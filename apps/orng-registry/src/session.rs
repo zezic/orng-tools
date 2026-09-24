@@ -74,7 +74,7 @@ pub struct Found {
     ///
     /// Answering this per row per frame is three blocking syscalls for every
     /// row on screen, taken on the thread that draws, for an answer that had
-    /// not changed - the loop `eaf5e47` took out of the inspector, at list
+    /// not changed - the loop `1026139` took out of the inspector, at list
     /// scale. So it is resolved with the list and replaced with the list, and
     /// [`Found::relist`] is the only way to do either.
     standing: BTreeMap<Uuid, Standing>,

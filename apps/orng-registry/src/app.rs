@@ -73,7 +73,7 @@ impl View {
 /// file sizes, three bundles, a listing and a link; Restore for a directory walk
 /// and a time and a size per copy; About for the same report Settings draws -
 /// and a screen is redrawn on every mouse move across it. That is the fault
-/// `eaf5e47` took out of the inspector, three times over. What was read is
+/// `1026139` took out of the inspector, three times over. What was read is
 /// re-read where this application has changed one of the answers and nowhere
 /// else: see [`App::settle_screen`].
 #[derive(Debug)]

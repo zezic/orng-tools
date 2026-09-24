@@ -4180,7 +4180,7 @@ fn block(ui: &mut Ui, palette: Palette, empty: &Empty<'_>) -> Pressed {
                 ui.spacing_mut().item_spacing.y = 0.0;
                 // On the design's own leading. `EmptyState.dc.html:34` states
                 // `line-height:1.6` here and this was drawn on egui's default,
-                // which is the fault `040128e` took out of the catalog detail's
+                // which is the fault `a4ef7fa` took out of the catalog detail's
                 // two paragraphs: wrong per line, so invisible at one and wrong
                 // by a line at five. Every one of these bodies wraps.
                 ui.label(

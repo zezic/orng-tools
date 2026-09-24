@@ -448,6 +448,32 @@ fn nothing_installed() {
     );
 }
 
+/// The note under the steps promises that nothing has changed only for as long
+/// as that is true: from Activate on, undoing it is a restore.
+#[test]
+fn the_progress_note_changes_its_promise_at_activate() {
+    use orng_tools::Step;
+    let note_at = |activate: State| {
+        let root = fixture("progress-note");
+        let session = found(&root, Helper::Absent, GuardState::Armed);
+        let steps = [
+            (Step::Backup, State::Done),
+            (Step::Patch, State::Done),
+            (Step::Verify, if activate == State::Waiting { State::Running } else { State::Done }),
+            (Step::Activate, activate),
+            (Step::Link, State::Waiting),
+        ];
+        let applying = Applying::frozen(Some(steps), Stage::Preparing, None);
+        let mut harness = window(session, |app, _| app.set_applying(applying));
+        harness.run();
+        let before = "Nothing in the installation changes until the patched archive verifies.";
+        let after = "Once the preparation completes, undoing it means Restore.";
+        (anywhere(&harness, before), anywhere(&harness, after))
+    };
+    assert_eq!(note_at(State::Waiting), (true, false), "before Activate");
+    assert_eq!(note_at(State::Running), (false, true), "during Activate");
+}
+
 /// Halfway through, which is what a user watches.
 #[test]
 fn a_preparation_in_flight() {

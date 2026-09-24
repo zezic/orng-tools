@@ -4444,6 +4444,19 @@ fn progress(ui: &mut egui::Ui, palette: Palette, applying: &Applying) {
         },
     };
 
+    // What the note can promise changes once the archive is moved into place.
+    // Before that nothing in the installation has changed; after it, undoing
+    // the preparation is a restore. The design words the two for a dialog
+    // with `Cancel`, and this draws none, so neither sentence mentions it.
+    let activated = applying.steps.iter().flatten().any(|(step, state)| {
+        *step == orng_tools::Step::Activate && matches!(state, State::Running | State::Done)
+    });
+    let note = if activated {
+        "Once the preparation completes, undoing it means Restore."
+    } else {
+        "Nothing in the installation changes until the patched archive verifies."
+    };
+
     widget::progress_dialog(
         ui,
         palette,
@@ -4451,8 +4464,7 @@ fn progress(ui: &mut egui::Ui, palette: Palette, applying: &Applying) {
             title: "Preparing the installation",
             step: &step,
             steps: &steps,
-            note: "Nothing in the installation changes until the patched archive verifies. It \
-                   is written beside the original, and moved into place by a single rename.",
+            note,
             through: done as f32 / running.max(1) as f32,
         },
     );

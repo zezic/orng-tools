@@ -1411,7 +1411,7 @@ impl Aside {
 /// time and an entry is written a whole one at a time, and what closes the gap
 /// is leaving the field - so the buffer is what is being typed and the entry is
 /// what has been said.
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Clone)]
 pub struct Words {
     /// What Bitwig's browser shows under the device.
     pub description: String,

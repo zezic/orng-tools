@@ -361,8 +361,8 @@ pub struct App {
     /// out at the press would then describe a press that no longer exists.
     /// What is held is only what the disk has to be asked about.
     confirming: Option<Confirming>,
-    /// A description the user has edited that has not been written yet,
-    /// because writing it would ask for rights this process does not hold.
+    /// Words the user has edited for one entry that have not been written yet,
+    /// because writing them would ask for rights this process does not hold.
     ///
     /// Apart from every other edit, which is written the moment a field is
     /// left and announced nowhere. Where the installation is not this account's
@@ -373,7 +373,11 @@ pub struct App {
     /// nothing is lost if the answer is `Cancel`: the entry is still what it
     /// was. Never set where [`elevate::can_ask`] is false, because there is no
     /// dialog there to put off.
-    asking: Option<Registration>,
+    ///
+    /// The words and not the entry they would make. The question can stand
+    /// while a run changes that entry, and `Save` revises it as it is by then
+    /// rather than putting back a copy taken before the run.
+    asking: Option<Unsaved>,
     /// What the last press came to. Stated as a banner until the user puts it
     /// away, because nothing else will stop being true and take it off screen.
     outcome: Option<Outcome>,
@@ -1602,7 +1606,7 @@ impl App {
         // raise: elsewhere the write is made and refused, and a `Save` that
         // could only fail would be an offer that leads nowhere.
         if !found.rights.are_held() && elevate::can_ask() {
-            self.asking = Some(revised);
+            self.asking = Some(Unsaved { uuid: open.uuid, words: open.words.clone() });
             return;
         }
         self.write(revised, ctx);
@@ -1614,6 +1618,7 @@ impl App {
     /// [`App::asking`] arrives at a different moment and has to do the same
     /// thing.
     fn write(&mut self, revised: Registration, ctx: &egui::Context) {
+        assert!(self.applying.is_none(), "an edit was written on top of a run in flight");
         let Session::Found(found) = &self.session else { return };
         let mut job = Job::against(Work::Entries, &found.to, found.entries());
         job.revise(revised);
@@ -1632,14 +1637,27 @@ impl App {
     /// question about something that has not happened, and [`App::outcome`] is
     /// a statement about something that has. A question the user has been
     /// asked outranks a report they have already read.
+    ///
+    /// **Not while a run is in flight.** `Save` starts one, and nothing starts
+    /// on top of another - the rule [`App::write_words`] states. A run with no
+    /// steps draws no scrim, so the question would otherwise stand pressable
+    /// over it. It waits, and is asked again when the run has reported.
     fn ask_to_save(&mut self, ui: &mut egui::Ui) -> bool {
+        if self.applying.is_some() {
+            return false;
+        }
         let (Session::Found(found), Some(waiting)) = (&self.session, &self.asking) else {
             return false;
         };
         // The entry it revises may have gone since - a removal applied while
         // this sat here. Nothing to save, and `Update::revise` would panic on
-        // an identity the list has no row for.
-        let Some(entry) = found.entries().get(waiting.uuid) else {
+        // an identity the list has no row for. Or it may already say these
+        // words, and then there is nothing to ask.
+        let Some((entry, revised)) = found
+            .entries()
+            .get(waiting.uuid)
+            .and_then(|entry| Some((entry, revised(entry, &waiting.words)?)))
+        else {
             self.asking = None;
             return false;
         };
@@ -1670,7 +1688,7 @@ impl App {
 
         match answered {
             widget::Answered::Action => {
-                let revised = self.asking.take().expect("it was there a moment ago");
+                self.asking = None;
                 self.write(revised, ui.ctx());
             }
             // The words are dropped and the entry is still what it was, which
@@ -2098,6 +2116,12 @@ impl App {
             _ => None,
         }
     }
+}
+
+/// Words typed into the inspector for one entry, waiting on [`App::asking`].
+struct Unsaved {
+    uuid: Uuid,
+    words: widget::Words,
 }
 
 /// The inspector while it is open: which entry it is about, and the words in

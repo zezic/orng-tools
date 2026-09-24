@@ -2770,39 +2770,10 @@ fn a_word_typed_into_the_inspector_becomes_a_keyword() {
 /// other is, the child cannot be started, and the window says the change was not
 /// saved - which is what it did before the question existed. Both halves are
 /// here so that each platform proves the one it can reach.
-///
-/// The rights are set on the session rather than found, because every directory
-/// on the machine running this is writable by it - which is the same reason
-/// `rights`' own refusal test has to take a write bit off by hand.
 #[test]
 fn an_edit_that_needs_rights_waits_for_a_press_only_where_it_can_ask() {
-    use egui::accesskit::Role;
-
-    let root = fixture("edit-without-rights");
-    let mut session = found(&root, Helper::Present, GuardState::Disarmed);
-    if let Session::Found(found) = &mut session {
-        found.rights = orng_tools::Rights::Withheld {
-            directory: found.to.install.root().to_path_buf(),
-            why: "this account may not write there".to_owned(),
-        };
-    }
-    let mut harness =
-        window(session, |app, _| app.set_inspecting(VOLSHAPER.parse().expect("a sample identity")));
-
-    // The upper of the panel's two fields, which is the description.
-    let panel = metric::WINDOW[0] - metric::ASIDE;
-    let describing = harness
-        .get_all_by_role(Role::TextInput)
-        .filter(|node| node.rect().left() > panel)
-        .min_by(|a, b| a.rect().top().total_cmp(&b.rect().top()))
-        .expect("the panel has no description field");
-    describing.focus();
-    describing.type_text(" and a little more");
-    harness.run();
-    // Out of the field, which is the moment that used to write it - and used to
-    // be the moment that asked Windows for rights.
-    harness.key_press(egui::Key::Tab);
-    harness.run();
+    let mut harness = without_rights("edit-without-rights", VOLSHAPER);
+    add_a_keyword(&mut harness, "tremolo");
 
     if !crate::elevate::can_ask() {
         assert!(harness.query_by_label("Save").is_none(), "offered a save that can only fail");
@@ -2825,6 +2796,80 @@ fn an_edit_that_needs_rights_waits_for_a_press_only_where_it_can_ask() {
     harness.run();
     assert!(harness.query_by_label("Save").is_none(), "Cancel left the question on screen");
     assert!(!harness.state().is_working(), "Cancel started the write it was refusing");
+}
+
+/// And the question stands down while a run is going, and is asked again once
+/// it has reported.
+///
+/// A run that prepares nothing draws no scrim, so the banner under it stayed
+/// pressable: `Save` there started a second run over the first, and on Windows
+/// the second child wrote the list as it stood before the first had registered
+/// anything. Windows only, for the reason the test above gives.
+#[test]
+fn a_waiting_edit_is_not_offered_while_a_run_is_going() {
+    let mut harness = without_rights("edit-behind-a-run", VOLSHAPER);
+    add_a_keyword(&mut harness, "tremolo");
+    if !crate::elevate::can_ask() {
+        return;
+    }
+    assert!(harness.query_by_label("Save").is_some(), "the words were not offered to be saved");
+
+    harness.state_mut().set_applying(Applying::frozen(None, Stage::Registering, None));
+    harness.run();
+    assert!(harness.query_by_label("Save").is_none(), "Save was offered over a run in flight");
+
+    let written = harness.state().registered().expect("an installation").clone();
+    let finished = Applying::frozen(None, Stage::Registering, Some(Ok(written)));
+    harness.state_mut().set_applying(finished);
+    harness.run();
+    assert!(!harness.state().is_working(), "the run did not report");
+    assert!(harness.query_by_label("Save").is_some(), "the question did not come back");
+}
+
+/// A window whose installation this account may not write, with one entry's
+/// inspector open.
+///
+/// The rights are set on the session rather than found, because every directory
+/// on the machine running this is writable by it - which is the same reason
+/// `rights`' own refusal test has to take a write bit off by hand.
+fn without_rights(name: &str, inspecting: &'static str) -> Harness<'static, App> {
+    let root = fixture(name);
+    let mut session = found(&root, Helper::Present, GuardState::Disarmed);
+    if let Session::Found(found) = &mut session {
+        found.rights = orng_tools::Rights::Withheld {
+            directory: found.to.install.root().to_path_buf(),
+            why: "this account may not write there".to_owned(),
+        };
+    }
+    window(session, move |app, _| app.set_inspecting(inspecting.parse().expect("an identity")))
+}
+
+/// Type a keyword into the open panel and leave the field, which is the moment
+/// that used to write it - and used to be the moment that asked Windows for
+/// rights.
+///
+/// A keyword the entry does not have yet, or the words do not change and
+/// nothing is written or asked.
+fn add_a_keyword(harness: &mut Harness<'_, App>, keyword: &str) {
+    use egui::accesskit::Role;
+
+    // The panel's one single-line field. The description is the other field,
+    // and a multi-line one is another role.
+    let panel = metric::WINDOW[0] - metric::ASIDE;
+    {
+        let fields: Vec<_> = harness
+            .get_all_by_role(Role::TextInput)
+            .filter(|node| node.rect().left() > panel)
+            .collect();
+        let [adding] = &fields[..] else {
+            panic!("the panel has {} single-line fields, not one", fields.len())
+        };
+        adding.focus();
+        adding.type_text(keyword);
+    }
+    harness.run();
+    harness.key_press(egui::Key::Tab);
+    harness.run();
 }
 
 /// Staged work on an installation this account may not write is refused only

@@ -2684,10 +2684,52 @@ fn re_dropping_a_queued_entrys_document_takes_the_removal_back() {
         "the list shows a removal queued against a row it is no longer drawing"
     );
     assert!(
-        harness.query_all_by_label("1 to remove").next().is_none(),
+        harness.query_all_by_label_contains("to remove").next().is_none(),
         "the press would forget an entry the list is showing as staged"
     );
     assert!(harness.query_all_by_label("1 to add").next().is_some(), "the drop was not staged");
+}
+
+/// A queued removal is written by the press, and the queue goes with it.
+///
+/// The queue names identities rather than rows, so one left standing after the
+/// press would strike the entry through again the next time it came back - the
+/// very document the user removed, dropped and registered again, drawn as about
+/// to be forgotten.
+#[test]
+fn a_queued_removal_is_written_and_the_queue_goes_with_it() {
+    const DISPERSER: &str = "80c0dc4c-d142-53a7-85ee-b91427819b66";
+    let root = fixture("removal-written");
+    let to = Destination { placement: Strategy::Copy, ..destination(&root) };
+    let mut harness = local_window(copying(&root, entries()));
+    let uuid: orng_tools::Uuid = DISPERSER.parse().expect("a sample identity");
+
+    harness.get_by_label("DISPERSER").hover();
+    harness.run();
+    harness.get_by_label_contains("Remove entry").click();
+    harness.run();
+    harness.get_by_label_contains("Apply 1 change").click();
+    settle(&mut harness);
+    let written = harness.state().registered().expect("an installation").clone();
+    assert!(written.get(uuid).is_none(), "the press did not forget the entry it was asked to");
+
+    // The same document, dropped again and written.
+    let drop = root.join("dropped");
+    std::fs::create_dir_all(&drop).expect("a place to drop from");
+    let path = drop.join("DISPERSER.bwdevice");
+    let document = orng_tools::testing::document(orng_tools::Kind::Device, uuid, "DISPERSER");
+    std::fs::write(&path, document.bytes()).expect("could not write the sample");
+    harness.state_mut().set_staged(staging::read(&[path], &written, &to, &[]));
+    harness.run();
+    harness.get_by_label_contains("Apply 1 change").click();
+    settle(&mut harness);
+
+    let written = harness.state().registered().expect("an installation");
+    assert!(written.get(uuid).is_some(), "the document dropped again was not registered");
+    assert!(
+        harness.query_by_label("Pending removal").is_none(),
+        "the entry that came back is still queued for removal"
+    );
 }
 
 /// Cancelling a staged row takes it out of the pending list - and settles the

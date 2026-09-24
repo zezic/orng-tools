@@ -5,7 +5,8 @@
 //!
 //! Bitwig also writes documents as relaxed JSON: unquoted keys at the structural
 //! level, quoted keys inside `data`. Identity work needs only the string fields
-//! of the metadata object, so this scans for them rather than parsing a tree.
+//! of a section's own object, so this scans for them rather than parsing a
+//! tree.
 
 use std::collections::BTreeMap;
 
@@ -19,7 +20,12 @@ pub struct Field {
 
 pub type Fields = BTreeMap<String, Field>;
 
-/// Collect every `"key" : "value"` pair in `section`.
+/// Braces and brackets open around a field of the section's own object: the
+/// object's, and then its `data`'s. Anything deeper belongs to an object
+/// nested in it, which can carry fields of the same name.
+const OWN_FIELD_DEPTH: usize = 2;
+
+/// Collect the `"key" : "value"` pairs of the object `section` starts with.
 ///
 /// Structural keys in this format are unquoted (`class :`, `data :`) while keys
 /// inside `data` are quoted, so a pair cannot be recognised from a key alone.
@@ -36,7 +42,9 @@ pub fn scan(section: &[u8]) -> Fields {
         let (key, value) = (&runs[i], &runs[i + 1]);
         // `end` is the closing quote and `start - 1` the opening one, so the
         // separator is what lies strictly between the two quoted runs.
-        if is_pair_separator(&section[key.end + 1..value.start - 1]) {
+        if key.depth == OWN_FIELD_DEPTH
+            && is_pair_separator(&section[key.end + 1..value.start - 1])
+        {
             fields.insert(
                 decode(section, key),
                 Field {
@@ -57,12 +65,26 @@ pub fn scan(section: &[u8]) -> Fields {
 struct Run {
     start: usize,
     end: usize,
+    /// Braces and brackets open around the run.
+    depth: usize,
 }
 
+/// The quoted runs of the first object in `data`, up to where it closes.
+/// Whatever follows it - padding, or the resources archive after a body - is
+/// not the object's.
 fn quoted_runs(data: &[u8]) -> Vec<Run> {
     let mut runs = Vec::new();
+    let mut depth = 0usize;
     let mut i = 0;
     while i < data.len() {
+        match data[i] {
+            b'{' | b'[' => depth += 1,
+            // The first object closing ends it, and a close with nothing
+            // open is past it as well.
+            b'}' | b']' if depth <= 1 => break,
+            b'}' | b']' => depth -= 1,
+            _ => {}
+        }
         if data[i] != b'"' {
             i += 1;
             continue;
@@ -75,7 +97,7 @@ fn quoted_runs(data: &[u8]) -> Vec<Run> {
         if j >= data.len() {
             break;
         }
-        runs.push(Run { start, end: j });
+        runs.push(Run { start, end: j, depth });
         i = j + 1;
     }
     runs
@@ -104,7 +126,7 @@ mod tests {
 
     #[test]
     fn reads_string_fields_and_skips_others() {
-        let src = br#"
+        let src = br#"{
         class : "meta",
         data :
         {
@@ -112,6 +134,7 @@ mod tests {
             "revision_no" : 52795,
             "device_name" : "DISPERSER",
             "has_audio_input" : false
+        }
         }"#;
         let fields = scan(src);
         assert_eq!(fields["creator"].value, "Example Studio");
@@ -120,5 +143,32 @@ mod tests {
         // The recorded span must address exactly the value's bytes.
         let f = &fields["device_name"];
         assert_eq!(&src[f.offset..f.offset + f.len], b"DISPERSER");
+    }
+
+    /// A device inside a container's chain has an identity of its own, under
+    /// the same key as the container's.
+    #[test]
+    fn reads_only_the_objects_own_fields() {
+        let src = br#"{
+        class : "float_core.device_contents(151)",
+        data :
+        {
+            "device_name(386)" : "OUTER",
+            "child_components(173)" :
+            [
+                {
+                    class : "float_core.device_contents(151)",
+                    data :
+                    {
+                        "device_name(386)" : "INNER"
+                    }
+                }
+            ]
+        }
+        }
+        "not_a_field" : "after the object""#;
+        let fields = scan(src);
+        assert_eq!(fields["device_name(386)"].value, "OUTER");
+        assert_eq!(fields.len(), 1);
     }
 }

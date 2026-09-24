@@ -17,10 +17,12 @@ use uuid::Uuid;
 
 use crate::{Document, Installation, Kind};
 
-/// The fixed-width document header: magic, the serialization format, and the
-/// offset the body starts at. Hex ASCII, 42 bytes, as `bitwig-document` reads
-/// it.
+/// The document header: magic, the file format version, the serialization
+/// format, and the offset the body starts at. Hex ASCII, and 40 bytes at
+/// version 1, the one textual documents have been seen at.
+const FILE_VERSION: u32 = 1;
 const TEXT_FORMAT: u32 = 1;
+const HEADER_LEN: usize = 40;
 
 /// A document in the textual serialization, carrying the identity it is given.
 ///
@@ -37,8 +39,9 @@ pub fn document(kind: Kind, uuid: Uuid, name: &str) -> Document {
          \x20 }}\n}}\n"
     );
     let body = b"{\n  class : \"device\"\n}\n";
-    let offset = 42 + meta.len();
-    let header = format!("BtWg{:04}{TEXT_FORMAT:04}{:04}{offset:08x}{:018}", 0, 0, 0);
+    let offset = HEADER_LEN + meta.len();
+    let header = format!("BtWg{FILE_VERSION:04}{TEXT_FORMAT:04}{:04}{offset:08x}{:016}", 0, 0);
+    assert_eq!(header.len(), HEADER_LEN);
 
     let mut raw = header.into_bytes();
     raw.extend_from_slice(meta.as_bytes());

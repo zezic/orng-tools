@@ -32,7 +32,6 @@ use ramona::{FieldKey, Fields as BinaryFields, Scanner, Value};
 /// Bytes between the metadata and body sections of a binary document: 5000
 /// spaces and a newline.
 const BINARY_PADDING: usize = 5001;
-const HEADER_LEN: usize = 42;
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
@@ -42,6 +41,8 @@ pub enum Error {
     BadMagic,
     #[error("unsupported serialization format {0}")]
     UnsupportedFormat(u32),
+    #[error("unsupported file format version {0}")]
+    UnsupportedVersion(u32),
     #[error("{0} is not a Bitwig device, modulator or Grid module")]
     UnknownKind(String),
     #[error("document truncated at offset {at}")]
@@ -76,8 +77,25 @@ const F_DESCRIPTION: &str = "device_description";
 const F_CATEGORY: &str = "device_category";
 const F_CREATOR: &str = "creator";
 
-/// The identity is stored twice; the body numbers the field the metadata names.
-const BODY_UUID: i32 = 6369;
+/// The body's own copy of the identity. Both schemas that declare it call it
+/// this, and each gives it its own number: see [`body_uuid_field`].
+const BODY_UUID: &str = "device_UUID";
+
+/// The number the body's root object gives [`BODY_UUID`], which is decided by
+/// the root's schema, and that by the kind.
+///
+/// A device's root is `device_contents` (151), which declares it as 385. A
+/// modulator's is `modulator_contents` (1735) and a Grid module's is
+/// `module_contents` (1904), and both inherit it from
+/// `auxiliary_device_contents` (1744) as 6369. Bitwig 6.1 names the four `gCp`,
+/// `OY3`, `GOV` and `Zhh`, under `flt.document.core.master.device`, and every
+/// factory document of each kind has the root named here.
+fn body_uuid_field(kind: Kind) -> i32 {
+    match kind {
+        Kind::Device => 385,
+        Kind::Modulator | Kind::Module => 6369,
+    }
+}
 
 /// How a document's sections are encoded.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -128,8 +146,9 @@ pub struct Document {
 #[derive(Debug, Clone)]
 enum Layout {
     Text {
-        /// Offsets are absolute; the metadata section starts at the header.
-        fields: text::Fields,
+        /// Offsets in both are absolute.
+        meta_fields: text::Fields,
+        body_fields: text::Fields,
     },
     Binary {
         meta: SectionSpan,
@@ -176,17 +195,21 @@ impl Document {
         let header = Header::parse(&raw)?;
         let serialization = Serialization::from_header(header.serialization_format)?;
 
+        let header_len = header.version.header_len();
         let (identity, layout) = match serialization {
             Serialization::Text => {
-                let section = raw
-                    .get(HEADER_LEN..header.object_offset)
-                    .ok_or(Error::Truncated { at: HEADER_LEN })?;
-                let mut fields = text::scan(section);
-                // Rebase onto the whole file so splices need no adjustment.
-                for field in fields.values_mut() {
-                    field.offset += HEADER_LEN;
-                }
-                (Identity::from_text(&fields)?, Layout::Text { fields })
+                // Rebased onto the whole file so splices need no adjustment.
+                let scan = |start: usize, end: usize| {
+                    let section = raw.get(start..end).ok_or(Error::Truncated { at: start })?;
+                    let mut fields = text::scan(section);
+                    for field in fields.values_mut() {
+                        field.offset += start;
+                    }
+                    Ok(fields)
+                };
+                let meta_fields = scan(header_len, header.object_offset)?;
+                let body_fields = scan(header.object_offset, raw.len())?;
+                (Identity::from_text(&meta_fields)?, Layout::Text { meta_fields, body_fields })
             }
             _ => {
                 let encrypted = serialization == Serialization::EncryptedBinary;
@@ -199,8 +222,8 @@ impl Document {
                 let meta_end = header
                     .object_offset
                     .checked_sub(BINARY_PADDING)
-                    .ok_or(Error::Truncated { at: HEADER_LEN })?;
-                let meta = SectionSpan::of(&raw, HEADER_LEN, meta_end, encrypted)?;
+                    .ok_or(Error::Truncated { at: header_len })?;
+                let meta = SectionSpan::of(&raw, header_len, meta_end, encrypted)?;
                 let body = SectionSpan::of(&raw, header.object_offset, raw.len(), encrypted)?;
                 let meta_fields = Scanner::new(&meta.plaintext(&raw, key)).scan_object()?;
                 let body_fields = Scanner::new(&body.plaintext(&raw, key)).scan_object()?;
@@ -232,9 +255,10 @@ impl Document {
 
     /// Produce the document under a new UUID.
     ///
-    /// Every copy of the identity is updated. A UUID is fixed width in both the
-    /// binary and the textual form, so each is spliced in place and the file
-    /// layout is untouched.
+    /// Every copy of the identity is updated: the metadata's two and the one
+    /// the body's root keeps as [`BODY_UUID`]. A UUID is fixed width in both
+    /// the binary and the textual form, so each is spliced in place and the
+    /// file layout is untouched.
     ///
     /// Destructive to projects that already reference the old identity, which is
     /// why this is never applied implicitly.
@@ -243,12 +267,18 @@ impl Document {
         let old = self.identity.uuid;
         let mut raw = self.raw.clone();
 
+        let body_uuid = body_uuid_field(self.kind);
+
         match &self.layout {
-            Layout::Text { fields } => {
+            Layout::Text { meta_fields, body_fields } => {
                 for key in [F_UUID, F_ID] {
-                    let Some(field) = fields.get(key) else { continue };
+                    let Some(field) = meta_fields.get(key) else { continue };
                     let updated = field.value.replace(&old.to_string(), &new.to_string());
                     ramona::splice(&mut raw, field.offset, field.len, updated.as_bytes())?;
+                }
+                // The text form keys a body field by its name and its number.
+                if let Some(field) = body_fields.get(&format!("{BODY_UUID}({body_uuid})")) {
+                    ramona::splice(&mut raw, field.offset, field.len, new.to_string().as_bytes())?;
                 }
             }
             Layout::Binary { meta, body, meta_fields, body_fields } => {
@@ -259,7 +289,7 @@ impl Document {
                 meta.write_back(&mut raw, &plain, section_key);
 
                 let mut plain = body.plaintext(&raw, section_key);
-                splice_uuid(&mut plain, body_fields, &FieldKey::Id(BODY_UUID), new)?;
+                splice_uuid(&mut plain, body_fields, &FieldKey::Id(body_uuid), new)?;
                 body.write_back(&mut raw, &plain, section_key);
             }
         }
@@ -286,13 +316,13 @@ impl Document {
             return Err(Error::UnrepresentableName(new.to_owned()));
         }
         let raw = match &self.layout {
-            Layout::Text { fields } => {
+            Layout::Text { meta_fields, .. } => {
                 // Written between quotes and read back without unescaping, so
                 // a quote or a backslash would come back as something else.
                 if new.contains(['"', '\\']) {
                     return Err(Error::UnrepresentableName(new.to_owned()));
                 }
-                let field = fields.get(F_NAME).ok_or(Error::MissingField(F_NAME))?;
+                let field = meta_fields.get(F_NAME).ok_or(Error::MissingField(F_NAME))?;
                 let span = field.offset..field.offset + field.len;
                 let mut raw = self.raw.clone();
                 raw.splice(span, new.bytes());
@@ -331,10 +361,19 @@ impl Document {
     }
 }
 
+/// Overwrite a UUID field with `new`, in whichever of the two types it was
+/// written as. Bitwig reads a UUID field from a UUID or from the text of one
+/// (6.1: the string type's conversion, `base.serial.Mjh`), and documents from
+/// other tools carry the text.
 fn splice_uuid(plain: &mut [u8], fields: &BinaryFields, key: &FieldKey, new: Uuid) -> Result<()> {
     match fields.get(key) {
         Some(Value::Uuid { offset, .. }) => ramona::splice(plain, *offset, 16, new.as_bytes()),
-        _ => Ok(()), // Absent in this document; nothing to keep consistent.
+        // The recorded offset points at the 4-byte length prefix.
+        Some(Value::Text { text, offset, wide }) => {
+            let len = encode_text(text, *wide).len();
+            ramona::splice(plain, offset + 4, len, &encode_text(&new.to_string(), *wide))
+        }
+        None => Ok(()), // Absent in this document; nothing to keep consistent.
     }
 }
 
@@ -477,8 +516,9 @@ impl SectionSpan {
     }
 }
 
-/// The 42-byte hex-ASCII document header.
+/// The hex-ASCII document header.
 struct Header {
+    version: FileVersion,
     serialization_format: u32,
     object_offset: usize,
     /// Where a ZIP of embedded resources starts, or zero for none.
@@ -489,17 +529,52 @@ struct Header {
 const OBJECT_OFFSET: std::ops::Range<usize> = 16..24;
 const RESOURCES_OFFSET: std::ops::Range<usize> = 24..40;
 
+/// The file format versions documents are written in, which decide how long
+/// the header is.
+#[derive(Debug, Clone, Copy)]
+enum FileVersion {
+    V1,
+    V3,
+}
+
+impl FileVersion {
+    fn from_header(value: u32) -> Result<Self> {
+        match value {
+            1 => Ok(FileVersion::V1),
+            3 => Ok(FileVersion::V3),
+            other => Err(Error::UnsupportedVersion(other)),
+        }
+    }
+
+    /// Version 1 ends with the resources offset; version 3 adds two digits of
+    /// flags after it. Textual documents have been seen only at version 1, so
+    /// their metadata object starts two bytes earlier than a binary one's.
+    fn header_len(self) -> usize {
+        match self {
+            FileVersion::V1 => 40,
+            FileVersion::V3 => 42,
+        }
+    }
+}
+
 impl Header {
     fn parse(data: &[u8]) -> Result<Self> {
-        let head = data.get(..HEADER_LEN).ok_or(Error::Truncated { at: 0 })?;
-        let text = std::str::from_utf8(head).map_err(|_| Error::BadMagic)?;
-        if !text.starts_with("BtWg") {
+        let hex = |range: std::ops::Range<usize>| {
+            let digits = data.get(range).ok_or(Error::Truncated { at: 0 })?;
+            std::str::from_utf8(digits)
+                .ok()
+                .and_then(|text| u64::from_str_radix(text, 16).ok())
+                .ok_or(Error::BadMagic)
+        };
+        if !data.starts_with(b"BtWg") {
             return Err(Error::BadMagic);
         }
-        let hex = |range: std::ops::Range<usize>| {
-            u64::from_str_radix(&text[range], 16).map_err(|_| Error::BadMagic)
-        };
+        let version = FileVersion::from_header(hex(4..8)? as u32)?;
+        if data.len() < version.header_len() {
+            return Err(Error::Truncated { at: 0 });
+        }
         Ok(Header {
+            version,
             serialization_format: hex(8..12)? as u32,
             object_offset: hex(OBJECT_OFFSET)? as usize,
             resources_offset: hex(RESOURCES_OFFSET)?,
@@ -631,8 +706,29 @@ mod tests {
         println!("exercised {seen:?} across {} documents", all.len());
     }
 
+    /// Everything a document says, deciphered: both sections of a binary one,
+    /// the whole of a text one.
+    fn plaintext(doc: &Document) -> Vec<u8> {
+        match &doc.layout {
+            Layout::Text { .. } => doc.raw.clone(),
+            Layout::Binary { meta, body, .. } => {
+                let key = doc.key.as_ref();
+                [meta.plaintext(&doc.raw, key), body.plaintext(&doc.raw, key)].concat()
+            }
+        }
+    }
+
+    /// Whether `uuid` is anywhere in `plain`, in either form a document writes
+    /// one in.
+    fn mentions(plain: &[u8], uuid: Uuid) -> bool {
+        let text = uuid.to_string();
+        [uuid.as_bytes().as_slice(), text.as_bytes()]
+            .iter()
+            .any(|needle| plain.windows(needle.len()).any(|w| w == *needle))
+    }
+
     #[test]
-    fn rewriting_the_uuid_is_reversible_and_length_preserving() {
+    fn rewriting_the_uuid_replaces_every_copy_and_is_reversible() {
         let key = section_key();
         let factory = if key.is_some() { factory_samples(4) } else { Vec::new() };
         let all: Vec<_> = custom_samples().into_iter().chain(factory).collect();
@@ -648,6 +744,11 @@ mod tests {
             assert_eq!(rewritten.identity().uuid, new, "{}", path.display());
             assert_eq!(rewritten.identity().name, doc.identity().name);
             assert_eq!(rewritten.bytes().len(), doc.bytes().len());
+            assert!(
+                !mentions(&plaintext(&rewritten), doc.identity().uuid),
+                "{} still carries its old UUID",
+                path.display()
+            );
 
             let restored = rewritten.with_uuid(doc.identity().uuid).unwrap();
             assert_eq!(restored.bytes(), doc.bytes(), "{} did not round-trip", path.display());
@@ -691,9 +792,33 @@ mod tests {
         }
     }
 
+    const UUID: Uuid = Uuid::from_u128(0x6d2a2f1e_0a4f_4d8e_9a6c_1d2e3f405162);
+
+    /// The number a body's root gives its `device_UUID`, restated from the jar
+    /// rather than taken from the code under test.
+    fn declared_body_uuid(kind: Kind) -> i32 {
+        match kind {
+            Kind::Device => 385,
+            Kind::Modulator | Kind::Module => 6369,
+        }
+    }
+
+    /// How a hand-built body writes its own copy of the identity. Bitwig
+    /// writes a UUID; other tools write the text of one, which Bitwig reads
+    /// all the same.
+    #[derive(Debug, Clone, Copy)]
+    enum Written {
+        Uuid,
+        Text,
+    }
+
     /// A plain binary document carrying `resources` after its body, built by
     /// hand so the binary path is proven where there are no samples.
     fn binary(resources: &[u8]) -> Document {
+        built(Kind::Modulator, Written::Uuid, resources)
+    }
+
+    fn built(kind: Kind, written: Written, resources: &[u8]) -> Document {
         fn string(out: &mut Vec<u8>, text: &str) {
             out.extend((text.len() as u32).to_be_bytes());
             out.extend(text.bytes());
@@ -703,7 +828,7 @@ mod tests {
             string(out, name);
             out.push(tag);
         }
-        let uuid = Uuid::from_u128(0x6d2a2f1e_0a4f_4d8e_9a6c_1d2e3f405162);
+        let uuid = UUID;
 
         let mut meta = 7i32.to_be_bytes().to_vec();
         named(&mut meta, F_UUID, 21);
@@ -715,12 +840,20 @@ mod tests {
         meta.extend(0i32.to_be_bytes());
 
         let mut body = 7i32.to_be_bytes().to_vec();
-        body.extend(BODY_UUID.to_be_bytes());
-        body.push(21);
-        body.extend(uuid.as_bytes());
+        body.extend(declared_body_uuid(kind).to_be_bytes());
+        match written {
+            Written::Uuid => {
+                body.push(21);
+                body.extend(uuid.as_bytes());
+            }
+            Written::Text => {
+                body.push(8);
+                string(&mut body, &uuid.to_string());
+            }
+        }
         body.extend(0i32.to_be_bytes());
 
-        let object = HEADER_LEN + meta.len() + BINARY_PADDING;
+        let object = FileVersion::V3.header_len() + meta.len() + BINARY_PADDING;
         let after = object + body.len();
         let resources_at = if resources.is_empty() { 0 } else { after };
         let mut raw = format!("BtWg00030002000c{object:08x}{resources_at:016x}00").into_bytes();
@@ -729,7 +862,53 @@ mod tests {
         raw.push(b'\n');
         raw.extend(body);
         raw.extend(resources);
-        Document::parse(Kind::Modulator, raw).unwrap()
+        Document::parse(kind, raw).unwrap()
+    }
+
+    /// The other form of the same document, with an object nested in the root
+    /// that carries an identity of its own, as a device inside a container
+    /// device's chain does.
+    fn text(kind: Kind, nested: Uuid) -> Document {
+        let field = declared_body_uuid(kind);
+        let meta = format!(
+            "{{\n\tclass : \"meta\",\n\tdata :\n\t{{\n\
+             \t\t\"device_name\" : \"SHAPER\",\n\
+             \t\t\"device_uuid\" : \"{UUID}\"\n\t}}\n}}\n"
+        );
+        // The nested identity comes last, where a scan that did not know
+        // depth would take it for the root's.
+        let body = format!(
+            "{{\n\tclass : \"root\",\n\tdata :\n\t{{\n\
+             \t\t\"device_UUID({field})\" : \"{UUID}\",\n\
+             \t\t\"child_components(173)\" : \n\t\t[\n\t\t\t{{\n\
+             \t\t\t\tclass : \"float_core.device_contents(151)\",\n\t\t\t\tdata :\n\t\t\t\t{{\n\
+             \t\t\t\t\t\"device_UUID(385)\" : \"{nested}\"\n\t\t\t\t}}\n\t\t\t}}\n\t\t]\n\t}}\n}}\n"
+        );
+        let object = FileVersion::V1.header_len() + meta.len();
+        let mut raw = format!("BtWg00010001008d{object:08x}{:016x}", 0).into_bytes();
+        raw.extend(meta.bytes());
+        raw.extend(body.bytes());
+        Document::parse(kind, raw).unwrap()
+    }
+
+    /// The body keeps its own copy of the identity, numbered by the schema of
+    /// its root and written either as a UUID or as the text of one. Each has to
+    /// follow the metadata's, and a nested object's identity is not the
+    /// document's to change.
+    #[test]
+    fn a_new_uuid_leaves_no_copy_of_the_old_one() {
+        let new = Uuid::from_u128(0x0b5e_55ed);
+        let nested = Uuid::from_u128(0x001e_57ed);
+        for kind in Kind::ALL {
+            for written in [Written::Uuid, Written::Text] {
+                let rewritten = built(kind, written, &[]).with_uuid(new).unwrap();
+                assert!(!mentions(rewritten.bytes(), UUID), "{kind:?} written as {written:?}");
+            }
+            let rewritten = text(kind, nested).with_uuid(new).unwrap();
+            assert_eq!(rewritten.identity().uuid, new);
+            assert!(!mentions(rewritten.bytes(), UUID), "{kind:?} written as text");
+            assert!(mentions(rewritten.bytes(), nested), "{kind:?} lost a nested identity");
+        }
     }
 
     #[test]

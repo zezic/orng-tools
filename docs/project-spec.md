@@ -142,6 +142,17 @@ Writing them requires no bytecode work and does not disturb the tamper seal. A m
 yields an empty keyword array, which is why unregistered content is silently unfindable
 rather than broken.
 
+**Two names key these, and they are not the same one.** Checked in 6.1's bytecode: the
+registered name - the registry call's second argument - is read in exactly one place, the
+browser's keyword search, which builds `<kind>.<name>.keywords` from it. The description
+key is built from the name *inside the document*, its metadata's `device_name`, and so is
+everything else a user sees of a name: the device's header, the preset browser's device
+column. The browser lists a device or a modulator by its **file's** name, and a Grid module
+by the document's. So a registration keeps all three the same - the entry's name, the
+document's, and the file's - and a rename changes the document as well as the entry.
+Loading a document sets its contents' name from the metadata over the copy in the body
+(`document.core.master.device.MAR` and `ccL`), which is why only the metadata is rewritten.
+
 Bitwig ships six localised copies of each bundle, each a complete translation. The loader
 builds a narrowing list of candidate files and merges them base-first, letting the
 locale-specific file overwrite key by key - so a key present only in the base file survives
@@ -160,7 +171,10 @@ writes three serializations and all three occur in the wild:
 
 All three are read. A new UUID is applied by splicing, not re-serializing: the identity is
 fixed width in every encoding, so the surrounding bytes are untouched and the operation is
-exactly reversible.
+exactly reversible. A new name is spliced too, though it is not fixed width: nothing inside
+a section addresses another by offset, so only the header's body and resources offsets have
+to follow the bytes that moved. A name past Latin-1 is written in UTF-16, as Bitwig writes
+one.
 
 **The section key is read out of the installation, never carried here.** The encrypted
 form is Bitwig's own material, and so is the key that opens it, so a copy of it in this
@@ -219,7 +233,7 @@ Layered bottom-up; each knows nothing of the layers above.
 | Crate | Responsibility |
 | --- | --- |
 | `bitwig-install` | Locating an installation, the user library, the settings directory, the bundled JVM. Detecting whether Bitwig is running. |
-| `bitwig-document` | Reading and re-identifying documents. All three serializations. No knowledge of installations. |
+| `bitwig-document` | Reading, re-identifying and renaming documents. All three serializations. No knowledge of installations. |
 | `bitwig-classfile` | Class-file and archive surgery. Constant pool scanning and rewriting, bytecode editing, archive rewriting. No knowledge of Bitwig. |
 | `bitwig-registry` | Locating Bitwig's internals structurally; reading the Core Registry; the tamper guard. |
 | `orng-catalog` | The catalog repository format: manifests, the index, the ownership and identity rules. No knowledge of installations. |
@@ -400,8 +414,8 @@ back: it is nil before, sRGB after, and nil again after a rebuild.
 
 **6.14 A document is never written over unless its identity says it is the same
 content.** Under the linking strategy a document is placed in the folder Bitwig's
-own "Save device..." writes into, and a registered library path is derived from a
-file name, so what is already at the target is as likely to be the user's own
+own "Save device..." writes into, and a registered library path is derived from the
+document's name, so what is already at the target is as likely to be the user's own
 work as an older copy of what is being registered. A matching UUID is what
 licenses a replacement; a different one, or a file that cannot be read as a
 document at all, is refused by name. The same check answers before the write, so
@@ -528,8 +542,10 @@ to. For something that installs into a DAW, that is the wrong trust model.
    published so existing projects still recall, linked by `supersedes`.
 4. **Display names are unique in practice.** Bitwig's browser is flat and matches on name
    and keywords. The repository may hold collisions, but the app refuses to register two
-   entries under one display name and offers a rename - free, since the name is a field in
-   the entry list and not part of the identity.
+   entries under one display name and offers a rename. The name is not part of the
+   identity, so a rename orphans no project - but it is written into the document, because
+   that is the name Bitwig shows (4.4). A catalog item cannot be renamed: its next update
+   would bring the catalog's name back.
 
 ### 7.4 Governance
 
@@ -727,12 +743,27 @@ The delete runs after the entry list is written, which is the mirror of the reas
 documents are placed first - deleting before would leave, for as long as the write takes
 and for ever if it fails, an entry registered with nothing behind it.
 
-`Assign new UUID` mints an identity for a staged document and reads the whole pending set
-again, because a conflict is a statement about the set and settling one row settles the
-row it collided with. `Locate file` points a registered entry back at a document and
-keeps the *recorded* registration: the entry still exists and its words may have been
-edited since, so deriving them again from the file found would quietly undo that. It is
-not a re-drop. A file carrying another identity is refused by name.
+**A document is placed as `<name>.<extension>`**, whatever file it arrived as, so the name
+the browser lists it by is its own (4.4). A name no platform could hold as a file is a
+conflict rather than a rejection. An identity already registered keeps its file, so a
+renamed document or an older registration does not grow a second copy.
+
+**A conflict says which of two remedies settles it.** `Assign new UUID` mints an identity
+for a staged document, and is offered on a conflict of identities: two dropped documents
+claiming one UUID, or an identity registered as another kind. The pencil opens a rename,
+and is offered in its place on a conflict of names: a name another entry or another dropped
+document has, or a file that is taken. Either reads the whole pending set again, because a
+conflict is a statement about the set and settling one row settles the row it collided
+with. A staged rename writes the name into the document and nothing to disk until Apply.
+The inspector's `Rename...` renames a registered entry on the press: the document is
+rewritten where it is and the entry after it, and the file keeps its name - the user's
+choice, which leaves the browser listing a device or a modulator by the old one, and the
+question says so. `design-review.md` round 4, A4, has the rest.
+
+`Locate file` points a registered entry back at a document and keeps the *recorded*
+registration: the entry still exists and its words may have been edited since, so deriving
+them again from the file found would quietly undo that. It is not a re-drop. A file
+carrying another identity is refused by name.
 
 **The bar's note answers the filter once the filter has emptied the list.** The line under
 the summary normally says what the press would cost - which mode it runs in, and whether a

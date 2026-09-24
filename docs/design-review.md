@@ -739,7 +739,7 @@ The rest:
   the inspector's `Save`, `Rename` for a registered entry, and `Restore this backup`,
   which drops its clock for it. *Drawn on `Install`, `Retry` and the Restore press,
   `73ccdb5`; on the row's `Update` and the modal's, `2055b89`*; `Save` came with A3's
-  footer and `Rename` comes with A4. **Open:** the
+  footer and `Rename` with A4, `8b4650f`. **Open:** the
   catalog detail panel's `Install` elevates the same way and is not in the list,
   and `CatalogDetail.dc.html` takes no `elevate` - so it wears none yet.
 - **Glyph-only controls do not wear it.** `Locate` keeps its glyph and its tooltip
@@ -781,9 +781,58 @@ collisions and the design names two kinds. By what settles them, four are name-s
 the two file collisions, since the file name is made from the display name - and one
 is UUID-shaped, two dropped documents with one identity. The design's reason words
 (`Name already used by a registered device`) are also not ours (`DISPERSER is already
-registered under another identity`). Both are for when it is built.
+registered under another identity`). Both are settled below.
 
 The README's two sentences are corrected: the app never renames by itself.
+
+*Drawn, `85fc840` to `8b4650f`*, measured through the tree against the probed component:
+every block within a pixel of the bundle's box, the foot's presses at their heights and
+eight apart, ending at the design's 390. The first picture of it is
+`rename-question.png`.
+
+**What a rename has to change was settled in the jar first**, because the letter's
+reason for rewriting the document - that the description bundle is keyed by the name -
+turned out to be half of it. In 6.1 the registered name is read in one place only, the
+keyword search. The description key, the device's header and the preset browser's device
+column all take the document's own `device_name`, and the browser lists a device or a
+modulator by its file's name. So a rename rewrites the document, and `bitwig-document`
+learned to splice a name at any length. Only its metadata's copy is rewritten: loading
+sets the body's from it. Project-spec 4.4 has the classes.
+
+Decided on the way:
+
+- **Five collisions became six causes and two kinds.** Names: another entry's name,
+  another dropped document's name, a file another dropped document would take, and a
+  file that is occupied or cannot be read. The file is named after the document, so a
+  new name is a new file. Identities: two dropped documents with one UUID, and an
+  identity registered as another kind. A name no platform could hold as a file is now a
+  name conflict and no longer a rejection, since the pencil settles it. Round 4 A4 above
+  said the file name is made from the display name. It was not when that was written: it
+  was the dropped file's own. It is now, for drops and catalog installs both, because of
+  what the browser lists (`0f0b507`).
+- **The design's reason words are taken** for a name another entry holds, `Name already
+  used by a registered device`, with the holder's kind. The rest are ours, capitalised
+  to match: `Another dropped document is also called X`, `... has the same identity`,
+  `... would be placed in the same file`, `<path> already holds a different document`,
+  `This identity is registered as a device`, `X cannot be a file name`. In the dialog,
+  the design's `A registered device is already called X.` and ours in the same sentence.
+- **A registered entry keeps its file**, the user's choice over the recommendation to
+  move it to the new name. The recommendation was offered because the browser lists a
+  device or a modulator by the file's name, so a kept file keeps the old name there. The
+  registered note says so, in a sentence after the design's: `The file keeps its name,
+  so the browser goes on listing it as X.` A Grid module is listed by its document and
+  gets no such sentence.
+- **Not on `Missing file`.** The design offers `Rename...` in the inspector on every
+  state but `Rejected` and `Pending removal`. A missing file has no document to write
+  the name into.
+- **A staged document is renamed only from the pencil** until A2's overflow is built:
+  the inspector opens on registered entries only.
+- **The disabled press says why**: the design's `Choose a name no other entry uses`
+  while the name is taken. Ours are `Type the name it should have` for an empty field,
+  and `In progress` on a registered rename while other work runs, since it starts a run.
+- **The words after a failed registered rename are ours**: `The entry was not renamed.`,
+  over the document being written first and the list last, so renaming again finishes
+  the job. A rename that succeeds is not announced, as an edit is not.
 
 ### A5. Settings with no installation - yes, with two differences
 

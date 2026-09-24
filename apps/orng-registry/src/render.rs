@@ -1708,6 +1708,8 @@ fn the_prepare_press_confirms_with_the_plan_before_it_runs() {
         "The archive and the description bundles are backed up first to \
          ~/.orng/backups/6.1-94a90411/.",
         "1 entry registered: WAVESHAPER ALPHA.",
+        "3 entries already registered keep their UUIDs; their description bundles are \
+         written again.",
         "1 entry removed: SHAPER. The document file is kept.",
         "Placed in the user library: 1 to devices/My Devices.",
         "3 library links created inside the installation's Library folder, once the \
@@ -1730,7 +1732,7 @@ fn the_prepare_press_confirms_with_the_plan_before_it_runs() {
     let lead = in_the_dialog(&harness, "This is the one operation").rect();
     let first = in_the_dialog(&harness, "The archive and the description bundles").rect();
     let registered = in_the_dialog(&harness, "1 entry registered").rect();
-    let removed = in_the_dialog(&harness, "1 entry removed").rect();
+    let kept = in_the_dialog(&harness, "3 entries already registered").rect();
     let last = in_the_dialog(&harness, "3 library links").rect();
     let note = in_the_dialog(&harness, "A Bitwig update resets").rect();
     let cancel = in_the_dialog(&harness, "Cancel").rect();
@@ -1751,7 +1753,7 @@ fn the_prepare_press_confirms_with_the_plan_before_it_runs() {
     assert_eq!(first.top() - lead.bottom(), 11.0 + 5.0, "the plan is not 11 under the lead");
     assert_eq!(number.top(), first.top() + 1.0, "the number is not a pixel under its words");
     assert_eq!(first.left() - number.right(), 10.0, "the number is not 10 before its words");
-    assert_eq!(removed.top() - registered.bottom(), 5.0 + 5.0, "the lines are not padded 5");
+    assert_eq!(kept.top() - registered.bottom(), 5.0 + 5.0, "the lines are not padded 5");
     assert_eq!(note.top() - last.bottom(), 5.0 + 11.0, "the note is not 11 under the plan");
     assert_eq!(press.top() - 12.0, note.bottom() + 14.0, "the foot is not 14 under the note");
     assert_eq!(press.right(), edge - 14.0, "the press is not at the right edge");

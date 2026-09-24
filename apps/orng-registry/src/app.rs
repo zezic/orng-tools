@@ -4009,12 +4009,11 @@ impl App {
     /// The plan, line by line, as the design numbers it -
     /// `ORNG Registry.dc.html:386`.
     ///
-    /// Six lines at most, and never a count of zero: a line about nothing is
+    /// Seven lines at most, and never a count of zero: a line about nothing is
     /// left out, as the action bar leaves out a part that is nothing. The order
     /// is the design's - the backup, the archive, what is registered, what is
-    /// removed, where the documents go, and the links - which is the order the
-    /// press runs in, less the description bundles, which every press rewrites
-    /// whatever else it does and the design draws no line for.
+    /// kept and written again, what is removed, where the documents go, and the
+    /// links - which is the order the press runs in.
     ///
     /// Three things are said here that the bundle's one scenario does not say,
     /// each because the data says it: a backup that already exists is kept
@@ -4062,6 +4061,36 @@ impl App {
             many => {
                 lines.push(plain(format!("{many} entries registered: {}.", registered.join(", "))))
             }
+        }
+
+        // The entries on record this press neither registers again nor
+        // removes. Preparing writes the description bundles for every entry,
+        // so theirs are written again too - which is most of what a
+        // re-preparation after a Bitwig update is for.
+        let kept = found
+            .entries()
+            .entries()
+            .iter()
+            .filter(|entry| {
+                !self
+                    .pending
+                    .ready()
+                    .filter_map(Staged::registration)
+                    .any(|row| row.uuid == entry.uuid)
+                    && !self.pending.removals(found.entries()).any(|uuid| uuid == entry.uuid)
+            })
+            .count();
+        match kept {
+            0 => {}
+            1 => lines.push(plain(
+                "1 entry already registered keeps its UUID; its description bundles are \
+                 written again."
+                    .to_owned(),
+            )),
+            many => lines.push(plain(format!(
+                "{many} entries already registered keep their UUIDs; their description \
+                 bundles are written again."
+            ))),
         }
 
         let removed: Vec<&str> = self

@@ -26,7 +26,7 @@ use std::thread;
 use eframe::egui;
 use orng_tools::{Destination, Manifest, Plan, Rights, Step, Uuid};
 
-use crate::elevate::{self, Job, Report, Task};
+use crate::elevate::{self, Job, Report, Stopped, Task};
 
 /// What one press of the primary action has to do.
 ///
@@ -135,7 +135,7 @@ enum Progress {
     /// Nothing more is coming. On success this carries the entry list as it now
     /// stands on disk, so the window can show what was written rather than read
     /// it back or work it out again.
-    Finished(Result<Manifest, String>),
+    Finished(Result<Manifest, Stopped>),
 }
 
 /// What has happened to one step.
@@ -171,7 +171,7 @@ pub struct Applying {
     /// What this run was for. Read once it has ended, to decide what is said.
     pub errand: Errand,
     /// `None` while it is still going, and then the entry list that was written.
-    pub outcome: Option<Result<Manifest, String>>,
+    pub outcome: Option<Result<Manifest, Stopped>>,
     /// The rows this run writes.
     ///
     /// Taken off the [`Update`] rather than asked of the caller: the update is
@@ -206,7 +206,7 @@ impl Applying {
                 ctx.request_repaint();
             };
             let result = match rights {
-                Rights::Held => run(job, &to, &say),
+                Rights::Held => run(job, &to, &say).map_err(Stopped::Failed),
                 // The installation is not this process's to write, so the press
                 // is carried rather than made. What comes back is the same
                 // conversation a worker here would have had, which is why the
@@ -264,7 +264,7 @@ impl Applying {
                 // without reporting, and silence must not read as success.
                 Err(TryRecvError::Disconnected) => {
                     if self.outcome.is_none() {
-                        self.finish(Err("the work stopped without reporting".to_owned()));
+                        self.finish(Err("the work stopped without reporting".to_owned().into()));
                         moved = true;
                     }
                     break;
@@ -310,7 +310,7 @@ impl Applying {
         }
     }
 
-    fn finish(&mut self, result: Result<Manifest, String>) {
+    fn finish(&mut self, result: Result<Manifest, Stopped>) {
         let failed = result.is_err();
         for (_, state) in self.steps.iter_mut().flatten() {
             if *state == State::Running {
@@ -331,7 +331,7 @@ impl Applying {
     pub fn frozen(
         steps: Option<[(Step, State); 5]>,
         stage: Stage,
-        outcome: Option<Result<Manifest, String>>,
+        outcome: Option<Result<Manifest, Stopped>>,
     ) -> Applying {
         let (tx, updates) = channel();
         // The sender is kept alive on purpose. Dropping it disconnects the
@@ -433,7 +433,7 @@ mod tests {
         let mut p = idle();
         p.apply(Progress::Began(Step::Backup));
         p.apply(Progress::Began(Step::Patch));
-        p.apply(Progress::Finished(Err("the archive did not verify".to_owned())));
+        p.apply(Progress::Finished(Err("the archive did not verify".to_owned().into())));
 
         assert_eq!(state_of(&p, Step::Backup), State::Done);
         assert_eq!(state_of(&p, Step::Patch), State::Failed);

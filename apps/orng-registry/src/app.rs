@@ -1297,7 +1297,9 @@ impl App {
         // more blocking than a copy that is.
         let outcome = match &found.rights {
             Rights::Held => {
-                backups.restore(&found.to.install).map(|done| done.map_err(|e| e.to_string()))
+                backups.restore(&found.to.install).map(|done| {
+                    done.map_err(|e| elevate::Stopped::Failed(e.to_string()))
+                })
             }
             Rights::Withheld { .. } => backups.chosen_directory().map(|from| {
                 elevate::run(
@@ -1320,7 +1322,10 @@ impl App {
             // a window that swallowed a press.
             None => return,
             Some(Ok(())) => self.outcome = Some(Outcome::Restored),
-            Some(Err(why)) => self.outcome = Some(Outcome::NotRestored { why }),
+            Some(Err(elevate::Stopped::Declined)) => self.outcome = Some(Outcome::Declined),
+            Some(Err(elevate::Stopped::Failed(why))) => {
+                self.outcome = Some(Outcome::NotRestored { why });
+            }
         }
         self.reread();
         ctx.request_repaint();
@@ -2004,9 +2009,10 @@ impl App {
             }
             // A failure is announced either way: an edit that did not reach
             // the disk is the one thing about it the panel cannot show.
-            Err(why) => {
+            Err(elevate::Stopped::Failed(why)) => {
                 self.outcome = Some(Outcome::Failed { what: errand, why });
             }
+            Err(elevate::Stopped::Declined) => self.outcome = Some(Outcome::Declined),
         }
         // After the session, because both answer against the list that is now
         // in hand. A failed run is asked too: what stopped half way through it
@@ -2313,6 +2319,13 @@ enum Outcome {
     NotRestored {
         why: String,
     },
+    /// Windows' consent dialog was dismissed, so nothing was started.
+    ///
+    /// Its own variant rather than a [`Outcome::Failed`], for whatever press it
+    /// was: every failure says what it left behind, and here there is nothing
+    /// to say - the user was asked and said no, and has already been told what
+    /// they did.
+    Declined,
 }
 
 impl Outcome {
@@ -2330,7 +2343,8 @@ impl Outcome {
             | Outcome::Registered { .. }
             | Outcome::Located
             | Outcome::Installed { .. }
-            | Outcome::Restored => None,
+            | Outcome::Restored
+            | Outcome::Declined => None,
         }
     }
 
@@ -2450,6 +2464,16 @@ impl Outcome {
                 "This installation is back the way Bitwig shipped it.".to_owned(),
                 "Nothing it was carrying is registered any more. Your documents and this \
                  application's own record are untouched, so applying again puts them back."
+                    .to_owned(),
+                None,
+            ),
+            // Neutral, and with nothing behind a control: what is said is
+            // what the user did, and there is nothing to report.
+            Outcome::Declined => (
+                Tone::Neutral,
+                "Administrator rights were declined, so nothing was changed.".to_owned(),
+                "Windows asks for them because this installation is not writable by this \
+                 account. Nothing was started, so there is nothing to undo."
                     .to_owned(),
                 None,
             ),
@@ -4949,6 +4973,15 @@ mod tests {
                 reviewed_in: None,
             },
         }
+    }
+
+    /// The designer's answer: neutral, and put away like any outcome - not an
+    /// error banner. The words are the render test's.
+    #[test]
+    fn a_declined_dialog_is_said_in_the_neutral_tone() {
+        let (tone, _, _, action) = Outcome::Declined.banner();
+        assert_eq!(tone, Tone::Neutral);
+        assert_eq!(action, None);
     }
 
     /// Leaving a field untouched is still leaving it, and every field in the

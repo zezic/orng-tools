@@ -483,7 +483,7 @@ fn a_preparation_that_failed() {
                 (Step::Link, State::Waiting),
             ]),
             Stage::Preparing,
-            Some(Err("the patched archive did not load under the bundled JVM".to_owned())),
+            Some(Err("the patched archive did not load under the bundled JVM".to_owned().into())),
         ),
     );
 }
@@ -2334,6 +2334,24 @@ fn a_fetch_that_answers_during_a_run_waits_for_it() {
     settle(&mut harness);
     let entries = harness.state().registered().expect("an installation");
     assert!(entries.get(replacement).is_some(), "the fetch that waited was never written");
+}
+
+/// A consent dialog the user dismissed is reported as what they did, and not as
+/// the run failing.
+///
+/// Through a run's own answer rather than by declaring the outcome: what is
+/// being claimed is that `Declined` coming back from a run is kept apart from
+/// every other way a run stops, all the way to the banner.
+#[test]
+fn a_declined_consent_dialog_is_not_a_failure() {
+    let mut harness = listing("declined");
+    let declined = Some(Err(crate::elevate::Stopped::Declined));
+    harness.state_mut().set_applying(Applying::frozen(None, Stage::Registering, declined));
+    settle(&mut harness);
+
+    assert!(anywhere(&harness, "Administrator rights were declined, so nothing was changed."));
+    assert!(!anywhere(&harness, "Nothing was registered."), "it was said as a failed run");
+    assert_eq!(harness.query_all_by_label("Copy details").count(), 0, "a refusal offered details");
 }
 
 /// The two ways an install can fail, in one view.

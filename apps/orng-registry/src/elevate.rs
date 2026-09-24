@@ -656,6 +656,23 @@ pub const fn can_ask() -> bool {
     cfg!(windows)
 }
 
+/// Why a run did not end in a written entry list.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Stopped {
+    /// The consent dialog was dismissed. Nothing was started, so nothing
+    /// changed: the user was asked and said no, which is not a failure of
+    /// anything and is not said as one.
+    Declined,
+    /// Anything else, in words for a bug report rather than for the screen.
+    Failed(String),
+}
+
+impl From<String> for Stopped {
+    fn from(why: String) -> Stopped {
+        Stopped::Failed(why)
+    }
+}
+
 /// Carry the job to a process that holds the rights, and watch it.
 ///
 /// `say` is told each step as it is reported. `Report::Finished` never reaches
@@ -666,7 +683,7 @@ pub fn run(
     install: &Installation,
     home: &OrngHome,
     say: &impl Fn(Report),
-) -> Result<Manifest, String> {
+) -> Result<Manifest, Stopped> {
     #[cfg(windows)]
     {
         self::windows::run(task, install, home, say)
@@ -680,9 +697,11 @@ pub fn run(
         // installation's permissions - the machine's doing rather than a fault
         // in this code.
         let _ = (task, install, home, say);
-        Err("this installation is not writable by this account, and this platform has no \
-             way for an application to ask for more rights"
-            .to_owned())
+        Err(Stopped::Failed(
+            "this installation is not writable by this account, and this platform has no way \
+             for an application to ask for more rights"
+                .to_owned(),
+        ))
     }
 }
 
@@ -1006,7 +1025,7 @@ mod windows {
     };
     use windows_sys::Win32::UI::WindowsAndMessaging::SW_HIDE;
 
-    use super::{Report, Task, command_line, converse};
+    use super::{Report, Stopped, Task, command_line, converse};
 
     /// How much the pipe holds before a writer has to wait for a reader.
     ///
@@ -1021,7 +1040,7 @@ mod windows {
         install: &Installation,
         home: &OrngHome,
         say: &impl Fn(Report),
-    ) -> Result<Manifest, String> {
+    ) -> Result<Manifest, Stopped> {
         let exe = std::env::current_exe()
             .map_err(|e| format!("this application cannot find its own binary: {e}"))?;
         run_as(&exe, task, install, home, say)
@@ -1038,7 +1057,7 @@ mod windows {
         install: &Installation,
         home: &OrngHome,
         say: &impl Fn(Report),
-    ) -> Result<Manifest, String> {
+    ) -> Result<Manifest, Stopped> {
         // Before anything is started: a document too large to cross is refused
         // here rather than after the consent dialog.
         let outgoing = task.outgoing()?;
@@ -1064,7 +1083,7 @@ mod windows {
         };
         if ready == WAIT_OBJECT_0 + 1 {
             connecting.abandon(&pipe);
-            return Err(child.why_it_gave_up());
+            return Err(child.why_it_gave_up().into());
         }
         if ready != WAIT_OBJECT_0 {
             // Neither handle: the wait itself failed. The child may well still
@@ -1072,12 +1091,12 @@ mod windows {
             // must not be reported as a process that ended - its exit code
             // would read `STILL_ACTIVE` and be drawn as the reason it stopped.
             connecting.abandon(&pipe);
-            return Err(format!("could not wait for an elevated run: {}", last()));
+            return Err(format!("could not wait for an elevated run: {}", last()).into());
         }
         connecting.finish(&pipe)?;
         pipe.admits(child.id())?;
 
-        converse(&outgoing, pipe.stream()?, say)
+        Ok(converse(&outgoing, pipe.stream()?, say)?)
     }
 
     /// A name no other process is using, and that none could have prepared.
@@ -1380,7 +1399,7 @@ mod windows {
         pipe: &str,
         install: &Installation,
         home: &OrngHome,
-    ) -> Result<Child, String> {
+    ) -> Result<Child, Stopped> {
         let arguments = command_line(OsStr::new(pipe), install.root(), home.user_home());
 
         let verb = wide("runas");
@@ -1403,13 +1422,12 @@ mod windows {
             if code == ERROR_CANCELLED {
                 // Not a failure of anything. The user was asked and said no,
                 // and nothing has been written.
-                return Err("administrator rights were declined, so nothing was changed"
-                    .to_owned());
+                return Err(Stopped::Declined);
             }
-            return Err(format!("could not ask for administrator rights: {}", last()));
+            return Err(format!("could not ask for administrator rights: {}", last()).into());
         }
         if info.hProcess.is_null() {
-            return Err("Windows granted the rights but started nothing".to_owned());
+            return Err("Windows granted the rights but started nothing".to_owned().into());
         }
         Ok(Child(unsafe { OwnedHandle::from_raw_handle(info.hProcess) }))
     }
@@ -2135,13 +2153,15 @@ mod tests {
         let root = tempfile::tempdir().expect("somewhere to put an installation");
         let install = orng_tools::testing::install(root.path());
 
-        let why = run(&Task::Apply(a_job()), &install, &OrngHome::at(root.path()), &|_| {})
+        let stopped = run(&Task::Apply(a_job()), &install, &OrngHome::at(root.path()), &|_| {})
             .expect_err("a child that never called back was read as a success");
+        // A consent dialog that was dismissed is a different outcome, and
+        // should read as a failure of this test rather than be swallowed by it.
+        let Stopped::Failed(why) = stopped else {
+            panic!("a child that died before calling back was read as the dialog declined")
+        };
 
-        // The exact answer on a machine where `runas` is silent. A consent
-        // dialog that was dismissed instead says `declined`, which is a
-        // different outcome and should read as a failure of this test rather
-        // than be swallowed by it.
+        // The exact answer on a machine where `runas` is silent.
         assert!(
             why.contains("before it said anything"),
             "a child that died before calling back was blamed on something else: {why}"

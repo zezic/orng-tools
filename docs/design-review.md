@@ -9,7 +9,8 @@ they were asked. Round 2 adds the Catalog view, and raises eight items - three f
 one that contradicts a safety property of the transaction, three that depend on data no
 format currently carries, and one that was our bug rather than the design's and is now
 fixed. Round 3 collects what building the window against revision 7 turned up, and its
-last two items are open questions for the designer rather than findings.
+last two items are open questions for the designer rather than findings. Round 4 is the
+designer's answer to all of them, revision 8, and what it leaves to build.
 
 ---
 
@@ -205,7 +206,9 @@ comparing the numbers, not from reading the bundle. Two are for the designer; th
 rest are recorded because the next person to measure will find them too and should
 know they were looked at.
 
-### 1. The install bar is 42 tall, except on `noinstall`, where it is 50
+### ~~1. The install bar is 42 tall, except on `noinstall`, where it is 50~~
+
+*Settled in round 4, C: 42 everywhere, and the shell now says so.*
 
 `InstallBar.dc.html` is `padding:9px 12px` around a 24-tall row, which is the 42 the
 whole app is drawn to. The shell does not import it for the "no installation" state:
@@ -244,7 +247,8 @@ next reader will see `\u{b7}` and wonder.
   The entry row's own actions were the other half of this item and are also
   drawn, `EntryRow.dc.html:44-60`, all five of them. What is still missing from
   that group is below.
-- **The update modal, and so `Update` on a catalog row.** The README is explicit
+- **The update modal, and so `Update` on a catalog row.** *Drawn in revision 8 and
+  not built - round 4, A1, which also corrects this item.* The README is explicit
   that updating confirms where installing does not, and says what the modal has
   to carry: the item and the target version in its title, `installed 2.0.3 ->
   catalog 2.1.0` in mono beneath the lead, and the one sentence that matters -
@@ -295,7 +299,8 @@ next reader will see `\u{b7}` and wonder.
   probe says why - this bar has one box fewer, so the field still comes to 82
   there, clear of the 80 a search field stops being worth having at.
 
-- **`Browse all` in the catalog's no-match empty state** - `EmptyState.dc.html:97`
+- ~~**`Browse all` in the catalog's no-match empty state**~~ - *Dropped in revision 8,
+  round 4, B4.* `EmptyState.dc.html:97`
   draws it as the alt beside `Clear filters`, and it is not drawn here. **The
   shell's own two handlers do the same thing**: `Clear filters` at
   `ORNG Registry.dc.html:770` sets `kinds: null, catalogFilter: null` and
@@ -332,17 +337,18 @@ next reader will see `\u{b7}` and wonder.
   was protecting against a window that hangs on a train, and this one does not
   hang. `ui-spec-catalog.md:201` also asks for a quiet automatic refresh on view
   entry; that is deliberately not a second trigger, because a launch already
-  covers it and two would fetch twice for one look.
+  covers it and two would fetch twice for one look. *Agreed in round 4; the spec
+  now says launch and `Refresh` only.*
 
   Two things in it are ours and are recorded in item 6 below: when an index
   stops being called current, and how a duration is written.
-- **The entry row's overflow** - `EntryRow.dc.html:60`, the
-  `ph-dots-three-vertical` control the design draws on every row in every state.
-  Nothing in the bundle says what its menu holds: not the row section of the
-  README, not the interactions section, not the full-window mockup. So there is
-  a control to draw and no menu to put behind it, and a control that opens
-  nothing is worse than a control that is not there. **For the designer:** what
-  is in it? The five conditional actions are all already on the row, and the
+- **The entry row's overflow** - *Filled in revision 8 and not built - round 4, A2.*
+  `EntryRow.dc.html:60`, the `ph-dots-three-vertical` control the design draws on
+  every row in every state. Nothing in the bundle says what its menu holds: not the
+  row section of the README, not the interactions section, not the full-window
+  mockup. So there is a control to draw and no menu to put behind it, and a
+  control that opens nothing is worse than a control that is not there. **For the
+  designer:** what is in it? The five conditional actions are all already on the row, and the
   narrow grid drops the identity column rather than any control, so it is not
   obviously the overflow for a squeezed row either.
 - **`Show factory entries`, and the whole factory section under it.** The user
@@ -406,7 +412,9 @@ next reader will see `\u{b7}` and wonder.
   is, the work is a build step that collects the dependency licences, not a
   layout.
 
-### 4. 13.5px is tracked two ways, and only one of them can be drawn
+### ~~4. 13.5px is tracked two ways, and only one of them can be drawn~~
+
+*Settled in round 4, C: `-0.015em` everywhere, which is what the window draws.*
 
 For the designer. The bundle sets 13.5px/600 at five places, split two ways. At
 `-0.015em`: `InstallBar.dc.html:29`, the bar's own title, and `ORNG Registry.dc.html:90`,
@@ -425,7 +433,9 @@ tolerance this is judged by. Raised rather than worked around, because keying tr
 the call site would give every other run in the window a way to lose it - and if the two
 are meant to differ, the cleanest fix is for one of them to be a different size.
 
-### 5. Settings has no mockup for a machine with no installation
+### ~~5. Settings has no mockup for a machine with no installation~~
+
+*Drawn in revision 8 - round 4, A5, with two differences from what this draws.*
 
 Also for the designer, and lower priority. The overflow is on the install bar in every
 state, including "no Bitwig Studio found" and "this build could not be read", so Settings
@@ -438,6 +448,8 @@ what the design would want. It is also the state somebody is most likely to be *
 they open this screen, so it is worth drawing on purpose.
 
 ### 6. What the catalog's bar says that the bundle does not
+
+*Answered in round 4, B1: yes to all of it, and `Fetching...` goes on the row too.*
 
 For the designer, and small. The bundle words this bar for ten catalog scenarios
 and the app takes all ten as written. Two states it reaches are not among them,
@@ -490,6 +502,8 @@ days ago` rather than `1 year ago`.
 
 ### 7. The Local bar's hidden-entries note: the sentence is drawn, the number is ours
 
+*Answered in round 4, B2: it counts pending changes, and is a different sentence.*
+
 For the designer, and smaller still. `ORNG Registry.dc.html:490` is the one Local
 scenario whose note is not what a press would cost: under a search that matches
 nothing the bar keeps its pending-work summary and the note reads `5 entries
@@ -520,6 +534,8 @@ stated - but if the cost should outrank the count there, it is one arm in
 `App::summary`.
 
 ### 8. The plan confirmation: the lines are the bundle's, and four things in them are ours
+
+*Answered in round 4, B3: yes to the four, one line more, and no outline.*
 
 For the designer, and the largest of the three that are about words.
 `ORNG Registry.dc.html:223-252` draws the plan over one scenario - two documents
@@ -561,6 +577,8 @@ the action bar's control.
 
 
 ### 9. Administrator rights: nothing in the bundle draws them, and Windows needs them
+
+*Answered in round 4, A3, which also finds the paragraph on declining wrong.*
 
 For the designer, and Windows only. An installation under `Program Files` is not
 writable by an ordinary account, and **both** modes reach inside it: preparing
@@ -629,3 +647,162 @@ are not one model across the three platforms and cannot be read as one, and
 `Permissions::readonly` reports the DOS read-only attribute rather than an ACL.
 It is asked once when the installation is read, beside whether Bitwig is running,
 because both are conditions on a press rather than facts about the list.
+
+---
+
+## Round 4: revision 8, the answers to the round-five letter
+
+The letter is `design_handoff_orng_registry/design-round-4-changes.md` and the reply
+is `design-round-5-answers.md` beside it; the bundle came back as revision 8. This was
+read against the diff of the `.dc.html` files and not against the reply alone, and
+where the two differ it is said. Each item below is one of three things: a **change**
+to make, a **yes** to what the window already draws, or **open**.
+
+### A1. The update modal - change
+
+`UpdateModal.dc.html`. The title and lead as the README had them, the lead now naming
+the kind (`this modulator`), and one new thing: with Bitwig open, an info-toned strip,
+`Bitwig Studio is open, so it keeps playing 2.0.3 until you restart it.` - after which
+the row reads `Pending restart`, so the two agree. The shield leads `Update` on
+Windows without rights. The detail panel's `Update...` opens the same modal.
+
+**Round 3 item 3 was wrong about this.** It said neither a component nor the
+full-window mockup drew the modal. The mockup did: revision 7's shell carried it
+inline, state `catalogupdateconfirm`. Only the component was missing.
+
+Not built. `Offer` has no `Update` variant, and an update replaces a registered
+document by UUID, which no press does yet.
+
+### A2. The row's overflow menu - change
+
+Kept, and filled: `Rename...`, `Copy UUID`, `Show in catalog` - the actions that do
+not depend on the row's state. `Copy UUID` is the only way to the UUID once the narrow
+grid drops that column. `Rename...` is shown disabled on a catalog-sourced row
+(`A catalog item keeps the catalog's name`) and left out on `Pending removal`; `Show in
+catalog` is on catalog-sourced rows only. No `More` on a `Rejected` row. The menu is
+the install bar menu's surface, row and `--shadow-menu`, at `top:31px; right:10px`,
+184 wide at least, and the pointer leaving the row closes it (`EntryRow.dc.html:67-80`).
+
+### A3. Rights on Windows - yes to all five, and five changes
+
+Yes as written: no dialog of our own, the shield on the action bar's primary and the
+plan's press, the Save question's words, the refusal banner where the platform cannot
+ask, and a declined consent dialog reading neutral.
+
+**That last one is not what the window does, and round 3 item 9 says it is.** A
+declined dialog comes back from `elevate::run` as an `Err` like any other, becomes
+`Outcome::Failed`, and is drawn in the error tone under the errand's failure title
+with `Copy details` - `administrator rights were declined, so nothing was changed` is
+only what that control copies. The letter repeated the claim. The designer's answer,
+neutral and dismissible and not an error banner, is therefore a change.
+
+The rest:
+
+- **The shield leads, and replaces a leading glyph.** On a catalog row's `Install`,
+  `Update` and `Retry` (`gap:6px` inside the 24-tall control), the modal's `Update`,
+  the inspector's `Save`, `Rename` for a registered entry, and `Restore this backup`,
+  which drops its clock for it.
+- **Glyph-only controls do not wear it.** `Locate` keeps its glyph and its tooltip
+  becomes `Locate file · asks Windows for administrator rights`. The staging controls
+  write nothing until Apply, and Apply wears it.
+- **The Save question moves into the inspector's footer**, below the fields it saves,
+  rather than across the bottom of the window where the app draws it now: warn wash,
+  `11px 12px 12px`, 28-tall `Cancel` and `Save`. While it is open the panel's close
+  control is dimmed to .4 with `Save or cancel the changes first` on hover.
+- **Not in the reply, only in the shell**: state `windowslocal` gives the action
+  bar's note as `Update entries · asks for administrator rights` where the window
+  says `Bitwig may stay open`. Taken as a change.
+
+### A4. Renaming - change, and the largest
+
+`RenameDialog.dc.html`. Reached from the overflow, from the inspector's action list
+(`Rename...` above `Reveal file`, not on a catalog-sourced, `Rejected` or `Pending
+removal` entry), and from a name conflict's row. The inspector's name field stays
+read-only. A catalog-sourced entry cannot be renamed: an update replaces its document
+by UUID and would bring the catalog's name back.
+
+A conflict now says which kind it is (`EntryRow` `conflict: "name" | "uuid"`). A name
+conflict offers the pencil, accent, in place of the fingerprint; a UUID conflict
+keeps `Assign new UUID`. The dialog: a field; while the name is taken, an error
+outline and `A registered device is already called DISPERSER.` in `--err-text`, and
+`Rename` disabled with `Choose a name no other entry uses` on hover; the rule and
+why; and when it is written - for a staged document when Apply runs, for a registered
+entry on the press, so it wears the shield.
+
+**Open, and ours rather than the designer's:** `staging::objection` raises five
+collisions and the design names two kinds. By what settles them, four are name-shaped
+- a name a registered entry holds, another dropped document with the same name, and
+the two file collisions, since the file name is made from the display name - and one
+is UUID-shaped, two dropped documents with one identity. The design's reason words
+(`Name already used by a registered device`) are also not ours (`DISPERSER is already
+registered under another identity`). Both are for when it is built.
+
+The README's two sentences are corrected: the app never renames by itself.
+
+### A5. Settings with no installation - yes, with two differences
+
+Drawn as state `settingsnoinstall`. Rows keep their height; `Browse` stays. Two things
+differ from what the window draws. The placeholder is an em dash in `--ink-3` where
+the window writes `-`, which it has done for every such value since revision 7
+without recording why. And the report keeps all its lines, with the dash on each one
+that needs an installation, its first reading
+`install    not found · searched /Applications, ~/Applications` - where the
+window's has two lines, `install none selected` and `searched`.
+
+### A6. The inspector while it cannot write - change
+
+A footer where the Save question sits: info wash, a 6px dot in `--ink-2`,
+`Saved when <the work> finishes` over `Your changes wait here until the other work is
+over, so the panel stays open until then.` The close control dimmed as in A3, with
+`Your changes are saved when <the work> finishes` on hover. The work is named: `the
+preparation`, `the registration`, `the download`.
+
+### A7. A drop during a run - yes
+
+No drop target, and no words. The platform's no-drop cursor is the refusal.
+
+### B1. The catalog's action bar - yes, and one change
+
+Yes to all six. The change is that `Fetching...` also goes on the row, as an eighth
+published state: `--ink-2`, no action (`CatalogRow.dc.html:54`).
+
+### B2. The hidden-entries note - change
+
+It was meant to count pending work out of sight, because Apply acts on rows the user
+cannot see. `N changes hidden by the current filter`, N the pending changes the
+filter hides, shown whenever N is above zero and not only on an empty list. In the
+preparing mode the cost note keeps the line.
+
+### B3. The plan confirmation - yes, and one line
+
+Yes to the four. One line added after the registrations: `6 entries already
+registered keep their UUIDs; their description bundles are written again.` The press
+has no outline, so the window's 32 is right.
+
+### B4. `Browse all` - yes
+
+Dropped from `EmptyState.dc.html`.
+
+### C. Values - yes to three, one change
+
+- 13.5px is `-0.015em` everywhere - yes, round 3 item 4 settled.
+- The install bar is 42 on `noinstall` too - yes, round 3 item 1 settled.
+- `--shadow` is `.85` - yes.
+- **The light shadows are stated, and not by ratio.** `--shadow-menu` is `0 12px 28px
+  rgba(0,0,0,.16)` in light, `--shadow-panel` `-14px 0 32px rgba(0,0,0,.12)`. The
+  window derived `.18` and `.13` and kept the dark geometry; the geometry moves too.
+  `CatalogDetail.dc.html:21` still writes the dark panel shadow as a literal; the
+  token is taken as the intent.
+
+### Not drawn, on purpose - yes, with one change
+
+- **No `Cancel` in progress: yes, and the note changes.** Up to Activate it reads
+  `Nothing in the installation changes until the patched archive verifies.` and no
+  more; from Activate on, `Once the preparation completes, undoing it means
+  Restore.` The window draws one note for every step, and its second sentence is not
+  the bundle's.
+- Factory entries: yes.
+- `Licences`: yes for now. A public release has to ship the notices for Inter, Iosevka
+  and Phosphor, so it comes back before 1.0.
+- No refresh on entering the Catalog view: yes. `ui-spec-catalog.md` section 7 now
+  says launch and `Refresh` only.

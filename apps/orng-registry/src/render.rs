@@ -2967,6 +2967,34 @@ fn a_second_entrys_words_wait_behind_the_question_about_the_first() {
     assert!(asks_about(&harness, "DISPERSER"), "the second entry's words were never asked about");
 }
 
+/// While an install's fetch is out, the primary action does not start a run.
+///
+/// The fetch's second half is a run, and one started beside another had to
+/// wait for it and then state its outcome over the other's - a preparation's
+/// banner, with the instruction to start Bitwig in it, replaced unread.
+#[test]
+fn the_primary_action_waits_for_an_install_fetch() {
+    use egui::accesskit::Role;
+    use egui_kittest::kittest::NodeT as _;
+
+    let root = fixture("apply-while-fetching");
+    let to = destination(&root);
+    let entries = entries();
+    let staged = dropped(&root, &to, &entries);
+    let session = found_with(&root, Helper::Present, GuardState::Disarmed, entries);
+    let item = superseded().items.into_iter().next().expect("the sample index has an item");
+    let harness = window(session, |app, _| {
+        app.set_staged(staged);
+        app.set_installing(Install::fetching(item));
+    });
+
+    let press = harness
+        .get_all_by_role(Role::Button)
+        .find(|node| node.accesskit_node().label().is_some_and(|label| label.starts_with("Apply ")))
+        .expect("the action bar has no primary action");
+    assert!(press.accesskit_node().is_disabled(), "a run could be started beside a fetch");
+}
+
 /// A window whose installation this account may not write, with one entry's
 /// inspector open.
 ///

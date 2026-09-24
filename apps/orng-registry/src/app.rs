@@ -690,11 +690,15 @@ impl App {
 
     /// Whether either worker is still out there.
     ///
-    /// What a test waits on, because a worker here is detached on purpose -
+    /// **What every press that starts a run is refused on**, and not only the
+    /// run in flight: a fetch that is out is the first half of an install, and
+    /// its second half is a run. Started beside another, one of the two would
+    /// have to wait for the other and then report over its answer.
+    ///
+    /// And what a test waits on, because a worker here is detached on purpose -
     /// the window polls a channel when it draws and never blocks on a thread,
     /// so there is no handle to join and this is the only thing that answers
-    /// "has it landed yet". Tests only.
-    #[cfg(test)]
+    /// "has it landed yet".
     pub fn is_working(&self) -> bool {
         self.applying.is_some() || self.installing.is_some()
     }
@@ -1674,7 +1678,7 @@ impl App {
         // by a description. The buffer keeps what was typed and the next time
         // a field is left it is written, so nothing is lost and nothing is
         // claimed to have been saved that was not.
-        if self.applying.is_some() {
+        if self.is_working() {
             return;
         }
         let Some(open) = &self.inspecting else { return };
@@ -1729,12 +1733,12 @@ impl App {
     /// a statement about something that has. A question the user has been
     /// asked outranks a report they have already read.
     ///
-    /// **Not while a run is in flight.** `Save` starts one, and nothing starts
-    /// on top of another - the rule [`App::write_words`] states. A run with no
-    /// steps draws no scrim, so the question would otherwise stand pressable
-    /// over it. It waits, and is asked again when the run has reported.
+    /// **Not while a run or a fetch is in flight.** `Save` starts a run, and
+    /// nothing starts beside another - the rule [`App::is_working`] states. A
+    /// run with no steps draws no scrim, so the question would otherwise stand
+    /// pressable over it. It waits, and is asked again when the work is over.
     fn ask_to_save(&mut self, ui: &mut egui::Ui) -> bool {
-        if self.applying.is_some() {
+        if self.is_working() {
             return false;
         }
         let (Session::Found(found), Some(waiting)) = (&self.session, &self.asking) else {
@@ -1906,7 +1910,10 @@ impl App {
         // a run: the second half of an install is an ordinary write, and one
         // started on top of a run in flight took that run's place. The run went
         // on writing and was never heard from, and the install's job was built
-        // from the list as it stood before that run wrote it.
+        // from the list as it stood before that run wrote it. Nothing presses a
+        // run while a fetch is out - [`App::is_working`] - so this is the
+        // backstop behind that and not a queue: taken the frame a run reports,
+        // the install would state its outcome over the run's.
         //
         // Before anything is drawn, because the two halves of an install are
         // one press, and waiting a frame between them would draw a row that had
@@ -3404,9 +3411,10 @@ impl App {
     ///
     /// **Nothing starts on top of something already running**, for the reason
     /// `write_words` gives. An install that is queued behind a preparation would
-    /// be an install nobody asked for by the time it ran.
+    /// be an install nobody asked for by the time it ran - and while this fetch
+    /// is out, no other press starts a run either: see [`App::is_working`].
     fn install(&mut self, uuid: Uuid, ctx: &egui::Context) {
-        if self.applying.is_some() || self.installing.is_some() {
+        if self.is_working() {
             return;
         }
         let Some(index) = self.index() else { return };
@@ -3448,7 +3456,18 @@ impl App {
             }
         };
 
-        let Session::Found(found) = &self.session else { return };
+        // The installation was changed while the fetch was out, to one that
+        // could not be read. Said rather than dropped: the row goes back to
+        // offering the install, and nothing else would say why the press did
+        // nothing.
+        let Session::Found(found) = &self.session else {
+            let why = format!(
+                "{} was fetched, and there is no installation to register it in",
+                item.name
+            );
+            self.outcome = Some(Outcome::Failed { what: Errand::Install, why });
+            return;
+        };
         let registration = match published_registration(&item, &document) {
             Ok(registration) => registration,
             // A published item this machine cannot register under: a name with a
@@ -3488,7 +3507,7 @@ impl App {
     fn relocate(&mut self, uuid: Uuid, ctx: &egui::Context) {
         // Nothing starts on top of something already running, for the reason
         // `write_words` gives: the window has one piece of work at a time.
-        if self.applying.is_some() {
+        if self.is_working() {
             return;
         }
         let Session::Found(found) = &self.session else { return };
@@ -3914,6 +3933,12 @@ impl App {
             && self.pending.changes(found.entries()) == 0
         {
             widget::primary_button(ui, palette, &label, mark, false, "Nothing to register yet");
+            return;
+        }
+        // An install's fetch is out, and its second half is a run: the press
+        // waits for it, as every other press that starts one does.
+        if self.installing.is_some() {
+            widget::primary_button(ui, palette, &label, mark, false, "In progress");
             return;
         }
         // Only preparation is blocked by a running Bitwig or an unrecognised

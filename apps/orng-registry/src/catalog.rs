@@ -772,6 +772,15 @@ impl Install {
         std::mem::forget(tx);
         Install { result, item, outcome: Some(outcome) }
     }
+
+    /// One that is still out and never answers. Tests only.
+    #[cfg(test)]
+    pub fn fetching(item: IndexEntry) -> Install {
+        let (tx, result) = std::sync::mpsc::channel();
+        // Kept alive, for the reason `Install::finished` gives.
+        std::mem::forget(tx);
+        Install { result, item, outcome: None }
+    }
 }
 
 #[cfg(test)]

@@ -453,6 +453,15 @@ been written yet, and `Registering` in the warn follows when something is. If it
 belongs on the row instead, that is an eighth published state and a bigger
 change than this one.
 
+While that fetch is out, **the Local view's primary action is disabled**, with
+`In progress` on its hover - the reason the bar's press already gives during a
+run, so no new words. The fetch's second half is a run, and two runs started
+together had one report over the other. The label keeps saying what the press
+would do (`Apply 2 changes`), unlike a run's `Applying`, because nothing is
+being applied yet. And a fetch that lands after the installation was changed
+to one that cannot be read is a failed install whose detail reads `<item> was
+fetched, and there is no installation to register it in`.
+
 **The count under the `Installed` filter.** Two of the three positions are
 captioned - `Catalog · 9 items` under `All` (`ORNG Registry.dc.html:433`) and
 `Catalog · 1 update available` under `Updatable` (`:439`) - and the third is
@@ -564,8 +573,22 @@ below is ours.
 preparation hands the work to a second copy of this application that Windows
 starts with them, and the consent dialog the user answers is the system's own.
 The window draws exactly what it draws for any other run: the progress dialog,
-fed from the child. Nothing new is drawn, which is the decision - a dialog of our
-own in front of Windows' would be two dialogs for one question.
+fed from the child. No dialog of our own is drawn, which is the decision - one
+in front of Windows' would be two dialogs for one question.
+
+*But the press says it will ask.* A press that ends in the consent dialog wears
+a shield before its words - `ph-shield`, light, the same size and ink as the
+arrow after them. It is Windows' own convention for a control that elevates,
+and it needs no words. It is on the action bar's primary, both
+`Prepare installation` (which opens the plan, one step before the dialog) and
+`Apply N changes`, and on the plan's own `Prepare installation`. Before it, a
+preparation that would raise the consent dialog drew the same plan as one that
+would not. Only where the platform can ask and the installation is not this
+account's: everywhere else the press is refused or needs nothing, and wears no
+shield. **Not yet on** the other presses that elevate the same way - a catalog
+row's `Install`, a row's `Locate`, and the Restore screen's press - whose
+controls are the bundle's small ones, and where a shield has to be placed by
+the designer rather than by us.
 
 *Except an edit in the inspector, which waits for a press.* Every other edit is
 written the moment a field is left, and announced nowhere. Here that moment would

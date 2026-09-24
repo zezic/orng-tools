@@ -3700,22 +3700,17 @@ impl App {
                 format!("Prepare install {separator} a backup is written first"),
                 Tone::Warn,
             ),
-            Some(Work::Entries) => {
-                (format!("Update entries {separator} Bitwig may stay open"), Tone::Neutral)
-            }
+            // `:490`, the one Local scenario whose note is not what a press
+            // costs. Apply acts on rows the filter may be keeping off the
+            // screen, and that is worth the line whenever it happens. Not in
+            // the preparing mode: its plan lists every change, hidden or not,
+            // before anything is written, and the backup is the cost to know.
+            Some(Work::Entries) => match self.hidden_changes(found) {
+                0 => (format!("Update entries {separator} Bitwig may stay open"), Tone::Neutral),
+                1 => ("1 change hidden by the current filter".to_owned(), Tone::Neutral),
+                hidden => (format!("{hidden} changes hidden by the current filter"), Tone::Neutral),
+            },
             None => (String::new(), Tone::Neutral),
-        };
-        // `:490`, the one Local scenario whose note is not what a press costs.
-        // A filter that has left nothing on screen takes the line: the empty
-        // state under it offers the way out but states no number, and how much
-        // of the list is behind the filter is what says whether clearing it is
-        // worth doing. The cost is not lost with the note - the summary keeps
-        // the warn tone that only the preparing mode takes, and the button goes
-        // on saying `Prepare installation` in so many words.
-        let note = match self.emptied_by_filter(found) {
-            Some(1) => "1 entry hidden by the current filter".to_owned(),
-            Some(hidden) => format!("{hidden} entries hidden by the current filter"),
-            None => note,
         };
         if !parts.is_empty() {
             return (parts.join(", "), tone, note);
@@ -3859,53 +3854,19 @@ impl App {
         }
     }
 
-    /// How many entries the filter is keeping off the Local list, when what it
-    /// did was empty it.
-    ///
-    /// `None` while anything is still on screen, which is the whole of the rule:
-    /// the bar has one note line, and a list that still has rows in it does not
-    /// need to be told what is missing from it. It is the state the bundle draws
-    /// this for and the only one - `:490` is the single Local scenario whose
-    /// note is not the cost of a press.
-    ///
-    /// **A count and not a sentence**, where the catalog's answer to the same
-    /// state is a sentence: `catalog_summary` already states how big the catalog
-    /// is in the line above, so there is nothing left for a number to add, and a
-    /// browsed list's size is not something the user knew before they looked.
-    /// Their own list is, and the count is what reconciles it with an empty
-    /// screen.
-    ///
-    /// **The arithmetic is [`App::local`]'s**, and it has to be: a count taken
-    /// over a pool the list does not draw from states a number that clearing the
-    /// filter would not produce. So a staged document shadows the registered
-    /// entry it updates here as it does there, and a dropped file that is not a
-    /// document counts as shown - it carries no registration, so a filter over
-    /// names and identities has nothing to hide it by.
-    fn emptied_by_filter(&self, found: &Found) -> Option<usize> {
-        let staged: Vec<&Registration> =
-            self.pending.staged.iter().filter_map(Staged::registration).collect();
-        let drawn = found
-            .entries()
-            .entries()
-            .iter()
-            .filter(|entry| !staged.iter().any(|pending| pending.uuid == entry.uuid))
-            .map(|entry| self.filter.accepts(entry))
-            .chain(
-                self.pending
-                    .staged
-                    .iter()
-                    .map(|row| row.registration().is_none_or(|row| self.filter.accepts(row))),
-            );
-        let mut shown = 0usize;
-        let mut hidden = 0usize;
-        for accepted in drawn {
-            if accepted {
-                shown += 1;
-            } else {
-                hidden += 1;
-            }
-        }
-        (shown == 0 && hidden > 0).then_some(hidden)
+    /// How many of the changes the press would make the filter is keeping off
+    /// the Local list: the ready rows and the queued removals, the two things
+    /// [`Pending::changes`] counts. A row still to fix is not one - Apply
+    /// leaves it where it is.
+    fn hidden_changes(&self, found: &Found) -> usize {
+        let entries = found.entries();
+        let staged = self.pending.ready().map(|row| {
+            row.registration().expect("a ready row carries the registration it is ready with")
+        });
+        let removed = self.pending.removals(entries).map(|uuid| {
+            entries.get(uuid).expect("a removal is only counted while its row is listed")
+        });
+        staged.chain(removed).filter(|row| !self.filter.accepts(row)).count()
     }
 
     /// The one button, and what it would do.

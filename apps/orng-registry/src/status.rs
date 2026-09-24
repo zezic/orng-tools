@@ -220,7 +220,7 @@ impl Action {
     }
 }
 
-/// One of the seven words the design has for the state of a catalog item.
+/// One of the eight words the design has for the state of a catalog item.
 ///
 /// `CatalogRow.dc.html:68-79`, the same shape as [`Status`]'s ten: the word, the
 /// colour and the one control each state offers, written once for the row and
@@ -249,6 +249,10 @@ pub enum Published {
     /// The bytes arrived and are not the ones the catalog described. A trust
     /// event, and the one failure here that is never offered again.
     VerificationFailed,
+    /// Being downloaded, between the press and the registration. Offers
+    /// nothing: the row is where the user pressed, so it is where the answer
+    /// shows first. `CatalogRow.dc.html:54`, added in round four.
+    Fetching,
 }
 
 /// One thing a catalog row offers to do to its item.
@@ -302,6 +306,7 @@ impl Published {
             Published::Incompatible(version) => format!("Needs Bitwig {version}"),
             Published::DownloadFailed => "Download failed".to_owned(),
             Published::VerificationFailed => "Verification failed".to_owned(),
+            Published::Fetching => "Fetching...".to_owned(),
         }
     }
 
@@ -319,7 +324,8 @@ impl Published {
             // in the design and none here: [`Offer`] says why.
             Published::Installed
             | Published::Incompatible(_)
-            | Published::UpdateAvailable => None,
+            | Published::UpdateAvailable
+            | Published::Fetching => None,
         }
     }
 
@@ -586,8 +592,8 @@ mod tests {
         Published::Incompatible(BitwigVersion::parse(version).expect("a version"))
     }
 
-    /// The seven the design has, in the bundle's own order.
-    fn every_published() -> [Published; 7] {
+    /// The eight the design has, in the bundle's own order.
+    fn every_published() -> [Published; 8] {
         [
             Published::Available,
             Published::Installed,
@@ -596,13 +602,14 @@ mod tests {
             needs("6.2"),
             Published::DownloadFailed,
             Published::VerificationFailed,
+            Published::Fetching,
         ]
     }
 
     /// The catalog's own table, transcribed from the `STATUS` map at
     /// `CatalogRow.dc.html:68-76`: the word and the control, state by state.
     ///
-    /// Two of the seven do not draw the key they are stored under, and both
+    /// Two of the eight do not draw the key they are stored under, and both
     /// matter. `Superseded` reads `Replacement available` - quieter, and from
     /// the user's side rather than the publisher's - and `Incompatible` states
     /// the version instead of naming the state at all.
@@ -626,6 +633,7 @@ mod tests {
                 ("Needs Bitwig 6.2".to_owned(), None),
                 ("Download failed".to_owned(), Some("Retry")),
                 ("Verification failed".to_owned(), Some("Copy details")),
+                ("Fetching...".to_owned(), None),
             ]
         );
     }

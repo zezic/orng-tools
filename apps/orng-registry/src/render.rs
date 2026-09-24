@@ -2999,6 +2999,27 @@ fn the_primary_action_waits_for_an_install_fetch() {
     assert!(press.accesskit_node().is_disabled(), "a run could be started beside a fetch");
 }
 
+/// The row that was pressed says so while its download is out, and offers
+/// nothing to press - revision 8's eighth published state.
+#[test]
+fn the_row_being_fetched_says_so() {
+    let mut harness = catalog_listing("catalog-fetching", superseded_entries());
+    let replacement: orng_tools::Uuid = BREATH_FOLLOWER_II.parse().expect("a sample identity");
+    let item = superseded()
+        .items
+        .into_iter()
+        .find(|item| item.uuid == replacement)
+        .expect("the sample index carries it");
+    assert!(harness.query_by_label("Install").is_some(), "the sample offers nothing to install");
+
+    harness.state_mut().set_installing(Install::fetching(item));
+    harness.run();
+    assert!(harness.query_by_label("Fetching...").is_some(), "the row did not say it is fetching");
+    assert!(harness.query_by_label("Install").is_none(), "the row offered to install it again");
+    // And only that row.
+    assert!(harness.query_by_label("Replacement available").is_some());
+}
+
 /// Take the rights to write the installation away from a session read off this
 /// machine, where every directory is writable by the test.
 fn withhold(session: &mut Session) {

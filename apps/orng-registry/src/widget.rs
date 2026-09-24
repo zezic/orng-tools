@@ -1344,7 +1344,7 @@ pub fn published_colour(palette: Palette, status: &Published) -> Color32 {
         Published::DownloadFailed | Published::VerificationFailed => palette.err_text,
         // Brighter than `Available`, because both of these are about something
         // the user already has.
-        Published::Installed | Published::Superseded => palette.ink_2,
+        Published::Installed | Published::Superseded | Published::Fetching => palette.ink_2,
         Published::Available | Published::Incompatible(_) => palette.ink_3,
     }
 }
@@ -2168,7 +2168,7 @@ pub struct Detailed<'a> {
     pub homepage: Option<&'a str>,
     /// The item that takes this one's place, if one does.
     pub replaced_by: Option<&'a str>,
-    /// Which of the design's seven states this item is in, which is what decides
+    /// Which of the design's eight states this item is in, which is what decides
     /// the foot of the panel - see [`crate::status`].
     pub status: &'a Published,
     /// What removing it would do to its document, for the removal to name, in

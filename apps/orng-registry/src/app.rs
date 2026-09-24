@@ -3258,7 +3258,7 @@ impl App {
         Status::Registered
     }
 
-    /// Which of the design's seven states a published item is in, on this
+    /// Which of the design's eight states a published item is in, on this
     /// machine.
     ///
     /// Every one of them is a fact about this machine held against the index,
@@ -3274,6 +3274,10 @@ impl App {
     /// telling somebody they need a newer Bitwig for something already in their
     /// browser is telling them nothing they can act on.
     fn published_status(&self, found: &Found, item: &orng_catalog::IndexEntry) -> Published {
+        // First, because it is what the user just did to this row.
+        if self.installing.as_ref().is_some_and(|install| install.item.uuid == item.uuid) {
+            return Published::Fetching;
+        }
         if let Some(refused) = self.catalog.refusal(item.uuid) {
             return match refused {
                 catalog::Refused::Download(_) => Published::DownloadFailed,

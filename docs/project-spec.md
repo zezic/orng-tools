@@ -764,6 +764,15 @@ rewritten where it is and the entry after it, and the file keeps its name - the 
 choice, which leaves the browser listing a device or a modulator by the old one, and the
 question says so. `design-review.md` round 4, A4, has the rest.
 
+**Every row but a rejected one has an overflow menu**, holding what the row offers
+whatever its state: `Rename...`, `Copy UUID`, and on a catalog item `Show in catalog`.
+It is the only way to rename a staged document nothing collides with, and the only way
+to the identity once the inspector's narrow grid drops that column. A catalog item's
+`Rename...` is drawn refused, for the reason the inspector leaves it out. A missing
+file's is left out. `Show in catalog` is refused where the catalog in hand does not list
+the item. The menu closes when the pointer leaves both the row and the menu.
+`design-review.md` round 4, A2.
+
 `Locate file` points a registered entry back at a document and keeps the *recorded*
 registration: the entry still exists and its words may have been edited since, so deriving
 them again from the file found would quietly undo that. It is not a re-drop. A file
@@ -1057,9 +1066,6 @@ Not built yet:
 - `Browse all`, the alt the design draws beside `Clear filters` on the catalog's no-match
   state. The bundle's own two handlers reset the same two things, so a second control
   there would offer nothing the first does not - see `design-review.md` round 3 item 3.
-- The entry row's overflow control, which the bundle draws on every row in every state
-  and never says the contents of. A question for the designer rather than work - see
-  `design-review.md` round 3 item 3.
 - Cancelling a preparation. The design offers it up to the Activate step, on the grounds
   that nothing has changed until then, and nothing here can honour it: the dialog is drawn
   without the control rather than with a dead one, which is a shape the design itself draws

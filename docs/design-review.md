@@ -342,13 +342,13 @@ next reader will see `\u{b7}` and wonder.
 
   Two things in it are ours and are recorded in item 6 below: when an index
   stops being called current, and how a duration is written.
-- **The entry row's overflow** - *Filled in revision 8 and not built - round 4, A2.*
-  `EntryRow.dc.html:60`, the `ph-dots-three-vertical` control the design draws on
-  every row in every state. Nothing in the bundle says what its menu holds: not the
-  row section of the README, not the interactions section, not the full-window
-  mockup. So there is a control to draw and no menu to put behind it, and a
-  control that opens nothing is worse than a control that is not there. **For the
-  designer:** what is in it? The five conditional actions are all already on the row, and the
+- ~~**The entry row's overflow**~~ - *Filled in revision 8 and drawn, `4776678` -
+  round 4, A2.* `EntryRow.dc.html:60`, the `ph-dots-three-vertical` control the design
+  draws on every row in every state. Nothing in the bundle says what its menu holds:
+  not the row section of the README, not the interactions section, not the full-window
+  mockup. So there is a control to draw and no menu to put behind it, and a control
+  that opens nothing is worse than a control that is not there. **For the designer:**
+  what is in it? The five conditional actions are all already on the row, and the
   narrow grid drops the identity column rather than any control, so it is not
   obviously the overflow for a squeezed row either.
 - **`Show factory entries`, and the whole factory section under it.** The user
@@ -713,6 +713,23 @@ catalog` is on catalog-sourced rows only. No `More` on a `Rejected` row. The men
 the install bar menu's surface, row and `--shadow-menu`, at `top:31px; right:10px`,
 184 wide at least, and the pointer leaving the row closes it (`EntryRow.dc.html:67-80`).
 
+*Drawn, `4776678`*, and measured through the tree against the probed component: the
+menu 194 by 94, its top 31 below the row's and its right edge 10 in, lines 184 by 28
+and touching. Its glyphs are `--ink-2` where the install bar's menu has `--ink-3`,
+which is the bundle's own difference. The pointer can go from the row onto the menu,
+which hangs over the rows beneath it, and the menu stays. It closes when the pointer
+has left both, which is what `leave` on the row does in the bundle, where the menu is
+the row's child. Decided on the way, both the user's on 2026-09-24:
+
+- **Not on `Missing file`**, where the bundle's menu offers `Rename...`. This follows
+  the inspector's rule in A4 below: there is no document to write the name into until
+  the file is located. The line is left out, not refused.
+- **`Show in catalog` is refused, and says why, where the catalog in hand does not
+  list the item.** The words are ours: `The catalog has not been read yet` before any
+  index is read, and `The catalog no longer lists it` once the item is withdrawn. They
+  are drawn like the bundle's refused `Rename...`, dimmed and with the reason on
+  hover. Pressed, it opens the Catalog view with the item's detail panel open.
+
 ### A3. Rights on Windows - yes to all five, and five changes
 
 Yes as written: no dialog of our own, the shield on the action bar's primary and the
@@ -825,8 +842,9 @@ Decided on the way:
 - **Not on `Missing file`.** The design offers `Rename...` in the inspector on every
   state but `Rejected` and `Pending removal`. A missing file has no document to write
   the name into.
-- **A staged document is renamed only from the pencil** until A2's overflow is built:
-  the inspector opens on registered entries only.
+- **A staged document is renamed from the row's menu or the pencil**, since the
+  inspector opens on registered entries only. The menu came with A2, `4776678`.
+  Until then only a name conflict could be renamed.
 - **The disabled press says why**: the design's `Choose a name no other entry uses`
   while the name is taken. Ours are `Type the name it should have` for an empty field,
   and `In progress` on a registered rename while other work runs, since it starts a run.

@@ -1606,6 +1606,13 @@ impl App {
         // raise: elsewhere the write is made and refused, and a `Save` that
         // could only fail would be an offer that leads nowhere.
         if !found.rights.are_held() && elevate::can_ask() {
+            // One question at a time, and a second entry's words do not take
+            // the first one's place: that would drop words the user was asked
+            // about and never answered. They wait in the panel, as they wait
+            // behind a run, and are asked about when a field is next left.
+            if self.asking.as_ref().is_some_and(|asked| asked.uuid != open.uuid) {
+                return;
+            }
             self.asking = Some(Unsaved { uuid: open.uuid, words: open.words.clone() });
             return;
         }

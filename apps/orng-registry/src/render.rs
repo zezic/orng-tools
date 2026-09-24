@@ -2826,6 +2826,38 @@ fn a_waiting_edit_is_not_offered_while_a_run_is_going() {
     assert!(harness.query_by_label("Save").is_some(), "the question did not come back");
 }
 
+/// Words typed for a second entry do not take the place of the first entry's
+/// while the user is being asked about those.
+///
+/// Replacing them dropped the first entry's words without a word said, and the
+/// banner went on asking about the second as if the first had never been
+/// typed. The second waits in its panel and is asked about once the first is
+/// answered.
+#[test]
+fn a_second_entrys_words_wait_behind_the_question_about_the_first() {
+    const DISPERSER: &str = "80c0dc4c-d142-53a7-85ee-b91427819b66";
+    let asks_about = |harness: &Harness<'_, App>, name: &str| {
+        let title = format!("Save the changes to {name}?");
+        harness.query_all_by_label(&title).next().is_some()
+    };
+
+    let mut harness = without_rights("edit-behind-an-edit", VOLSHAPER);
+    add_a_keyword(&mut harness, "tremolo");
+    if !crate::elevate::can_ask() {
+        return;
+    }
+    harness.state_mut().set_inspecting(DISPERSER.parse().expect("a sample identity"));
+    harness.run();
+    add_a_keyword(&mut harness, "phase");
+    assert!(asks_about(&harness, "VOLSHAPER"), "the first entry's words were dropped");
+    assert!(!asks_about(&harness, "DISPERSER"), "the second entry's words took their place");
+
+    harness.get_by_label("Cancel").click();
+    harness.run();
+    add_a_keyword(&mut harness, "rotator");
+    assert!(asks_about(&harness, "DISPERSER"), "the second entry's words were never asked about");
+}
+
 /// A window whose installation this account may not write, with one entry's
 /// inspector open.
 ///

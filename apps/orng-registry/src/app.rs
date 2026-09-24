@@ -1687,7 +1687,7 @@ impl App {
         // wait for one. See [`App::asking`]. Only where there is a dialog to
         // raise: elsewhere the write is made and refused, and a `Save` that
         // could only fail would be an offer that leads nowhere.
-        if !found.rights.are_held() && elevate::can_ask() {
+        if asks_for_rights(found) {
             // One question at a time, and a second entry's words do not take
             // the first one's place: that would drop words the user was asked
             // about and never answered. They wait in the panel, as they wait
@@ -2183,6 +2183,16 @@ impl App {
             _ => None,
         }
     }
+}
+
+/// Whether a write to this installation is carried to a process Windows starts
+/// with administrator rights, so that the press making it raises the consent
+/// dialog.
+///
+/// Where the platform cannot ask, a write this account may not make is refused
+/// instead, and nothing is carried anywhere.
+fn asks_for_rights(found: &Found) -> bool {
+    !found.rights.are_held() && elevate::can_ask()
 }
 
 /// Words typed into the inspector for one entry, waiting on [`App::asking`].
@@ -3944,7 +3954,17 @@ impl App {
             widget::primary_button(ui, palette, &label, mark, false, blocked.title);
             return;
         }
-        if widget::primary_button(ui, palette, &label, mark, true, "").clicked() {
+        // The shield where the press will end in Windows' consent dialog: the
+        // write is carried to a process that holds the rights, and the user is
+        // owed knowing that before pressing. A preparation's press opens the
+        // plan first and wears it all the same, as Windows' own controls do
+        // when the dialog is a step away.
+        let pressed = if asks_for_rights(found) {
+            widget::elevating_button(ui, palette, &label, mark)
+        } else {
+            widget::primary_button(ui, palette, &label, mark, true, "")
+        };
+        if pressed.clicked() {
             match work {
                 // The one press that confirms. Everything the plan says is
                 // worked out as it is drawn; what the disk has to be asked is
@@ -3974,6 +3994,7 @@ impl App {
                 cancel: "Cancel",
                 primary: PREPARE,
                 icon: icon::PREPARE,
+                elevates: asks_for_rights(found),
             },
         );
         match answer {

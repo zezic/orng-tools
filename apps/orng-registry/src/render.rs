@@ -3120,9 +3120,11 @@ fn a_press_that_needs_rights_is_refused_only_where_nothing_can_ask() {
     }
     let harness = window(session, |app, _| app.set_staged(staged));
 
+    // Found by what it says rather than how it starts: where it can ask, a
+    // shield comes before the words.
     let press = harness
         .get_all_by_role(Role::Button)
-        .find(|node| node.accesskit_node().label().is_some_and(|label| label.starts_with("Apply ")))
+        .find(|node| node.accesskit_node().label().is_some_and(|label| label.contains("Apply ")))
         .expect("the action bar has no primary action");
     let refused = harness.query_by_label(REFUSED).is_some();
     if crate::elevate::can_ask() {
@@ -3133,6 +3135,68 @@ fn a_press_that_needs_rights_is_refused_only_where_nothing_can_ask() {
         assert!(press.accesskit_node().is_disabled(), "a press that cannot ask stayed enabled");
     }
 }
+
+/// A press that will end in Windows' consent dialog wears the shield, on the
+/// bar and on the plan the bar opens. One that will not - rights held, or a
+/// platform with no way to ask - does not.
+///
+/// Read off the tree and never pressed through: the plan's own press would
+/// start this test binary elevated on Windows. The bar's is pressed, because
+/// on a preparation all it does is open the plan.
+#[test]
+fn a_press_that_asks_for_rights_wears_the_shield() {
+    use egui_kittest::kittest::NodeT as _;
+
+    for withheld in [false, true] {
+        let root = fixture(if withheld { "shield-withheld" } else { "shield-held" });
+        let to = destination(&root);
+        let entries = entries();
+        let staged = dropped(&root, &to, &entries);
+        let mut session = found_with(&root, Helper::Absent, GuardState::Armed, entries);
+        if withheld && let Session::Found(found) = &mut session {
+            found.rights = orng_tools::Rights::Withheld {
+                directory: found.to.install.root().to_path_buf(),
+                why: "this account may not write there".to_owned(),
+            };
+        }
+        let mut harness = window(session, |app, _| app.set_staged(staged));
+        let asks = withheld && crate::elevate::can_ask();
+        // Every press that says `Prepare installation`: the bar's, and the
+        // plan's once it is open.
+        let shields = |harness: &Harness<'_, App>| -> Vec<bool> {
+            harness
+                .get_all_by_label_contains(PREPARING)
+                .map(|node| {
+                    let label = node.accesskit_node().label().unwrap_or_default();
+                    label.contains(crate::widget::icon::ELEVATES)
+                })
+                .collect()
+        };
+
+        assert!(
+            shields(&harness).iter().all(|&shield| shield == asks),
+            "the bar's press wore the shield {} (withheld: {withheld})",
+            if asks { "nowhere" } else { "where nothing asks" }
+        );
+        // Where nothing can ask, the press is refused and there is no plan to
+        // open - the test above.
+        if withheld && !crate::elevate::can_ask() {
+            continue;
+        }
+        the_primary_action(&harness).click();
+        harness.run();
+        assert!(harness.state().is_confirming(), "the press did not open the plan");
+        let open = shields(&harness);
+        assert!(open.len() > 1, "the plan has no press of its own");
+        assert!(
+            open.iter().all(|&shield| shield == asks),
+            "the plan's press disagreed with the bar about rights (withheld: {withheld})"
+        );
+    }
+}
+
+/// The words on the preparing press, wherever it is drawn.
+const PREPARING: &str = "Prepare installation";
 
 /// The Settings screen, on the installation the rest of these are drawn against.
 ///

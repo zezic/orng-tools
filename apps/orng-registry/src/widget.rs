@@ -551,14 +551,45 @@ pub fn primary_button(
     enabled: bool,
     reason: &str,
 ) -> Response {
+    primary(ui, palette, false, label, icon, enabled, reason)
+}
+
+/// The same press, where pressing it asks the system for administrator rights.
+///
+/// Windows' own convention: a shield before the words of any control that will
+/// raise the consent dialog, so the dialog is not a surprise and nothing of our
+/// own has to be put in front of it. Always pressable - a press that cannot
+/// ask is refused, and wears no shield.
+pub fn elevating_button(ui: &mut Ui, palette: Palette, label: &str, icon: &str) -> Response {
+    primary(ui, palette, true, label, icon, true, "")
+}
+
+fn primary(
+    ui: &mut Ui,
+    palette: Palette,
+    shield: bool,
+    label: &str,
+    icon: &str,
+    enabled: bool,
+    reason: &str,
+) -> Response {
     let (fill, ink) =
         if enabled { (palette.accent, palette.accent_ink) } else { (palette.btn, palette.ink_3) };
+    let glyph = egui::TextFormat {
+        color: ink,
+        valign: Align::Center,
+        ..font::format(font::icon(ui.ctx(), font::ICON))
+    };
     // The label first and the icon after it, as the design has it: the words
-    // say what will happen and the arrow says only that something will.
+    // say what will happen and the arrow says only that something will. The
+    // shield goes before both, where Windows puts it.
     let mut text = egui::text::LayoutJob::default();
+    if shield {
+        text.append(icon::ELEVATES, 0.0, glyph.clone());
+    }
     text.append(
         label,
-        0.0,
+        if shield { metric::TOOL_GAP } else { 0.0 },
         egui::TextFormat {
             color: ink,
             valign: Align::Center,
@@ -566,15 +597,7 @@ pub fn primary_button(
         },
     );
     if !icon.is_empty() {
-        text.append(
-            icon,
-            metric::TOOL_GAP,
-            egui::TextFormat {
-                color: ink,
-                valign: Align::Center,
-                ..font::format(font::icon(ui.ctx(), font::ICON))
-            },
-        );
+        text.append(icon, metric::TOOL_GAP, glyph);
     }
     let button = egui::Button::new(text)
         .fill(fill)
@@ -673,6 +696,10 @@ pub mod icon {
     /// when it simply does the thing.
     pub const PREPARE: &str = light::ARROW_RIGHT;
     pub const APPLY: &str = light::CHECK;
+    /// Before the words of a press that will ask Windows for administrator
+    /// rights - see [`super::elevating_button`]. Not the bundle's: it draws no
+    /// state for rights at all. Round 3 item 9.
+    pub const ELEVATES: &str = light::SHIELD;
     /// The one icon an empty state is built around.
     pub const DROP: &str = light::TRAY_ARROW_DOWN;
     pub const NO_INSTALL: &str = light::FOLDER_DASHED;
@@ -4003,6 +4030,9 @@ pub struct Confirmation<'a> {
     pub primary: &'a str,
     /// The glyph after the primary's words.
     pub icon: &'a str,
+    /// Whether the primary asks the system for administrator rights, and so
+    /// wears the shield.
+    pub elevates: bool,
 }
 
 /// One numbered line of a plan.
@@ -4304,14 +4334,12 @@ pub fn confirmation_dialog(
                 Layout::right_to_left(Align::Center),
                 |ui| {
                     ui.spacing_mut().item_spacing.x = 0.0;
-                    let pressed = primary_button(
-                        ui,
-                        palette,
-                        confirmation.primary,
-                        confirmation.icon,
-                        true,
-                        "",
-                    );
+                    let (primary, icon) = (confirmation.primary, confirmation.icon);
+                    let pressed = if confirmation.elevates {
+                        elevating_button(ui, palette, primary, icon)
+                    } else {
+                        primary_button(ui, palette, primary, icon, true, "")
+                    };
                     ui.add_space(ALONG_A_DIALOG_FOOT);
                     let way_out = cancel_button(ui, palette, confirmation.cancel, Foot::Dialog);
                     if pressed.clicked() {

@@ -408,16 +408,6 @@ pub struct App {
     /// rather than stopping the window. The write that follows is an ordinary
     /// [`Applying`], the same one a drop goes through.
     installing: Option<Install>,
-    /// Items an install attempt refused, until something happens that could
-    /// change the answer.
-    ///
-    /// The design's two failure states are per item and not per window - a
-    /// catalog of forty rows where one did not verify is thirty-nine rows that
-    /// are still fine - so they are held against the identity that failed. Kept
-    /// until that item is pressed again or a refresh brings back a *different*
-    /// index, because nothing else that happens makes them stop being true - and
-    /// a refresh that confirms the index they were made against does not either.
-    refused: std::collections::BTreeMap<Uuid, catalog::Refused>,
     /// What the drop overlay says about the files over the window, while there
     /// are any.
     ///
@@ -488,7 +478,6 @@ impl App {
             // being put in the Catalog view either.
             catalog: Catalog::opened(None),
             installing: None,
-            refused: std::collections::BTreeMap::new(),
             hovered: None,
         }
     }
@@ -593,6 +582,13 @@ impl App {
     #[cfg(test)]
     pub fn set_catalog(&mut self, catalog: Catalog) {
         self.catalog = catalog;
+    }
+
+    /// Answer a refresh of the catalog the window already has, rather than
+    /// handing it another. Tests only.
+    #[cfg(test)]
+    pub fn answer_refresh(&mut self, outcome: Result<Index, String>) {
+        self.catalog.answer(outcome);
     }
 
     /// Hand the window a fetch that has already answered, so that what it does
@@ -1799,15 +1795,7 @@ impl App {
     /// frame that gets here has a reason to have been drawn, and idle work
     /// costs nothing at all.
     fn pump(&mut self, ctx: &egui::Context) {
-        // A refusal is a claim about one row of one index, so an index that has
-        // been replaced takes them with it. Not merely tidiness: the map is
-        // keyed by identity and the bar reads `Install refused` while anything
-        // is in it, so a refusal against an item the catalog has since stopped
-        // publishing would sit on that bar for the rest of the run with no row
-        // under it to explain itself.
-        if self.catalog.poll() {
-            self.refused.clear();
-        }
+        self.catalog.poll();
         // The run first, because both of the others wait on it: taken after it,
         // what was waiting is taken the frame the run reports rather than on
         // whatever frame happens to be drawn next.
@@ -3182,7 +3170,7 @@ impl App {
     /// telling somebody they need a newer Bitwig for something already in their
     /// browser is telling them nothing they can act on.
     fn published_status(&self, found: &Found, item: &orng_catalog::IndexEntry) -> Published {
-        if let Some(refused) = self.refused.get(&item.uuid) {
+        if let Some(refused) = self.catalog.refusal(item.uuid) {
             return match refused {
                 catalog::Refused::Download(_) => Published::DownloadFailed,
                 catalog::Refused::Verification(_) => Published::VerificationFailed,
@@ -3352,14 +3340,14 @@ impl App {
             // starts. Leaving it would draw `Download failed` over a download
             // that is running.
             Offer::Install | Offer::Retry => {
-                self.refused.remove(&on);
+                self.catalog.retry(on);
                 self.install(on, ctx);
             }
             Offer::SeeReplacement => {
                 self.detailing = self.replacement_for(on).map(|(_, uuid)| uuid);
             }
             Offer::CopyDetails => {
-                if let Some(refused) = self.refused.get(&on) {
+                if let Some(refused) = self.catalog.refusal(on) {
                     ctx.copy_text(refused.details().to_owned());
                 }
             }
@@ -3416,7 +3404,7 @@ impl App {
                         why: why.clone(),
                     });
                 }
-                self.refused.insert(item.uuid, refused);
+                self.catalog.refuse(item.uuid, refused);
                 return;
             }
         };
@@ -3707,7 +3695,7 @@ impl App {
         // `Install refused` over a download failure and a verification failure
         // together, because what the bar has to say is that nothing was
         // installed and the rows say which was which.
-        if !self.refused.is_empty() {
+        if self.catalog.any_refused() {
             return ("Install refused".to_owned(), Tone::Err, String::new());
         }
 

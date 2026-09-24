@@ -3522,8 +3522,7 @@ fn a_refresh_that_changes_the_catalog_takes_the_refusals_with_it() {
     // A refresh that confirms the index it already had leaves the refusal
     // alone: nothing it was a claim about has changed.
     let same = superseded();
-    let held = Catalog::just_fetched(same.clone()).answering(Ok(same.clone()));
-    harness.state_mut().set_catalog(held);
+    harness.state_mut().answer_refresh(Ok(same.clone()));
     harness.run();
     assert!(
         anywhere(&harness, "Install refused"),
@@ -3533,7 +3532,7 @@ fn a_refresh_that_changes_the_catalog_takes_the_refusals_with_it() {
     // A different one takes it.
     let mut other = same.clone();
     other.items.remove(0);
-    harness.state_mut().set_catalog(Catalog::just_fetched(same).answering(Ok(other)));
+    harness.state_mut().answer_refresh(Ok(other));
     harness.run();
     assert!(
         !anywhere(&harness, "Install refused"),

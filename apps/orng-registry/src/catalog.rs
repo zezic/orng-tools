@@ -23,10 +23,11 @@
 //! edited under `~/.orng` is refused on exactly the terms a tampered download
 //! is, and the trust boundary does not move because the bytes came off a disk.
 
+use std::collections::BTreeMap;
 use std::time::{Duration, SystemTime};
 
 use orng_catalog::{Digest, Index, IndexEntry, PublicKey, Revision, Signature};
-use orng_tools::{Document, Kind, OrngHome};
+use orng_tools::{Document, Kind, OrngHome, Uuid};
 use ureq::http::Uri;
 
 /// The catalog itself, which is a repository: this is where the review of an
@@ -294,8 +295,9 @@ impl Fetching {
 /// the view switch. A single `Result` could only ever say one of them, which is
 /// why the fetch alone was never enough to hold.
 pub struct Catalog {
-    /// The last index that verified, and when its bytes arrived. Read off the
-    /// disk on opening and replaced by every fetch that succeeds.
+    /// The last index that verified, when its bytes arrived, and what was
+    /// refused against it. Read off the disk on opening and replaced by every
+    /// fetch that succeeds.
     held: Option<Held>,
     /// The fetch in flight. Taken the frame it answers, because a fetch that
     /// has reported is not work in flight - the same rule [`crate::app::App`]
@@ -311,10 +313,32 @@ pub struct Catalog {
     home: Option<OrngHome>,
 }
 
-/// An index, and the moment its bytes arrived.
+/// An index, the moment its bytes arrived, and the installs refused against it.
 struct Held {
     index: Index,
     fetched: SystemTime,
+    /// Items an install attempt refused, until something happens that could
+    /// change the answer.
+    ///
+    /// The design's two failure states are per item and not per window - a
+    /// catalog of forty rows where one did not verify is thirty-nine rows that
+    /// are still fine - so they are held against the identity that failed. Kept
+    /// until that item is pressed again or a refresh brings back a *different*
+    /// index, because nothing else that happens makes them stop being true - and
+    /// a refresh that confirms the index they were made against does not either.
+    ///
+    /// **Here, beside the index, because each is a claim about one row of it.**
+    /// Held apart, an index could be replaced and leave them standing: the bar
+    /// reads `Install refused` while any is held, so one against an item the
+    /// catalog has since stopped publishing would sit there for the rest of the
+    /// run with no row under it to explain itself.
+    refused: BTreeMap<Uuid, Refused>,
+}
+
+impl Held {
+    fn new(index: Index, fetched: SystemTime) -> Held {
+        Held { index, fetched, refused: BTreeMap::new() }
+    }
 }
 
 /// How old the index in hand is, as the bar states it.
@@ -379,15 +403,11 @@ impl Catalog {
 
     /// Take whatever the fetch has said, and keep it.
     ///
-    /// **Returns whether the catalog on screen is now a different catalog**,
-    /// which is narrower than whether anything arrived: a refresh that confirms
-    /// what was already held moves the age and nothing else, and one that
-    /// failed moves neither. What the answer is for is everything the window
-    /// worked out against the old index and cannot carry over - see
-    /// [`crate::app::App::pump`].
-    #[must_use]
-    pub fn poll(&mut self) -> bool {
-        let Some(fetching) = &mut self.fetching else { return false };
+    /// **Only a different catalog takes the refusals with it**, which is
+    /// narrower than anything arriving: a refresh that confirms what was already
+    /// held moves the age and nothing else, and one that failed moves neither.
+    pub fn poll(&mut self) {
+        let Some(fetching) = &mut self.fetching else { return };
         // Asked of the outcome rather than of the call, because "did anything
         // arrive just now" is false again on the next frame and "is there an
         // answer here" is not. The same distinction `App::pump` draws around
@@ -395,7 +415,7 @@ impl Catalog {
         // trusting the poll.
         fetching.poll();
         if fetching.outcome.is_none() {
-            return false;
+            return;
         }
         let fetching = self.fetching.take().expect("it answered a moment ago");
         match fetching.outcome.expect("a fetch that answered carries an outcome") {
@@ -403,23 +423,24 @@ impl Catalog {
                 if let Some(home) = &self.home {
                     keep(home, &fetched);
                 }
-                let replaced = self.index() != Some(&fetched.index);
                 // Now, rather than reading back the time the file landed with:
                 // the two are one write, and a machine with nowhere to keep it
                 // still knows when this arrived.
-                self.held = Some(Held { index: fetched.index, fetched: SystemTime::now() });
+                let mut held = Held::new(fetched.index, SystemTime::now());
+                if let Some(before) = self.held.take()
+                    && before.index == held.index
+                {
+                    held.refused = before.refused;
+                }
+                self.held = Some(held);
                 self.failed = None;
-                replaced
             }
             // **What is held is not dropped.** It verified when it arrived and
             // it still does, and the design is explicit that browsing an older
             // index offline is a degraded state and not an error. So nothing on
             // screen is a different catalog, and nothing worked out against the
             // one held has stopped being true.
-            Err(why) => {
-                self.failed = Some(why);
-                false
-            }
+            Err(why) => self.failed = Some(why),
         }
     }
 
@@ -451,6 +472,36 @@ impl Catalog {
         self.held.is_some() && self.failed.is_some()
     }
 
+    /// Why an install of this item was refused, if one was and nothing has
+    /// happened since that could change the answer.
+    pub fn refusal(&self, item: Uuid) -> Option<&Refused> {
+        self.held.as_ref()?.refused.get(&item)
+    }
+
+    /// Whether any install was refused, which is the whole of what the bar says
+    /// about them: the rows say which, and why.
+    pub fn any_refused(&self) -> bool {
+        self.held.as_ref().is_some_and(|held| !held.refused.is_empty())
+    }
+
+    /// Hold a refusal against the item it was of.
+    ///
+    /// An install is only ever started from an index in hand, and nothing
+    /// takes one away once it is held, so there is always one to hold it
+    /// against.
+    pub fn refuse(&mut self, item: Uuid, why: Refused) {
+        let held = self.held.as_mut().expect("an install was refused with no index in hand");
+        held.refused.insert(item, why);
+    }
+
+    /// Let an item be tried again: the press on it is a press on the row as it
+    /// will be once it is tried, and not on the one that failed.
+    pub fn retry(&mut self, item: Uuid) {
+        if let Some(held) = &mut self.held {
+            held.refused.remove(&item);
+        }
+    }
+
     pub fn freshness(&self) -> Freshness {
         let Some(held) = &self.held else { return Freshness::Never };
         // A clock moved backwards since the write says nothing about the index,
@@ -476,7 +527,7 @@ fn cached(home: &OrngHome) -> Option<Held> {
     // something new.
     let fetched = std::fs::metadata(home.catalog_index()).and_then(|at| at.modified()).ok()?;
     match verified(&bytes, &signature) {
-        Ok(index) => Some(Held { index, fetched }),
+        Ok(index) => Some(Held::new(index, fetched)),
         Err(why) => {
             eprintln!("the kept catalog index did not verify, so it was ignored: {why}");
             None
@@ -521,7 +572,7 @@ impl Catalog {
     /// One that answered a moment ago, which is the ordinary state.
     pub fn just_fetched(index: Index) -> Catalog {
         Catalog {
-            held: Some(Held { index, fetched: SystemTime::now() }),
+            held: Some(Held::new(index, SystemTime::now())),
             ..Catalog::fetching()
         }
     }
@@ -530,7 +581,7 @@ impl Catalog {
     /// state, which the design draws `cached` for.
     pub fn cached(index: Index, ago: Duration, why: &str) -> Catalog {
         Catalog {
-            held: Some(Held { index, fetched: SystemTime::now() - ago }),
+            held: Some(Held::new(index, SystemTime::now() - ago)),
             failed: Some(why.to_owned()),
             ..Catalog::fetching()
         }
@@ -547,6 +598,13 @@ impl Catalog {
     /// The bytes are empty because nothing here reads them: they are what
     /// [`keep`] writes, and a catalog built this way has nowhere to write to.
     pub fn answering(mut self, outcome: Result<Index, String>) -> Catalog {
+        self.answer(outcome);
+        self
+    }
+
+    /// The same, on a catalog already in hand - so that what was held against
+    /// it before the refresh is still there to be kept or taken.
+    pub fn answer(&mut self, outcome: Result<Index, String>) {
         let (tx, result) = std::sync::mpsc::channel();
         // Kept alive on purpose, for the reason `Install::finished` keeps its
         // own: a disconnected channel with no outcome is how a dead worker is
@@ -555,7 +613,6 @@ impl Catalog {
         let outcome = outcome
             .map(|index| Fetched { index, bytes: Vec::new(), signature: Vec::new() });
         self.fetching = Some(Fetching { result, outcome: Some(outcome) });
-        self
     }
 }
 
@@ -964,38 +1021,58 @@ mod tests {
         assert_eq!(waiting.freshness(), Freshness::Never);
     }
 
-    /// A refresh reports a *different* catalog and not merely an answer.
+    /// A refresh takes the refusals with it only when it brings back a
+    /// *different* catalog, and not merely when it answers.
     ///
-    /// The distinction is the whole value of the return: what the window does
-    /// with it is throw away everything it worked out against the index it had,
-    /// and doing that every launch over an index that had not moved would
-    /// silently undo the user's last press.
+    /// A refusal is a claim about one row of the index it was made against, so
+    /// a replaced index takes it along. Taking it on every answer would be
+    /// worse than untidy: every launch confirms an index that has not moved,
+    /// and would silently undo the user's last press.
     #[test]
-    fn a_refresh_reports_only_a_catalog_that_is_not_the_one_already_held() {
-        let mut confirmed = Catalog::just_fetched(published()).answering(Ok(published()));
-        assert!(!confirmed.poll(), "a refresh that confirmed the index reported a new one");
+    fn a_refresh_takes_the_refusals_only_with_a_catalog_that_is_not_the_one_already_held() {
+        let item = published().items[0].uuid;
+        let refused = || Refused::Download("the connection closed".to_owned());
+        let holding = |index: Index| {
+            let mut catalog = Catalog::just_fetched(index);
+            catalog.refuse(item, refused());
+            assert!(catalog.any_refused());
+            catalog
+        };
+
+        let mut confirmed = holding(published()).answering(Ok(published()));
+        confirmed.poll();
+        assert_eq!(
+            confirmed.refusal(item),
+            Some(&refused()),
+            "a refresh that confirmed the index took the refusals with it"
+        );
         // It still moved the age, which is the other half of what a refresh is
         // for, and it cleared the offline state.
         assert!(!confirmed.is_cached());
 
         let mut emptied = published();
         emptied.items.clear();
-        let mut changed = Catalog::just_fetched(emptied).answering(Ok(published()));
-        assert!(changed.poll(), "a refresh that brought back a different index reported nothing");
+        let mut changed = holding(emptied).answering(Ok(published()));
+        changed.poll();
+        assert_eq!(changed.refusal(item), None, "a different index kept the old one's refusals");
+        assert!(!changed.any_refused());
 
-        let mut first = Catalog::fetching().answering(Ok(published()));
-        assert!(first.poll(), "the first index ever to arrive reported nothing");
-
-        let mut failed =
-            Catalog::just_fetched(published()).answering(Err("no route to host".to_owned()));
-        assert!(!failed.poll(), "a refresh that failed reported a different catalog");
+        let mut failed = holding(published()).answering(Err("no route to host".to_owned()));
+        failed.poll();
+        assert!(failed.refusal(item).is_some(), "a refresh that failed took the refusals");
         assert!(failed.index().is_some(), "a refresh that failed dropped the index it had");
         assert!(failed.is_cached());
 
         // And a poll with nothing in flight is not an answer at all, which is
         // every frame the window draws between refreshes.
-        let mut idle = Catalog::just_fetched(published());
-        assert!(!idle.poll());
+        let mut idle = holding(published());
+        idle.poll();
+        assert!(idle.refusal(item).is_some());
+
+        // Pressed again, the item is the row as it will be once tried, and not
+        // the one that failed.
+        idle.retry(item);
+        assert!(!idle.any_refused());
     }
 
     /// A document is fetched at the commit the index names and never from a

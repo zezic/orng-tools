@@ -2790,28 +2790,32 @@ fn a_row_reveals_its_controls_under_the_pointer_and_sizes_them_as_the_bundle_doe
     let name = harness.get_by_label("DISPERSER").rect();
     let reveal = harness.get_by_label("Reveal file").rect();
     let remove = harness.get_by_label_contains("Remove entry").rect();
+    let more = harness.get_by_label("More").rect();
 
     // The bundle's own numbers and not this application's transcription of
-    // them: `width:22px; height:22px` and `gap:1px` on `EntryRow.dc.html:44-58`.
+    // them: `width:22px; height:22px` and `gap:1px` on `EntryRow.dc.html:44-64`.
     // Written against `metric::ROW_ACTION` these passed with that constant set
     // to 24, which is the whole difference between checking the design and
     // checking the arithmetic.
-    for (what, control) in [("Reveal file", reveal), ("Remove entry", remove)] {
+    for (what, control) in [("Reveal file", reveal), ("Remove entry", remove), ("More", more)] {
         assert_eq!(control.width(), 22.0, "{what} is not the design's width");
         assert_eq!(control.height(), 22.0, "{what} is not the design's height");
     }
-    assert_eq!(
-        remove.left() - reveal.right(),
-        1.0,
-        "the design's one-pixel seam is not between them"
-    );
+    for (left, right) in [(reveal, remove), (remove, more)] {
+        assert_eq!(
+            right.left() - left.right(),
+            1.0,
+            "the design's one-pixel seam is not between them"
+        );
+    }
     // Right-aligned against the row's own twelve of padding, which is where the
     // reserved column ends: `an_entry_row_is_divided_as_the_bundle_divides_it`
     // puts that edge at 808 in a window the design's width. Four entries in a
-    // 560-tall window need no scrollbar, so the list is the whole width.
-    assert_eq!(remove.right(), 808.0);
+    // 560-tall window need no scrollbar, so the list is the whole width. The
+    // overflow is last in the bundle's order, so it is the one at the edge.
+    assert_eq!(more.right(), 808.0);
     // And centred down the row rather than sitting on its top edge.
-    assert_eq!(remove.center().y, name.center().y);
+    assert_eq!(more.center().y, name.center().y);
 }
 
 /// What each state offers, through the window rather than through the table.
@@ -2848,6 +2852,293 @@ fn the_controls_a_row_offers_are_the_ones_its_state_offers() {
             && harness.query_by_label("Cancel").is_none(),
         "a rejected row offered a control"
     );
+}
+
+/// Onto a row, as a pointer arrives, and then onto its three dots.
+///
+/// The dots are drawn only while the pointer is on the row, and the press is
+/// the design's: a primary click, where the install bar's menu once wanted a
+/// secondary one and was never seen.
+fn open_the_menu(harness: &mut Harness<'static, App>, row: &str) {
+    harness.get_by_label(row).hover();
+    harness.run();
+    harness.get_by_label("More").click();
+    harness.run();
+}
+
+/// A line of a row's menu, which carries its glyph in its label.
+fn menu_line(glyph: &str, words: &str) -> String {
+    format!("{glyph}{words}")
+}
+
+fn menu_rename() -> String {
+    menu_line(crate::widget::icon::RENAME, "Rename...")
+}
+
+fn menu_copy() -> String {
+    menu_line(crate::widget::icon::COPY, "Copy UUID")
+}
+
+fn menu_show() -> String {
+    menu_line(crate::widget::icon::CATALOG, "Show in catalog")
+}
+
+/// The row's menu, against `EntryRow.dc.html` rendered with the menu forced
+/// open and asked for every box: in a row 796 wide at the origin, the menu at
+/// `592 31 194 94`, and its lines `597 36 184 28` and on down, touching.
+///
+/// So its top is 31 below the row's and its right edge 10 in from the row's,
+/// and a line starts a line and four of padding inside that. The row here is
+/// the window's whole width, 820, with nothing scrolling.
+///
+/// **And it is the row's**, which is what `hasMenu` and `leave` in the bundle
+/// say between them: the pointer can go from the row onto the menu, which hangs
+/// over the rows beneath, and the menu stays; off both, it goes.
+#[test]
+fn a_rows_menu_hangs_where_the_bundle_hangs_it_and_goes_with_the_pointer() {
+    let mut harness = listing("row-menu-geometry");
+    let row = harness.get_by_label("DISPERSER").rect().center().y - 18.0;
+    open_the_menu(&mut harness, "DISPERSER");
+
+    let rename = harness.get_by_label(&menu_rename()).rect();
+    let copy = harness.get_by_label(&menu_copy()).rect();
+    for (what, line) in [("Rename...", rename), ("Copy UUID", copy)] {
+        assert_eq!(line.width(), 184.0, "{what} is not the design's width");
+        assert_eq!(line.height(), 28.0, "{what} is not the design's height");
+        let end = 820.0 - 10.0 - 1.0 - 4.0;
+        assert_eq!(line.right(), end, "{what} does not end where the design's does");
+    }
+    assert_eq!(rename.top(), row + 31.0 + 1.0 + 4.0, "the menu does not hang where the design's");
+    assert_eq!(copy.top(), rename.bottom(), "the lines do not touch");
+    assert!(
+        harness.query_by_label(&menu_show()).is_none(),
+        "a local file offered to show itself in the catalog"
+    );
+
+    // Onto the menu, below the row it belongs to and over the next one.
+    harness.hover_at(copy.center());
+    harness.run();
+    assert!(
+        harness.query_by_label(&menu_copy()).is_some(),
+        "the menu went when the pointer reached it"
+    );
+    // Onto another row: the menu goes, and that row's own controls come.
+    let other = harness.get_by_label("SHAPER").rect().center();
+    harness.hover_at(other);
+    harness.run();
+    assert!(
+        harness.query_by_label(&menu_copy()).is_none(),
+        "the menu outlived the pointer leaving it"
+    );
+    assert!(harness.query_by_label("More").is_some(), "the row under the pointer drew no controls");
+
+    // And off everything.
+    open_the_menu(&mut harness, "DISPERSER");
+    harness.hover_at(egui::pos2(400.0, 450.0));
+    harness.run();
+    assert!(harness.query_by_label(&menu_copy()).is_none(), "the menu stayed, the pointer gone");
+}
+
+/// What each row's menu holds, through the window rather than the table:
+/// `status::every_state_has_the_menu_the_bundle_gives_it` asserts the table,
+/// and this that the rows are drawn from it - and from where each row's
+/// document came from, which the table is handed.
+#[test]
+fn a_rows_menu_is_the_one_its_state_and_its_origin_give_it() {
+    use egui_kittest::kittest::NodeT as _;
+    let root = fixture("row-menu-by-state");
+    let to = destination(&root);
+    let entries = entries();
+    let staged = dropped(&root, &to, &entries);
+    let session = found_with(&root, Helper::Present, GuardState::Disarmed, entries);
+    let mut harness = window(session, |app, _| app.set_staged(staged));
+
+    // A staged document is the user's own, and can be renamed before it is
+    // written.
+    open_the_menu(&mut harness, "WAVESHAPER ALPHA");
+    let rename = menu_rename();
+    assert!(
+        !harness.get_by_label(&rename).accesskit_node().is_disabled(),
+        "a staged row cannot be renamed"
+    );
+    assert!(harness.query_by_label(&menu_copy()).is_some(), "a staged identity cannot be copied");
+    assert!(harness.query_by_label(&menu_show()).is_none(), "a dropped file offered the catalog");
+
+    // A rejected one was never read, and has no menu at all.
+    harness.get_by_label("BROKEN.bwmodule").hover();
+    harness.run();
+    assert!(harness.query_by_label("More").is_none(), "a rejected row offered a menu");
+
+    // The catalog's: its name is the catalog's, and no catalog has been read
+    // in this window, so there is nothing to show it in. Both drawn and
+    // refused, each with its reason.
+    open_the_menu(&mut harness, "VOLSHAPER");
+    for (line, why) in [
+        (menu_rename(), "A catalog item keeps the catalog's name"),
+        (menu_show(), "The catalog has not been read yet"),
+    ] {
+        let node = harness.get_by_label(&line);
+        assert!(node.accesskit_node().is_disabled(), "{line} could be pressed");
+        node.hover();
+        harness.run();
+        assert!(harness.query_by_label(why).is_some(), "{line} does not say why it is refused");
+    }
+    assert!(!harness.state().is_confirming(), "a refused line was pressed");
+
+    // A queued removal keeps its identity and has no name to change.
+    harness.get_by_label("SHAPER").hover();
+    harness.run();
+    harness.get_by_label_contains("Remove entry").click();
+    harness.run();
+    open_the_menu(&mut harness, "SHAPER");
+    assert!(harness.query_by_label(&menu_copy()).is_some(), "a queued removal lost its menu");
+    assert!(harness.query_by_label(&menu_rename()).is_none(), "a queued removal offered a rename");
+}
+
+/// A missing file has no document to write a new name into, so its menu has
+/// only the identity - which is ours, and the inspector's rule too.
+#[test]
+fn a_missing_files_menu_offers_no_rename() {
+    let mut harness = local_window(damaged(&fixture("row-menu-missing")));
+    open_the_menu(&mut harness, "SHAPER");
+    assert!(harness.query_by_label("Missing file").is_some(), "the fixture lost nothing");
+    assert!(harness.query_by_label(&menu_copy()).is_some(), "a missing file has no menu");
+    assert!(harness.query_by_label(&menu_rename()).is_none(), "a missing file offered a rename");
+}
+
+/// `Copy UUID` copies the whole identity, which the row itself shows only the
+/// first part of - and the narrow row none of.
+#[test]
+fn copy_uuid_copies_the_whole_identity() {
+    let copied = |harness: &Harness<'_, App>| {
+        harness.output().platform_output.commands.iter().find_map(|command| match command {
+            egui::OutputCommand::CopyText(text) => Some(text.clone()),
+            _ => None,
+        })
+    };
+    let root = fixture("row-menu-copy");
+    let to = destination(&root);
+    let entries = entries();
+    let staged = dropped(&root, &to, &entries);
+    let session = found_with(&root, Helper::Present, GuardState::Disarmed, entries);
+    let mut harness = window(session, |app, _| app.set_staged(staged));
+
+    open_the_menu(&mut harness, "VOLSHAPER");
+    harness.get_by_label(&menu_copy()).click();
+    harness.step();
+    assert_eq!(copied(&harness).as_deref(), Some(VOLSHAPER));
+    harness.run();
+    assert!(harness.query_by_label(&menu_copy()).is_none(), "the menu stayed open after its press");
+
+    // And a staged row's, which is the document's: it has no entry yet.
+    open_the_menu(&mut harness, "WAVESHAPER ALPHA");
+    harness.get_by_label(&menu_copy()).click();
+    harness.step();
+    assert_eq!(copied(&harness).as_deref(), Some("1f6c85d4-9a02-47be-83c1-d5e70b14a629"));
+}
+
+/// `Show in catalog` opens the catalog's own panel on the item, and where the
+/// index in hand no longer lists it, says so instead of opening nothing.
+#[test]
+fn show_in_catalog_opens_the_item_where_the_catalog_lists_it() {
+    use egui_kittest::kittest::NodeT as _;
+    let mut harness = listing("row-menu-show");
+    let mut withdrawn = sample();
+    withdrawn.items.clear();
+    harness.state_mut().set_catalog(Catalog::just_fetched(withdrawn));
+    harness.run();
+    open_the_menu(&mut harness, "VOLSHAPER");
+    let line = menu_show();
+    let show = harness.get_by_label(&line);
+    assert!(show.accesskit_node().is_disabled(), "an item the catalog no longer lists was offered");
+    show.hover();
+    harness.run();
+    assert!(
+        harness.query_by_label("The catalog no longer lists it").is_some(),
+        "the refusal does not say why"
+    );
+
+    harness.state_mut().set_catalog(Catalog::just_fetched(sample()));
+    harness.hover_at(egui::pos2(400.0, 450.0));
+    harness.run();
+    open_the_menu(&mut harness, "VOLSHAPER");
+    harness.get_by_label(&menu_show()).click();
+    harness.run();
+    assert!(harness.query_by_label("DISPERSER").is_none(), "the window is still on the Local list");
+    assert!(
+        harness.query_by_label(VOLSHAPER).is_some(),
+        "the catalog's panel did not open on the item"
+    );
+}
+
+/// The menu is the one way to rename a staged document nothing collides with:
+/// the inspector opens on registered entries only. The question is the one the
+/// pencil asks, and the name reaches the document and its file.
+#[test]
+fn a_staged_document_is_renamed_from_its_menu() {
+    let root = fixture("row-menu-rename-staged");
+    let to = destination(&root);
+    let entries = entries();
+    let staged = dropped(&root, &to, &entries);
+    let session = found_with(&root, Helper::Present, GuardState::Disarmed, entries);
+    let mut harness = window(session, |app, _| app.set_staged(staged));
+
+    open_the_menu(&mut harness, "WAVESHAPER ALPHA");
+    harness.get_by_label(&menu_rename()).click();
+    harness.run();
+    assert!(
+        harness.query_all_by_label("Rename WAVESHAPER ALPHA").next().is_some(),
+        "the menu's Rename... asked nothing"
+    );
+    assert!(
+        harness.query_all_by_label_contains("nothing is written until Apply runs").next().is_some(),
+        "a staged rename was not told it waits for Apply"
+    );
+
+    harness.key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::A);
+    the_rename_field(&harness).type_text("WAVESHAPER BETA");
+    harness.run();
+    the_rename_press(&harness).click();
+    harness.run();
+
+    let row = harness
+        .state()
+        .staged()
+        .iter()
+        .find_map(|row| row.registration().filter(|entry| entry.name == "WAVESHAPER BETA"))
+        .expect("the row was not renamed");
+    assert_eq!(row.library_path.as_str(), "devices/My Devices/WAVESHAPER BETA.bwdevice");
+}
+
+/// A registered entry's `Rename...` in the menu asks the inspector's question,
+/// which writes on the press rather than on Apply.
+#[test]
+fn a_registered_entry_is_renamed_from_its_menu() {
+    let mut harness = local_window(copying(&fixture("row-menu-rename-registered"), entries()));
+    open_the_menu(&mut harness, "DISPERSER");
+    harness.get_by_label(&menu_rename()).click();
+    harness.run();
+    assert!(
+        harness.query_all_by_label("Rename DISPERSER").next().is_some(),
+        "the menu's Rename... asked nothing"
+    );
+    assert!(
+        harness.query_all_by_label_contains("Written when you press Rename").next().is_some(),
+        "a registered rename was not told it is written on the press"
+    );
+}
+
+/// The menu open on the catalog's row, with the catalog read: one line refused
+/// and dimmed whole, the other two lit - which the tree cannot hold, and the
+/// design's glyphs brighter than the install bar menu's.
+#[test]
+fn a_rows_menu() {
+    let name = "row-menu";
+    let mut harness = listing(name);
+    harness.state_mut().set_catalog(Catalog::just_fetched(sample()));
+    harness.run();
+    open_the_menu(&mut harness, "VOLSHAPER");
+    look(&mut harness, name);
 }
 
 /// Removing a registered entry queues it and does not write anything.

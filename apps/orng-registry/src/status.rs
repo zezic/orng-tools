@@ -71,23 +71,33 @@ pub enum Collided {
     Identity,
 }
 
-/// Whose name a registered entry carries, which is what decides whether it can
-/// be renamed here.
+/// Where an entry's document came from, as far as what it offers goes: whose
+/// name it carries, which decides whether it can be renamed here, and whether
+/// the catalog in hand can show it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Naming {
-    /// The user's: a file they chose.
+pub enum Origin {
+    /// The user's: a file they chose, or dropped and not yet written.
     Own,
     /// The catalog's. An update replaces the document by identity and would
     /// bring the catalog's name back, so revision 8 offers no rename.
-    Catalogs,
+    Catalog(Indexed),
 }
 
-/// One thing a row offers to do to its entry.
+/// Whether the catalog in hand lists an item, which is whether there is
+/// anything for `Show in catalog` to open.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Indexed {
+    Listed,
+    /// No index has been read, from the network or from the cache.
+    Unread,
+    /// The index in hand does not carry it: withdrawn since it was installed.
+    Unlisted,
+}
+
+/// One thing a row offers to do to its entry, depending on the state it is in.
 ///
-/// The design's overflow control is deliberately not here: the bundle draws the
-/// button and nothing in it says what the menu holds, so there is a control to
-/// draw and no menu to put behind it. See `docs/design-review.md` round 3
-/// item 3.
+/// What a row offers whatever its state is behind its overflow control
+/// instead, and is a [`Choice`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Action {
     /// Mint a new identity for a document that cannot be registered under the
@@ -142,21 +152,51 @@ impl Status {
     /// Revision 8 put the one control on the panel that the row does not have,
     /// so the panel's rules are the row's plus that one rather than the row's
     /// alone.
-    pub fn in_the_panel(self, naming: Naming) -> impl Iterator<Item = Action> {
-        let renames = naming == Naming::Own && self.renames_in_the_panel();
+    pub fn in_the_panel(self, origin: Origin) -> impl Iterator<Item = Action> {
+        let renames = origin == Origin::Own && self.renames();
         renames.then_some(Action::Rename).into_iter().chain(self.actions())
     }
 
-    /// Whether the panel offers a rename in this state.
+    /// The row's overflow menu, or `None` where the row has no overflow
+    /// control: `EntryRow.dc.html:67-80`, revision 8's A2.
     ///
-    /// `Inspector.dc.html:205` leaves out `Rejected` and `Pending removal`. The
-    /// panel opens only on registered entries, so the staged states are not
-    /// here either. **Nor is `Missing file`, which is ours**: the new name is
-    /// written into the document, and there is none to write it into until the
-    /// file is located.
-    fn renames_in_the_panel(self) -> bool {
-        use Status::*;
-        matches!(self, Registered | PendingRestart | Changed | UpdateAvailable)
+    /// Not on `Rejected`, whose document was never read, so it has no identity
+    /// to copy and no name to change. A catalog item's `Rename...` is drawn in
+    /// every state and refused, as the bundle draws it, since the reason is
+    /// true whatever the state is. `Show in catalog` is refused where the
+    /// catalog in hand has nothing to open, which is ours.
+    pub fn in_the_menu(self, origin: Origin) -> Option<impl Iterator<Item = Line>> {
+        if self == Status::Rejected {
+            return None;
+        }
+        let rename = match origin {
+            Origin::Own => self.renames().then_some(Line::offered(Choice::Rename)),
+            Origin::Catalog(_) => {
+                Some(Line::refused(Choice::Rename, "A catalog item keeps the catalog's name"))
+            }
+        };
+        let show = match origin {
+            Origin::Own => None,
+            Origin::Catalog(Indexed::Listed) => Some(Line::offered(Choice::ShowInCatalog)),
+            Origin::Catalog(Indexed::Unread) => {
+                Some(Line::refused(Choice::ShowInCatalog, "The catalog has not been read yet"))
+            }
+            Origin::Catalog(Indexed::Unlisted) => {
+                Some(Line::refused(Choice::ShowInCatalog, "The catalog no longer lists it"))
+            }
+        };
+        Some(rename.into_iter().chain([Line::offered(Choice::CopyUuid)]).chain(show))
+    }
+
+    /// Whether the name can be changed in this state, from the panel or from
+    /// the row's menu.
+    ///
+    /// `Inspector.dc.html:205` and `EntryRow.dc.html:156` leave out `Rejected`
+    /// and `Pending removal`. **So does `Missing file`, which is ours**: the new
+    /// name is written into the document, and there is none to write it into
+    /// until the file is located.
+    fn renames(self) -> bool {
+        !matches!(self, Status::Rejected | Status::PendingRemoval | Status::MissingFile)
     }
 
     /// Whether this state offers that one control.
@@ -277,6 +317,48 @@ impl Action {
             // the tooltip, which is [`removal_consequence`].
             Action::Remove => "Remove entry",
         }
+    }
+}
+
+/// One line of a row's overflow menu: what a row offers whatever its state is,
+/// which is why the design put these behind a control rather than on the row.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Choice {
+    /// The rename a name conflict's pencil opens, offered on any row whose
+    /// name is its own.
+    Rename,
+    /// The only way to the identity once the narrow grid drops its column.
+    CopyUuid,
+    /// The catalog's detail panel on the item this entry was installed from.
+    ShowInCatalog,
+}
+
+impl Choice {
+    /// What the line says: `EntryRow.dc.html:70-77`.
+    pub fn label(self) -> &'static str {
+        match self {
+            Choice::Rename => "Rename...",
+            Choice::CopyUuid => "Copy UUID",
+            Choice::ShowInCatalog => "Show in catalog",
+        }
+    }
+}
+
+/// A line of the menu as it is drawn.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Line {
+    pub choice: Choice,
+    /// Why it cannot be pressed, where it is drawn and cannot be.
+    pub refused: Option<&'static str>,
+}
+
+impl Line {
+    fn offered(choice: Choice) -> Line {
+        Line { choice, refused: None }
+    }
+
+    fn refused(choice: Choice, why: &'static str) -> Line {
+        Line { choice, refused: Some(why) }
     }
 }
 
@@ -520,13 +602,80 @@ mod tests {
     #[test]
     fn the_panel_offers_a_rename_over_the_rows_controls() {
         use Action::*;
-        let panel = |status: Status, naming| status.in_the_panel(naming).collect::<Vec<_>>();
+        let panel = |status: Status, origin| status.in_the_panel(origin).collect::<Vec<_>>();
+        let catalog = Origin::Catalog(Indexed::Listed);
         for status in [Status::Registered, Status::PendingRestart, Status::Changed] {
-            assert_eq!(panel(status, Naming::Own), [Rename, Reveal, Remove], "{status:?}");
-            assert_eq!(panel(status, Naming::Catalogs), [Reveal, Remove], "{status:?}");
+            assert_eq!(panel(status, Origin::Own), [Rename, Reveal, Remove], "{status:?}");
+            assert_eq!(panel(status, catalog), [Reveal, Remove], "{status:?}");
         }
-        assert_eq!(panel(Status::MissingFile, Naming::Own), [Locate, Remove]);
-        assert_eq!(panel(Status::PendingRemoval, Naming::Own), [Undo, Reveal]);
+        assert_eq!(panel(Status::MissingFile, Origin::Own), [Locate, Remove]);
+        assert_eq!(panel(Status::PendingRemoval, Origin::Own), [Undo, Reveal]);
+    }
+
+    fn menu(status: Status, origin: Origin) -> Option<Vec<(Choice, Option<&'static str>)>> {
+        let lines = status.in_the_menu(origin)?;
+        Some(lines.map(|line| (line.choice, line.refused)).collect())
+    }
+
+    /// The overflow menu, from `EntryRow.dc.html:154-157`: on every row but a
+    /// rejected one, `Rename...` where the name is the row's own, refused on a
+    /// catalog item, and `Show in catalog` on a catalog item only. Left out on
+    /// a missing file, which is ours, for the reason the panel leaves it out.
+    #[test]
+    fn every_state_has_the_menu_the_bundle_gives_it() {
+        use Choice::*;
+        let own = |status| menu(status, Origin::Own);
+        for status in [
+            Status::Staged,
+            Status::Conflict(Collided::Name),
+            Status::Conflict(Collided::Identity),
+            Status::Registered,
+            Status::PendingRestart,
+            Status::Changed,
+            Status::UpdateAvailable,
+        ] {
+            assert_eq!(own(status), Some(vec![(Rename, None), (CopyUuid, None)]), "{status:?}");
+        }
+        for status in [Status::MissingFile, Status::PendingRemoval] {
+            assert_eq!(own(status), Some(vec![(CopyUuid, None)]), "{status:?}");
+        }
+        assert_eq!(own(Status::Rejected), None);
+
+        let locked = Some("A catalog item keeps the catalog's name");
+        for status in EVERY.into_iter().filter(|status| *status != Status::Rejected) {
+            assert_eq!(
+                menu(status, Origin::Catalog(Indexed::Listed)),
+                Some(vec![(Rename, locked), (CopyUuid, None), (ShowInCatalog, None)]),
+                "{status:?}"
+            );
+        }
+    }
+
+    /// `Show in catalog` is refused, and says why, where the catalog in hand
+    /// has nothing to open - which is ours: the bundle has a catalog always.
+    #[test]
+    fn show_in_catalog_says_why_it_has_nothing_to_open() {
+        let shown = |indexed| {
+            let lines = menu(Status::Registered, Origin::Catalog(indexed)).expect("a menu");
+            lines.last().copied().expect("a line")
+        };
+        assert_eq!(shown(Indexed::Listed), (Choice::ShowInCatalog, None));
+        assert_eq!(
+            shown(Indexed::Unread),
+            (Choice::ShowInCatalog, Some("The catalog has not been read yet"))
+        );
+        assert_eq!(
+            shown(Indexed::Unlisted),
+            (Choice::ShowInCatalog, Some("The catalog no longer lists it"))
+        );
+    }
+
+    /// The menu's words, as `EntryRow.dc.html:70-77` writes them.
+    #[test]
+    fn each_line_says_what_the_bundle_says() {
+        assert_eq!(Choice::Rename.label(), "Rename...");
+        assert_eq!(Choice::CopyUuid.label(), "Copy UUID");
+        assert_eq!(Choice::ShowInCatalog.label(), "Show in catalog");
     }
 
     /// The nine words, in the order the bundle's own `STATUS` map lists them -
@@ -617,9 +766,9 @@ mod tests {
         }
     }
 
-    /// The design's table never puts more than two controls on a row, which is
-    /// why the 84 it reserves - and the narrow row's 76 - is never close to
-    /// full at 22 apiece.
+    /// The design's table never puts more than two controls on a row besides
+    /// the overflow, which is why the 84 it reserves - and the narrow row's 76 -
+    /// holds all three at 22 apiece.
     #[test]
     fn no_state_offers_more_than_two_controls() {
         for status in EVERY {

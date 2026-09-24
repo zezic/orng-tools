@@ -300,6 +300,13 @@ pub mod metric {
     /// eight from the window where the control's is twelve.
     pub const MENU_DROP: f32 = 5.0;
     pub const MENU_OVERHANG: f32 = 4.0;
+    /// A row's overflow menu, `EntryRow.dc.html:68`: the bar menu's surface at
+    /// `min-width:184px`, so it draws 194 across. It hangs off the row rather
+    /// than off the control, `top:31px; right:10px`, which puts its top five
+    /// above the row's foot and its right edge two past the control's.
+    pub const ROW_MENU: f32 = 184.0;
+    pub const ROW_MENU_TOP: f32 = 31.0;
+    pub const ROW_MENU_RIGHT: f32 = 10.0;
 
     /// Corner of a control. The design rounds by three, not by six: at these
     /// sizes a six-pixel radius reads as a pill rather than as a soft corner.

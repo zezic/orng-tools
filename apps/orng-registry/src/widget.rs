@@ -23,7 +23,7 @@ use eframe::egui::{
 };
 use orng_tools::{Kind, Placement, TheDocument};
 
-use crate::status::{Action, Consequences, Naming, Offer, Published, Status};
+use crate::status::{Action, Choice, Consequences, Line, Offer, Origin, Published, Status};
 use crate::theme::{Palette, font, metric};
 
 /// The frame behind the install bar and the action bar.
@@ -679,6 +679,9 @@ pub mod icon {
     use egui_phosphor::light;
 
     pub const OVERFLOW: &str = light::DOTS_THREE_OUTLINE_VERTICAL;
+    /// A row's own overflow, which is not the bar's: `EntryRow.dc.html:64`
+    /// draws plain dots where the install bar draws outlined ones.
+    pub const MORE: &str = light::DOTS_THREE_VERTICAL;
     pub const CHANGE_INSTALL: &str = light::FOLDER_OPEN;
     pub const ADD_FILES: &str = light::FILE_PLUS;
     pub const SEARCH: &str = light::MAGNIFYING_GLASS;
@@ -793,22 +796,58 @@ pub mod icon {
 /// `Button::fill` of transparent wins over every state, and the item would
 /// never light up under the pointer.
 pub fn menu_item(ui: &mut Ui, palette: Palette, icon: &str, label: &str) -> Response {
-    let button = egui::Button::new(labelled_icon(
-        ui,
-        icon,
-        label,
-        font::CONTROL,
-        palette.ink,
-        palette.ink_3,
-        metric::MENU_GAP,
-    ))
-    .stroke(Stroke::NONE)
-    .corner_radius(CornerRadius::same(metric::RADIUS))
-    .min_size(vec2(metric::MENU, metric::MENU_ITEM));
+    let ink = MenuInk { label: palette.ink, glyph: palette.ink_3 };
+    menu_line(ui, palette, metric::MENU, icon, label, ink, None)
+}
+
+/// One line of a row's overflow menu: the bar menu's line on a narrower menu,
+/// with a brighter glyph - `EntryRow.dc.html:70-77`. A refused line keeps its
+/// place, dimmed whole, and says why on hover.
+fn row_menu_line(ui: &mut Ui, palette: Palette, line: Line) -> Response {
+    let ink = match line.refused {
+        None => MenuInk { label: palette.ink, glyph: palette.ink_2 },
+        Some(_) => MenuInk { label: palette.ink_3, glyph: palette.ink_3 },
+    };
+    let glyph = menu_glyph(line.choice);
+    menu_line(ui, palette, metric::ROW_MENU, glyph, line.choice.label(), ink, line.refused)
+}
+
+/// The two inks of a menu line, which the two menus set differently.
+#[derive(Debug, Clone, Copy)]
+struct MenuInk {
+    label: Color32,
+    glyph: Color32,
+}
+
+fn menu_line(
+    ui: &mut Ui,
+    palette: Palette,
+    width: f32,
+    icon: &str,
+    label: &str,
+    ink: MenuInk,
+    refused: Option<&str>,
+) -> Response {
+    let text =
+        labelled_icon(ui, icon, label, font::CONTROL, ink.label, ink.glyph, metric::MENU_GAP);
+    let button = egui::Button::new(text)
+        .stroke(Stroke::NONE)
+        .corner_radius(CornerRadius::same(metric::RADIUS))
+        .min_size(vec2(width, metric::MENU_ITEM));
     ui.scope(|ui| {
         ui.spacing_mut().button_padding = vec2(metric::MENU_PAD_X, metric::MENU_PAD_Y);
-        filled_button(ui, Color32::TRANSPARENT, palette.btn_hover, button)
-            .on_hover_cursor(egui::CursorIcon::PointingHand)
+        match refused {
+            None => filled_button(ui, Color32::TRANSPARENT, palette.btn_hover, button)
+                .on_hover_cursor(egui::CursorIcon::PointingHand),
+            Some(why) => {
+                // The dimming is the ink's, stated once, for the reason
+                // `held_dismiss` gives.
+                ui.visuals_mut().disabled_alpha = 1.0;
+                ui.disable();
+                filled_button(ui, Color32::TRANSPARENT, Color32::TRANSPARENT, button)
+                    .on_disabled_hover_text(why)
+            }
+        }
     })
     .inner
 }
@@ -1028,14 +1067,19 @@ impl CatalogColumns {
 /// accent at nine per cent and leaves it filled whether or not the pointer is
 /// over it, which is what stops the panel from appearing to be about whichever
 /// row is under the mouse.
+///
+/// `id` is what the row is kept apart from the others by, which is what its
+/// overflow menu is kept open under.
 pub fn row(
     ui: &mut Ui,
     palette: Palette,
     width: Width,
     selected: bool,
+    id: impl egui::AsIdSalt,
     contents: impl FnOnce(&mut Ui, &Columns, Controls),
 ) -> Response {
-    let (rect, controls, response) = row_frame(ui, palette, metric::ROW, selected);
+    let id = ui.make_persistent_id(id);
+    let (rect, controls, response) = row_frame(ui, palette, metric::ROW, selected, id);
     let columns = Columns::across(rect, width);
     let mut content = ui.new_child(egui::UiBuilder::new().max_rect(rect));
     contents(&mut content, &columns, controls);
@@ -1050,7 +1094,8 @@ pub fn catalog_row(
     selected: bool,
     contents: impl FnOnce(&mut Ui, &CatalogColumns),
 ) -> Response {
-    let (rect, _, response) = row_frame(ui, palette, metric::CATALOG_ROW, selected);
+    let id = ui.next_auto_id();
+    let (rect, _, response) = row_frame(ui, palette, metric::CATALOG_ROW, selected, id);
     let columns = CatalogColumns::across(rect, width);
     let mut content = ui.new_child(egui::UiBuilder::new().max_rect(rect));
     contents(&mut content, &columns);
@@ -1067,20 +1112,27 @@ fn row_frame(
     palette: Palette,
     height: f32,
     selected: bool,
+    id: egui::Id,
 ) -> (Rect, Controls, Response) {
-    let (rect, response) =
-        ui.allocate_exact_size(vec2(ui.available_width(), height), Sense::click());
+    let (_, rect) = ui.allocate_space(vec2(ui.available_width(), height));
+    let response = ui.interact(rect, id, Sense::click());
+    let menu = Menu(id.with("more"));
     // Asked of the rectangle rather than of the response. A control drawn
     // inside the row is the widget egui calls hovered while the pointer is on
     // it, so a row that asked `hovered()` would put its own controls away the
     // moment the pointer reached one, and drop its fill under the identity the
     // user was about to click. This still answers no while a menu or a modal
-    // covers the row, because those are areas of their own.
-    let controls =
-        if ui.rect_contains_pointer(rect) { Controls::Shown } else { Controls::Hidden };
+    // covers the row, because those are areas of their own - except the row's
+    // own menu, which the design counts as the row: it is its child there, so
+    // the pointer leaving the row is the pointer leaving both.
+    let controls = if ui.rect_contains_pointer(rect) || menu.holds_pointer(ui.ctx()) {
+        Controls::Shown(menu)
+    } else {
+        Controls::Hidden
+    };
     let fill = match (selected, controls) {
         (true, _) => Some(palette.row_selected),
-        (false, Controls::Shown) => Some(palette.row_hover),
+        (false, Controls::Shown(_)) => Some(palette.row_hover),
         (false, Controls::Hidden) => None,
     };
     if let Some(fill) = fill {
@@ -1097,8 +1149,26 @@ fn row_frame(
 /// their column is reserved.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Controls {
-    Shown,
+    /// Drawn, with the row's overflow menu among them.
+    Shown(Menu),
     Hidden,
+}
+
+/// The id a row's overflow menu is kept open under.
+///
+/// Made from the row's own, so a menu stays with the row it was opened on
+/// while the rows around it come and go. It closes itself when the controls
+/// are hidden: egui lets go of a popup that was not shown for a frame.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Menu(egui::Id);
+
+impl Menu {
+    /// Whether it is open with the pointer on it.
+    fn holds_pointer(self, ctx: &egui::Context) -> bool {
+        let Some(pointer) = ctx.pointer_hover_pos() else { return false };
+        egui::Popup::is_id_open(ctx, self.0)
+            && ctx.memory(|memory| memory.area_rect(self.0)).is_some_and(|at| at.contains(pointer))
+    }
 }
 
 /// The controls at the right end of a row, in the column reserved for them.
@@ -1108,33 +1178,65 @@ pub enum Controls {
 /// two surfaces that draw it.
 ///
 /// Laid out right to left, because the design right-aligns the group and its
-/// DOM order puts the removal nearest the edge. At most two are ever offered at
-/// once, so the 84 the design reserves is never close to full.
+/// DOM order puts the overflow nearest the edge and the removal beside it. At
+/// most two are ever offered at once besides the overflow, so the 84 the design
+/// reserves is never full.
 ///
-/// Answers which one was pressed.
+/// Answers which one was pressed, or which line of the overflow menu.
 pub fn row_actions(
     ui: &mut Ui,
     palette: Palette,
     at: Rect,
     controls: Controls,
     status: Status,
+    origin: Origin,
     consequences: Consequences,
-) -> Option<Action> {
-    if controls == Controls::Hidden {
-        return None;
-    }
+) -> Option<RowPress> {
+    let Controls::Shown(menu) = controls else { return None };
     let mut pressed = None;
     let mut group = ui.new_child(
         egui::UiBuilder::new().max_rect(at).layout(Layout::right_to_left(Align::Center)),
     );
     group.spacing_mut().item_spacing.x = metric::ROW_ACTION_GAP;
+    if let Some(lines) = status.in_the_menu(origin) {
+        let tones = (palette.ink_3, palette.ink, palette.btn_hover);
+        let more = row_control(&mut group, icon::MORE, "More", tones);
+        // Hung off the row rather than off the control, as the design has it:
+        // the anchor is the point the bundle's `top` and `right` name, and the
+        // menu's top right corner is put on it.
+        let corner = egui::pos2(
+            at.right() + metric::PAD - metric::ROW_MENU_RIGHT,
+            at.top() + metric::ROW_MENU_TOP,
+        );
+        egui::Popup::menu(&more)
+            .id(menu.0)
+            .align(egui::RectAlign::BOTTOM_END)
+            .anchor(Rect::from_min_max(egui::pos2(corner.x, at.top()), corner))
+            .frame(menu_frame(palette))
+            .show(|ui| {
+                ui.spacing_mut().item_spacing.y = 0.0;
+                for line in lines {
+                    if row_menu_line(ui, palette, line).clicked() {
+                        pressed = Some(RowPress::Chose(line.choice));
+                    }
+                }
+            });
+    }
     for action in status.actions().rev() {
         let label = action.hover(status, consequences);
         if row_action(&mut group, palette, action, &label).clicked() {
-            pressed = Some(action);
+            pressed = Some(RowPress::Acted(action));
         }
     }
     pressed
+}
+
+/// What was pressed at a row's end: one of its own controls, or a line of the
+/// menu behind its overflow.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RowPress {
+    Acted(Action),
+    Chose(Choice),
 }
 
 /// The control at the right end of a catalog row, in the column reserved for it.
@@ -1232,9 +1334,17 @@ pub fn action_glyph(action: Action) -> &'static str {
     }
 }
 
+/// The glyph a line of a row's overflow menu wears: `EntryRow.dc.html:70-77`.
+fn menu_glyph(choice: Choice) -> &'static str {
+    match choice {
+        Choice::Rename => icon::RENAME,
+        Choice::CopyUuid => icon::COPY,
+        Choice::ShowInCatalog => icon::CATALOG,
+    }
+}
+
 fn row_action(ui: &mut Ui, palette: Palette, action: Action, label: &str) -> Response {
-    let glyph = action_glyph(action);
-    let (ink, lit, fill) = match action {
+    let tones = match action {
         // The remedies on a broken row, and the only ones the design gives the
         // accent rather than the quiet grey the others wear - the pencil "the
         // same weight as `Locate`", in the round-five answers. Each keeps its
@@ -1247,6 +1357,17 @@ fn row_action(ui: &mut Ui, palette: Palette, action: Action, label: &str) -> Res
             (palette.ink_2, palette.ink, palette.btn_hover)
         }
     };
+    row_control(ui, action_glyph(action), label, tones)
+}
+
+/// A square at a row's end with a mark in it: its ink, the ink it lights to
+/// under the pointer, and the ground that arrives behind it then.
+fn row_control(
+    ui: &mut Ui,
+    glyph: &str,
+    label: &str,
+    (ink, lit, fill): (Color32, Color32, Color32),
+) -> Response {
     let (rect, response) =
         ui.allocate_exact_size(vec2(metric::ROW_ACTION, metric::ROW_ACTION), Sense::click());
     // What it is, for anything reading the window rather than looking at it -
@@ -1503,8 +1624,8 @@ pub struct Inspected<'a> {
     /// Which of the nine states this entry is in, which is what decides the
     /// panel's action list - see [`crate::status`].
     pub status: Status,
-    /// Whose name it carries, which decides whether the list offers a rename.
-    pub naming: Naming,
+    /// Where it came from, which decides whether the list offers a rename.
+    pub origin: Origin,
     /// What removing this entry would do to its document, which is a setting
     /// and not a property of the entry. Carried here because the panel's
     /// removal control has to name it, exactly as the row's does.
@@ -1618,7 +1739,7 @@ pub fn inspector(
         // offering `Reveal file` on the one entry whose file cannot be found -
         // is unreachable rather than avoided. Revision 8 adds the one the row
         // does not have, `Rename...`, above them.
-        for action in item.status.in_the_panel(item.naming) {
+        for action in item.status.in_the_panel(item.origin) {
             let control =
                 panel_action(ui, palette, action_glyph(action), action.in_the_panel(), weight_of(action));
             // The one control here whose tooltip is not its label: what

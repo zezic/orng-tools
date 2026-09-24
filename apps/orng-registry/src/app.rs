@@ -35,7 +35,9 @@ use crate::restore::Backups;
 use crate::session::{Badge, Found, Session};
 use crate::settings::{Appearance, Preferences, Settings};
 use crate::staging::{self, Reading, Staged};
-use crate::status::{Action, Consequences, Naming, Offer, Published, Status, removal_consequence};
+use crate::status::{
+    Action, Choice, Consequences, Indexed, Offer, Origin, Published, Status, removal_consequence,
+};
 use crate::theme::{self, Palette, font, metric};
 use crate::widget::{self, Emphasis, Fact, Measure, Padding, Tone, icon};
 use crate::work::{Applying, Errand, Stage, Work};
@@ -1474,12 +1476,11 @@ impl App {
             return None;
         };
 
-        let (source, source_icon, naming) = match &entry.provenance {
-            Provenance::Local => ("Local file".to_owned(), widget::icon::LOCAL_FILE, Naming::Own),
+        let (source, source_icon) = match &entry.provenance {
+            Provenance::Local => ("Local file".to_owned(), widget::icon::LOCAL_FILE),
             Provenance::Catalog { version, .. } => (
                 format!("ORNG Catalog {} {version}", widget::SEPARATOR),
                 widget::icon::CATALOG,
-                Naming::Catalogs,
             ),
         };
         // Off the entry rather than off the catalog, and that is the point of
@@ -1497,6 +1498,7 @@ impl App {
         // Before the panel is borrowed to type into, for the reason `document`
         // is: these ask the same `self` the words are held in.
         let status = self.status_of(found, entry);
+        let origin = self.origin_of(entry);
         let held = self.held();
         let install = widget::drawn_path(found.to.install.root());
         // Split apart so the fields can be borrowed separately: the panel
@@ -1513,7 +1515,7 @@ impl App {
             provenance: provenance.as_ref().map(|(at, url)| (at.as_str(), url.as_str())),
             placement,
             status,
-            naming,
+            origin,
             document,
             hold: held.map(|held| match held {
                 Held::Asking => widget::Hold::Asking { install: &install },
@@ -3200,10 +3202,13 @@ impl App {
         let Listing { pending, registered } = &listing;
         let palette = self.palette;
         let open = self.inspecting.as_ref().map(|open| open.uuid);
-        let width = self.width();
-        let consequences = Consequences {
-            document: self.deleting(),
-            asks: matches!(&self.session, Session::Found(found) if asks_for_rights(found)),
+        let rows = Rows {
+            palette,
+            width: self.width(),
+            consequences: Consequences {
+                document: self.deleting(),
+                asks: matches!(&self.session, Session::Found(found) if asks_for_rights(found)),
+            },
         };
         // What the list was clicked on, taken after it has been drawn: opening
         // the panel changes how wide every row is, and changing that half way
@@ -3219,19 +3224,19 @@ impl App {
             if !pending.is_empty() {
                 widget::section(ui, palette, "Pending", palette.accent_text, pending.len());
                 for (at, row) in pending {
-                    if let Some(action) = staged_row(ui, palette, width, row, consequences) {
-                        pressed = Some((Acting::Pending(*at), action));
+                    let on = Acting::Pending(*at);
+                    if let Some(press) = rows.staged(ui, on, row) {
+                        pressed = Some((on, press));
                     }
                 }
             }
             widget::section(ui, palette, "Registered", palette.ink_2, registered.len());
             for entry in registered {
                 let selected = open == Some(entry.uuid);
-                let status = self.status_of(found, entry);
-                let (response, action) =
-                    row(ui, palette, width, selected, entry, status, consequences);
-                if let Some(action) = action {
-                    pressed = Some((Acting::Registered(entry.uuid), action));
+                let (status, origin) = (self.status_of(found, entry), self.origin_of(entry));
+                let (response, press) = rows.registered(ui, selected, entry, status, origin);
+                if let Some(press) = press {
+                    pressed = Some((Acting::Registered(entry.uuid), press));
                 }
                 if response.clicked() {
                     // The same row again closes it, which is what makes the
@@ -3249,8 +3254,10 @@ impl App {
         {
             self.inspecting = entry;
         }
-        if let Some((on, action)) = pressed {
-            self.act(on, action, ui.ctx());
+        match pressed {
+            Some((on, widget::RowPress::Acted(action))) => self.act(on, action, ui.ctx()),
+            Some((on, widget::RowPress::Chose(choice))) => self.choose(on, choice, ui.ctx()),
+            None => {}
         }
     }
 
@@ -3301,6 +3308,19 @@ impl App {
         // wrong row.
         let published = self.index()?.items.iter().find(|item| item.uuid == entry.uuid)?;
         (published.version > *version).then_some((published, version))
+    }
+
+    /// Where an entry came from, and for the catalog's, whether the index in
+    /// hand lists it - by identity, for the reason `newer` gives.
+    fn origin_of(&self, entry: &Registration) -> Origin {
+        let Provenance::Catalog { .. } = &entry.provenance else { return Origin::Own };
+        Origin::Catalog(match self.index() {
+            None => Indexed::Unread,
+            Some(index) if index.items.iter().any(|item| item.uuid == entry.uuid) => {
+                Indexed::Listed
+            }
+            Some(_) => Indexed::Unlisted,
+        })
     }
 
     fn status_of(&self, found: &Found, entry: &Registration) -> Status {
@@ -3467,10 +3487,11 @@ impl App {
                 let refusal = staging::refusal(&self.pending.staged, at, &name, entries, to);
                 self.confirming = Some(Confirming::Rename(Renaming { on, name, refusal }));
             }
-            // From the inspector. Opened on the name the entry has, which is
-            // free by definition, so the question starts with nothing to say.
+            // From the inspector or the row's menu. Opened on the name the
+            // entry has, which is free by definition, so the question starts
+            // with nothing to say.
             (Acting::Registered(uuid), Action::Rename) => {
-                let entry = found.entries().get(uuid).expect("the entry the panel is open on");
+                let entry = found.entries().get(uuid).expect("the entry a rename was offered on");
                 let name = entry.name.clone();
                 self.confirming = Some(Confirming::Rename(Renaming { on, name, refusal: None }));
             }
@@ -3501,6 +3522,36 @@ impl App {
             // no identity left to mint. Reached means the table and the list
             // have come apart, which is worth the crash.
             (on, action) => unreachable!("{action:?} was offered on {on:?}"),
+        }
+    }
+
+    /// Carry out a line of a row's overflow menu.
+    ///
+    /// Taken after the list has been drawn, as a row's own control is.
+    fn choose(&mut self, on: Acting, choice: Choice, ctx: &egui::Context) {
+        match (on, choice) {
+            // The same question the pencil and the inspector ask, which is
+            // what makes this the way to rename a staged row nothing collides
+            // with: the inspector opens on registered entries only.
+            (on, Choice::Rename) => self.act(on, Action::Rename, ctx),
+            (Acting::Pending(at), Choice::CopyUuid) => {
+                let row = &self.pending.staged[at];
+                let document =
+                    row.document().expect("a menu is offered only on a row that was read");
+                ctx.copy_text(document.identity().uuid.to_string());
+            }
+            (Acting::Registered(uuid), Choice::CopyUuid) => ctx.copy_text(uuid.to_string()),
+            // The catalog's own panel on the item, as a catalog row's press
+            // opens it. Offered only where the index in hand lists it.
+            (Acting::Registered(uuid), Choice::ShowInCatalog) => {
+                self.view = View::Catalog;
+                self.detailing = Some(uuid);
+            }
+            // A dropped document is never the catalog's, so its menu has no
+            // way to the catalog.
+            (on @ Acting::Pending(_), Choice::ShowInCatalog) => {
+                unreachable!("Show in catalog was offered on {on:?}")
+            }
         }
     }
 
@@ -5036,51 +5087,141 @@ fn short_uuid(uuid: Uuid) -> String {
     uuid.to_string().split('-').next().unwrap_or_default().to_owned()
 }
 
-/// One registered entry.
-///
-/// Answers whether it was clicked, which is how the inspector is opened - the
-/// design makes the whole row the control rather than putting a disclosure
-/// arrow on it - and which of the row's own controls was pressed, if one was.
-fn row(
-    ui: &mut egui::Ui,
+/// What every row of the Local list is drawn with, whichever list it is in.
+#[derive(Clone, Copy)]
+struct Rows {
     palette: Palette,
     width: widget::Width,
-    selected: bool,
-    entry: &Registration,
-    status: Status,
     consequences: Consequences,
-) -> (egui::Response, Option<Action>) {
-    let secondary = widget::supporting_ink(palette, selected);
-    let mut pressed = None;
-    let response = widget::row(ui, palette, width, selected, |ui, columns, controls| {
-        widget::cell(ui, columns.kind, Align::Min, |ui| {
-            widget::kind_label(ui, secondary, entry.kind());
-        });
-        widget::cell(ui, columns.name, Align::Min, |ui| {
-            // Struck through while a removal is queued, which is the design's
-            // way of showing a row that is about to stop existing without
-            // taking it out of the list the press has not yet been made on.
-            let name = font::run(&entry.name, font::emphasis(ui.ctx(), font::ROW_NAME))
-                .color(palette.ink);
-            let name = if status.struck_through() { name.strikethrough() } else { name };
-            ui.add(egui::Label::new(name).truncate())
-                .on_hover_text(entry.library_path.as_str());
-        });
-        if let Some(at) = columns.uuid {
-            widget::cell(ui, at, Align::Min, |ui| {
-                identity(ui, secondary, entry.uuid);
+}
+
+impl Rows {
+    /// One registered entry.
+    ///
+    /// Answers whether it was clicked, which is how the inspector is opened - the
+    /// design makes the whole row the control rather than putting a disclosure
+    /// arrow on it - and which of the row's own controls was pressed, if one was.
+    fn registered(
+        self,
+        ui: &mut egui::Ui,
+        selected: bool,
+        entry: &Registration,
+        status: Status,
+        origin: Origin,
+    ) -> (egui::Response, Option<widget::RowPress>) {
+        let Rows { palette, width, consequences } = self;
+        let secondary = widget::supporting_ink(palette, selected);
+        let mut pressed = None;
+        let on = Acting::Registered(entry.uuid);
+        let response = widget::row(ui, palette, width, selected, on, |ui, columns, controls| {
+            widget::cell(ui, columns.kind, Align::Min, |ui| {
+                widget::kind_label(ui, secondary, entry.kind());
             });
-        }
-        widget::cell(ui, columns.status, Align::Min, |ui| {
-            ui.label(
-                font::run(status.word(), font::plain(font::CHIP))
-                    .color(widget::status_colour(palette, status)),
+            widget::cell(ui, columns.name, Align::Min, |ui| {
+                // Struck through while a removal is queued, which is the design's
+                // way of showing a row that is about to stop existing without
+                // taking it out of the list the press has not yet been made on.
+                let name = font::run(&entry.name, font::emphasis(ui.ctx(), font::ROW_NAME))
+                    .color(palette.ink);
+                let name = if status.struck_through() { name.strikethrough() } else { name };
+                ui.add(egui::Label::new(name).truncate())
+                    .on_hover_text(entry.library_path.as_str());
+            });
+            if let Some(at) = columns.uuid {
+                widget::cell(ui, at, Align::Min, |ui| {
+                    identity(ui, secondary, entry.uuid);
+                });
+            }
+            widget::cell(ui, columns.status, Align::Min, |ui| {
+                ui.label(
+                    font::run(status.word(), font::plain(font::CHIP))
+                        .color(widget::status_colour(palette, status)),
+                );
+            });
+            pressed = widget::row_actions(
+                ui,
+                palette,
+                columns.actions,
+                controls,
+                status,
+                origin,
+                consequences,
             );
         });
-        pressed =
-            widget::row_actions(ui, palette, columns.actions, controls, status, consequences);
-    });
-    (response, pressed)
+        (response, pressed)
+    }
+
+    /// One dropped document, and what can be done with it.
+    ///
+    /// Answers which of its own controls was pressed, if one was. It is never the
+    /// selected row: the inspector opens on registered entries, and a staged
+    /// document is not one yet.
+    ///
+    /// `on` is the row, by its place in the pending list.
+    fn staged(self, ui: &mut egui::Ui, on: Acting, staged: &Staged) -> Option<widget::RowPress> {
+        let Rows { palette, width, consequences } = self;
+        let status = staged.status();
+        let mut pressed = None;
+        widget::row(ui, palette, width, false, on, |ui, columns, controls| {
+            widget::cell(ui, columns.kind, Align::Min, |ui| {
+                // A rejected row has no kind, because nothing readable said what it
+                // was. Drawing one would be inventing it.
+                match staged.document() {
+                    Some(document) => widget::kind_label(ui, palette.ink_3, document.kind()),
+                    None => {
+                        ui.label(font::run("-", font::plain(font::CHIP)).color(palette.ink_3));
+                    }
+                }
+            });
+            widget::cell(ui, columns.name, Align::Min, |ui| {
+                ui.label(
+                    font::run(&staged.label, font::emphasis(ui.ctx(), font::ROW_NAME))
+                        .color(if staged.is_ready() { palette.ink } else { palette.ink_2 }),
+                );
+                // The reason sits beside the name, in the colour of the status it
+                // explains, so an explanation is never louder than the word it
+                // belongs to. It goes with the identity when the inspector is open:
+                // the design drops both rather than truncating a sentence into
+                // whatever the narrow name column has left.
+                if let Some(why) = staged.reason().filter(|_| width == widget::Width::Full) {
+                    ui.add_space(BESIDE_THE_NAME);
+                    ui.add(
+                        egui::Label::new(
+                            font::run(why, font::plain(font::NOTE))
+                                .color(widget::status_colour(palette, status)),
+                        )
+                        .truncate(),
+                    );
+                }
+            });
+            if let Some(at) = columns.uuid {
+                widget::cell(ui, at, Align::Min, |ui| match staged.document() {
+                    Some(document) => identity(ui, palette.ink_3, document.identity().uuid),
+                    None => {
+                        ui.label(font::run("-", font::mono(font::MONO)).color(palette.ink_3));
+                    }
+                });
+            }
+            widget::cell(ui, columns.status, Align::Min, |ui| {
+                ui.label(
+                    font::run(status.word(), font::plain(font::CHIP))
+                        .color(widget::status_colour(palette, status)),
+                );
+            });
+            // A dropped document is a file the user chose, never the catalog's:
+            // an install registers without staging.
+            pressed = widget::row_actions(
+                ui,
+                palette,
+                columns.actions,
+                controls,
+                status,
+                Origin::Own,
+                consequences,
+            );
+        });
+        pressed
+    }
 }
 
 /// An identity, short enough for a column and whole on hover. Clicking copies
@@ -5107,7 +5248,7 @@ fn identity(ui: &mut egui::Ui, ink: egui::Color32, uuid: Uuid) {
 /// the state the pending list exists to show - it is the collision `Assign new
 /// UUID` settles - so an identity there can name two rows and did: the first
 /// `Cancel` written against one took both away.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 enum Acting {
     /// A row in the pending list, by its position in it.
     Pending(usize),
@@ -5115,71 +5256,6 @@ enum Acting {
     Registered(Uuid),
 }
 
-/// One dropped document, and what can be done with it.
-///
-/// Answers which of its own controls was pressed, if one was. It is never the
-/// selected row: the inspector opens on registered entries, and a staged
-/// document is not one yet.
-fn staged_row(
-    ui: &mut egui::Ui,
-    palette: Palette,
-    width: widget::Width,
-    staged: &Staged,
-    consequences: Consequences,
-) -> Option<Action> {
-    let status = staged.status();
-    let mut pressed = None;
-    widget::row(ui, palette, width, false, |ui, columns, controls| {
-        widget::cell(ui, columns.kind, Align::Min, |ui| {
-            // A rejected row has no kind, because nothing readable said what it
-            // was. Drawing one would be inventing it.
-            match staged.document() {
-                Some(document) => widget::kind_label(ui, palette.ink_3, document.kind()),
-                None => {
-                    ui.label(font::run("-", font::plain(font::CHIP)).color(palette.ink_3));
-                }
-            }
-        });
-        widget::cell(ui, columns.name, Align::Min, |ui| {
-            ui.label(
-                font::run(&staged.label, font::emphasis(ui.ctx(), font::ROW_NAME))
-                    .color(if staged.is_ready() { palette.ink } else { palette.ink_2 }),
-            );
-            // The reason sits beside the name, in the colour of the status it
-            // explains, so an explanation is never louder than the word it
-            // belongs to. It goes with the identity when the inspector is open:
-            // the design drops both rather than truncating a sentence into
-            // whatever the narrow name column has left.
-            if let Some(why) = staged.reason().filter(|_| width == widget::Width::Full) {
-                ui.add_space(BESIDE_THE_NAME);
-                ui.add(
-                    egui::Label::new(
-                        font::run(why, font::plain(font::NOTE))
-                            .color(widget::status_colour(palette, status)),
-                    )
-                    .truncate(),
-                );
-            }
-        });
-        if let Some(at) = columns.uuid {
-            widget::cell(ui, at, Align::Min, |ui| match staged.document() {
-                Some(document) => identity(ui, palette.ink_3, document.identity().uuid),
-                None => {
-                    ui.label(font::run("-", font::mono(font::MONO)).color(palette.ink_3));
-                }
-            });
-        }
-        widget::cell(ui, columns.status, Align::Min, |ui| {
-            ui.label(
-                font::run(status.word(), font::plain(font::CHIP))
-                    .color(widget::status_colour(palette, status)),
-            );
-        });
-        pressed =
-            widget::row_actions(ui, palette, columns.actions, controls, status, consequences);
-    });
-    pressed
-}
 
 /// Between a name and the reason beside it, which is closer than two separate
 /// things but further than one phrase.

@@ -349,7 +349,7 @@ pub fn empty_alt(ui: &mut Ui, palette: Palette, label: &str) -> Response {
     empty_button(ui, palette, label, font::CONTROL, metric::EMPTY_ALT_PAD)
 }
 
-/// How wide a run of widgets comes out, before any of it is drawn.
+/// How wide and how tall a run of widgets comes out, before any of it is drawn.
 ///
 /// A pass in a `Ui` that paints nothing and takes no input, so the closure that
 /// answers the question is the closure that draws it, and the two cannot come
@@ -363,21 +363,26 @@ pub fn empty_alt(ui: &mut Ui, palette: Palette, label: &str) -> Response {
 /// answers with the width of its widest member. Which the toolbar's search
 /// field then took as licence to draw full width over the chips beside it.
 ///
+/// **And opened no taller than nothing**, so the height is the run's own: the
+/// tallest thing in it. In anything taller a centring layout centres the run on
+/// the space it was given, and the height comes back as half of that plus half
+/// the run.
+///
 /// The salt keeps two measurements on one line from sharing an id, and with it
 /// the interaction memory of whatever is inside them.
-pub fn measured(ui: &Ui, salt: impl egui::AsIdSalt, contents: impl FnOnce(&mut Ui)) -> f32 {
+pub fn measured(ui: &Ui, salt: impl egui::AsIdSalt, contents: impl FnOnce(&mut Ui)) -> egui::Vec2 {
     let mut probe = Ui::new(
         ui.ctx().clone(),
         ui.id().with(salt),
         egui::UiBuilder::new()
             .sizing_pass()
             .invisible()
-            .max_rect(ui.max_rect())
+            .max_rect(Rect::from_min_size(ui.max_rect().min, vec2(ui.max_rect().width(), 0.0)))
             .layout(Layout::left_to_right(Align::Center)),
     );
     *probe.spacing_mut() = ui.spacing().clone();
     contents(&mut probe);
-    probe.min_rect().width()
+    probe.min_rect().size()
 }
 
 /// How wide a run of text is once it has been laid out.
@@ -2835,14 +2840,22 @@ pub fn group_frame(palette: Palette, pad: Padding) -> Frame {
 /// anyway, and says [`NO_PATH`]: a row that vanished would make the Paths group
 /// a different height depending on what went wrong, and the bundle has no mockup
 /// of either state to say otherwise. See `design-review.md` round 3 item 5.
+///
+/// Every cell is centred on the row, which is the design's `align-items:center`,
+/// and so the row is measured before it is drawn and opened at its own height.
+/// A horizontal row opens at `interact_size.y`, which a screen zeroes, and egui
+/// hangs the first cell of a row that short from its top rather than centring
+/// it: the label drew four and a half pixels above the path beside it, and `No
+/// backup yet` the same. `controls` is therefore called twice a frame, the first
+/// time in a pass that draws nothing and answers no press.
 pub fn path_row(
     ui: &mut Ui,
     palette: Palette,
     label: &str,
     path: Option<&str>,
-    controls: impl FnOnce(&mut Ui),
+    mut controls: impl FnMut(&mut Ui),
 ) {
-    ui.horizontal(|ui| {
+    let mut cells = |ui: &mut Ui| {
         ui.spacing_mut().item_spacing.x = metric::ALONG_A_PATH_ROW;
         ui.allocate_ui_with_layout(
             vec2(metric::PATH_LABEL_COLUMN, ui.available_height()),
@@ -2868,7 +2881,14 @@ pub fn path_row(
                 path_field(ui, palette, path);
             });
         });
-    });
+    };
+    // Salted by the label: three rows share a parent, and their probes an id.
+    let height = measured(ui, ("path-row", label), &mut cells).y;
+    ui.allocate_ui_with_layout(
+        vec2(ui.available_width(), height),
+        Layout::left_to_right(Align::Center),
+        cells,
+    );
 }
 
 /// What a path row says where there is nothing to say, in the quietest ink:

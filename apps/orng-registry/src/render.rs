@@ -3371,6 +3371,51 @@ fn shot_settings(name: &str, dark: bool, settings: Settings) {
     look(&mut harness, name);
 }
 
+/// Every cell of a path row centred on the row, against `SettingsScreen.dc.html`
+/// rendered at its own preview size and asked for every box.
+///
+/// The grid is `align-items:center`, and the bundle puts the first two rows at 91
+/// and 125, 25 tall, with the 14-tall label, the path, `Browse` and the reset
+/// control each centred on 103.5 and 137.5. The label and `No backup yet` hung
+/// from the row's top instead, four and a half pixels high, and `settings.png`
+/// vouched for it: a picture has no opinion about where the middle is.
+///
+/// The third row is drawn here with no backup, which the bundle's preview is
+/// not: its `Restore...` makes it 24 tall at 159. Without it the tallest cell is
+/// the 23-tall path box, and the middle is 170.5.
+#[test]
+fn a_path_rows_cells_are_centred_on_the_row() {
+    let root = fixture("settings-centred");
+    let session = found(&root, Helper::Present, GuardState::Disarmed);
+    let harness = window(session, |app, _| app.show_settings());
+
+    // A row is measured before it is drawn, and the measuring pass leaves a
+    // node for every cell hung from the top of the group. So each cell is the
+    // lowest node carrying its words that shares a line with the row's label.
+    let beside = |row: egui::Rect, cell: &str| {
+        harness
+            .get_all_by_label_contains(cell)
+            .map(|node| node.rect())
+            .filter(|rect| rect.top() < row.bottom() && row.top() < rect.bottom())
+            .max_by(|a, b| a.top().total_cmp(&b.top()))
+            .unwrap_or_else(|| panic!("no {cell:?} beside the row at {}", row.top()))
+    };
+    let reset = crate::widget::icon::RESET;
+    for (label, path, middle) in
+        [("Bitwig install", "render-fixtures", 103.5), ("User library", "render-fixtures", 137.5)]
+    {
+        let row = in_the_region(&harness, label).rect();
+        assert_eq!(row.height(), 14.0, "{label:?} is not the bundle's line");
+        for cell in [label, path, "Browse", reset] {
+            assert_eq!(beside(row, cell).center().y, middle, "{cell:?} on the {label:?} row");
+        }
+    }
+    let row = in_the_region(&harness, "Backups").rect();
+    for cell in ["Backups", ".orng/backups", "No backup yet"] {
+        assert_eq!(beside(row, cell).center().y, 159.0 + 23.0 / 2.0, "{cell:?} on the Backups row");
+    }
+}
+
 /// The overflow opens Settings, and Settings goes back.
 ///
 /// The class of fault a picture structurally cannot catch, and the one this

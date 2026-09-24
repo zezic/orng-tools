@@ -2782,9 +2782,11 @@ impl App {
         const BETWEEN_TOOLBAR_GROUPS: f32 = 3.0 * metric::TOOL_GAP;
         let fixed = widget::measured(ui, "chips", |ui| {
             chips(ui);
-        }) + widget::measured(ui, "tail", |ui| {
+        })
+        .x + widget::measured(ui, "tail", |ui| {
             tail(ui);
-        }) + BETWEEN_TOOLBAR_GROUPS;
+        })
+        .x + BETWEEN_TOOLBAR_GROUPS;
         let field = widget::search_width(
             ui.available_width(),
             fixed,
@@ -2897,10 +2899,12 @@ impl App {
         const BETWEEN_TOOLBAR_GROUPS: f32 = 3.0 * metric::TOOL_GAP;
         let chips_wide = widget::measured(ui, "catalog-chips", |ui| {
             chips(ui);
-        });
+        })
+        .x;
         let filter_wide = widget::measured(ui, "catalog-tail", |ui| {
             tail(ui);
-        });
+        })
+        .x;
         let fixed = chips_wide + filter_wide + BETWEEN_TOOLBAR_GROUPS;
         let field = widget::search_width(
             ui.available_width(),

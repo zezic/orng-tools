@@ -898,6 +898,7 @@ mod windows {
     use std::io::{Read, Write};
     use std::os::windows::ffi::OsStrExt;
     use std::os::windows::io::{FromRawHandle, OwnedHandle};
+    use std::path::Path;
 
     use orng_tools::{Installation, Manifest, OrngHome};
     use windows_sys::Win32::Foundation::{
@@ -936,6 +937,23 @@ mod windows {
         home: &OrngHome,
         say: &impl Fn(Report),
     ) -> Result<Manifest, String> {
+        let exe = std::env::current_exe()
+            .map_err(|e| format!("this application cannot find its own binary: {e}"))?;
+        run_as(&exe, task, install, home, say)
+    }
+
+    /// The same, with the binary to start as the child named.
+    ///
+    /// Always this application's own outside a test. A test is a different
+    /// binary, and names the application's to run the real child against the
+    /// real parent.
+    fn run_as(
+        exe: &Path,
+        task: &Task,
+        install: &Installation,
+        home: &OrngHome,
+        say: &impl Fn(Report),
+    ) -> Result<Manifest, String> {
         // Before anything is started: a document too large to cross is refused
         // here rather than after the consent dialog.
         let outgoing = task.outgoing()?;
@@ -947,7 +965,7 @@ mod windows {
         // quick enough to call back first would find nothing listening.
         let connecting = pipe.arm_connect()?;
 
-        let child = launch(&name, install, home)?;
+        let child = launch(exe, &name, install, home)?;
 
         // Whichever happens first: the child calls back, or it dies without
         // doing so. Waiting only on the connect is what would hang the run for
@@ -1276,13 +1294,16 @@ mod windows {
     /// `runas` is the verb that raises the consent dialog. The dialog is the
     /// system's own and cannot be drawn, suppressed or answered from here,
     /// which is the property that makes it worth anything.
-    fn launch(pipe: &str, install: &Installation, home: &OrngHome) -> Result<Child, String> {
-        let exe = std::env::current_exe()
-            .map_err(|e| format!("this application cannot find its own binary: {e}"))?;
+    fn launch(
+        exe: &Path,
+        pipe: &str,
+        install: &Installation,
+        home: &OrngHome,
+    ) -> Result<Child, String> {
         let arguments = command_line(OsStr::new(pipe), install.root(), home.user_home());
 
         let verb = wide("runas");
-        let file = wide(&exe);
+        let file = wide(exe);
         let parameters = wide(&arguments);
         let mut info: SHELLEXECUTEINFOW = unsafe { std::mem::zeroed() };
         info.cbSize = size_of::<SHELLEXECUTEINFOW>() as u32;
@@ -1355,6 +1376,102 @@ mod windows {
             assert_eq!(here, Ok(()), "the process that opened the pipe was refused");
             let why = there.expect_err("another process's id was let onto the pipe");
             assert!(why.contains("told nothing"), "refused for something else: {why}");
+        }
+
+        /// A real run, end to end: this module's parent half against the real
+        /// application as the child, elevated, over a real pipe, preparing a real
+        /// installation and placing a real document in it - then a restore down
+        /// the same channel, which has to take the installation back.
+        ///
+        /// **Ignored, and a no-op unless `ORNG_REAL_INSTALL` names an
+        /// installation**, because it prepares that installation and writes into
+        /// it. The restore puts the archive and the bundles back, but the folder
+        /// links the preparation made stay and point at a library that is gone
+        /// when this ends: copy the installation first and put the copy back
+        /// after. Needs `orng-registry.exe` built beside the test binary
+        /// (`cargo build -p orng-registry`) and a document under
+        /// `ORNG_TEST_DOCUMENTS`; the largest there is sent, so the run carries
+        /// more than a pipe buffer.
+        #[ignore = "prepares and writes the installation ORNG_REAL_INSTALL names"]
+        #[test]
+        fn a_real_elevated_run_places_a_document_and_a_restore_takes_it_back() {
+            let Some(root) = std::env::var_os("ORNG_REAL_INSTALL") else {
+                eprintln!("skipped: ORNG_REAL_INSTALL names no installation to write");
+                return;
+            };
+            let install = Installation::at(Path::new(&root)).expect("not an installation");
+            let deps = std::env::current_exe().expect("the test binary");
+            let exe = deps.parent().and_then(Path::parent).expect("a target directory");
+            let exe = exe.join("orng-registry.exe");
+            assert!(exe.is_file(), "{} is not built", exe.display());
+            let samples = std::env::var_os("ORNG_TEST_DOCUMENTS").expect("ORNG_TEST_DOCUMENTS");
+            let largest = largest_document(Path::new(&samples)).expect("no sample documents");
+            let document = orng_tools::Document::read(&largest).expect("a sample that reads");
+
+            let scratch = tempfile::tempdir().expect("somewhere for a library and a home");
+            let home = OrngHome::at(&scratch.path().join("home"));
+            let to = orng_tools::Destination::under(
+                install.clone(),
+                orng_tools::UserLibrary::at(&scratch.path().join("library")),
+                home.clone(),
+                orng_tools::Strategy::Link,
+            );
+            let file_name = largest.file_name().and_then(|n| n.to_str()).expect("a file name");
+            let registration = orng_tools::Registration::from_document(&document, file_name)
+                .expect("a sample that registers");
+            let mut job = super::super::Job::against(
+                super::super::Work::PrepareThenEntries,
+                &to,
+                &Manifest::default(),
+            );
+            job.add(registration.clone(), &document);
+
+            let said = std::cell::RefCell::new(Vec::new());
+            let list = run_as(&exe, &Task::Apply(job), &install, &home, &|report| {
+                said.borrow_mut().push(report)
+            })
+            .expect("the elevated run failed");
+
+            assert!(
+                list.entries().iter().any(|entry| entry.uuid == registration.uuid),
+                "the list the child handed back does not hold the document"
+            );
+            assert!(
+                said.borrow().iter().any(|report| matches!(report, Report::Registering)),
+                "the child never reported writing the entries: {:?}",
+                said.borrow()
+            );
+            let condition = orng_tools::prepare::inspect(&install).expect("a readable install");
+            assert!(condition.is_prepared(), "the installation was not prepared");
+            let placed = orng_tools::placement::target(&to, &registration);
+            assert_eq!(
+                std::fs::read(&placed).expect("the document was not placed"),
+                document.bytes(),
+                "what was placed is not the document that was sent"
+            );
+
+            let backups = orng_tools::Backup::list(&home).expect("the backups");
+            let [backup] = &backups[..] else { panic!("{} backups, not one", backups.len()) };
+            let from = backup.directory().to_path_buf();
+            run_as(&exe, &Task::Restore { from }, &install, &home, &|_| {})
+                .expect("the elevated restore failed");
+            let condition = orng_tools::prepare::inspect(&install).expect("a readable install");
+            assert!(!condition.is_prepared(), "the restore left the installation prepared");
+        }
+
+        fn largest_document(dir: &Path) -> Option<std::path::PathBuf> {
+            let mut found = Vec::new();
+            let mut pending = vec![dir.to_path_buf()];
+            while let Some(dir) = pending.pop() {
+                for path in std::fs::read_dir(&dir).ok()?.flatten().map(|entry| entry.path()) {
+                    if path.is_dir() {
+                        pending.push(path);
+                    } else if orng_tools::Kind::from_path(&path).is_some() {
+                        found.push(path);
+                    }
+                }
+            }
+            found.into_iter().max_by_key(|path| path.metadata().map(|m| m.len()).unwrap_or(0))
         }
     }
 }

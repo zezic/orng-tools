@@ -626,7 +626,8 @@ the press rather than in front of Windows' dialog, so the decision above holds.
 Only on Windows: elsewhere there is no `Save` that could succeed, so the edit is
 written, refused, and reported as `The change was not saved.`
 
-*Declining is not a failure.* `ShellExecuteEx` answers `ERROR_CANCELLED` when the
+*Declining is not a failure.* *Not true of the window until `0650537` - round 4,
+A3.* `ShellExecuteEx` answers `ERROR_CANCELLED` when the
 consent dialog is dismissed, and the banner says `administrator rights were
 declined, so nothing was changed` rather than reporting an error. It is the one
 outcome where the user has already been told what they did.
@@ -696,22 +697,31 @@ with `Copy details` - `administrator rights were declined, so nothing was change
 only what that control copies. The letter repeated the claim. The designer's answer,
 neutral and dismissible and not an error banner, is therefore a change.
 
+*Drawn, `0650537`.* A run now stops with `elevate::Stopped`, `Declined` or
+`Failed`, and a declined one is `Outcome::Declined` for any press, a restore
+included. The title is the sentence the letter quoted; the line under it is ours:
+`Windows asks for them because this installation is not writable by this account.
+Nothing was started, so there is nothing to undo.`
+
 The rest:
 
 - **The shield leads, and replaces a leading glyph.** On a catalog row's `Install`,
   `Update` and `Retry` (`gap:6px` inside the 24-tall control), the modal's `Update`,
   the inspector's `Save`, `Rename` for a registered entry, and `Restore this backup`,
-  which drops its clock for it.
+  which drops its clock for it. *Drawn on `Install`, `Retry` and the Restore press,
+  `73ccdb5`*; the other three come with A1, A3's footer and A4. **Open:** the
+  catalog detail panel's `Install` elevates the same way and is not in the list,
+  and `CatalogDetail.dc.html` takes no `elevate` - so it wears none yet.
 - **Glyph-only controls do not wear it.** `Locate` keeps its glyph and its tooltip
   becomes `Locate file · asks Windows for administrator rights`. The staging controls
-  write nothing until Apply, and Apply wears it.
+  write nothing until Apply, and Apply wears it. *Drawn, `73ccdb5`.*
 - **The Save question moves into the inspector's footer**, below the fields it saves,
   rather than across the bottom of the window where the app draws it now: warn wash,
   `11px 12px 12px`, 28-tall `Cancel` and `Save`. While it is open the panel's close
   control is dimmed to .4 with `Save or cancel the changes first` on hover.
 - **Not in the reply, only in the shell**: state `windowslocal` gives the action
   bar's note as `Update entries · asks for administrator rights` where the window
-  says `Bitwig may stay open`. Taken as a change.
+  says `Bitwig may stay open`. Taken as a change. *Drawn, `f34d654`.*
 
 ### A4. Renaming - change, and the largest
 
@@ -749,6 +759,13 @@ that needs an installation, its first reading
 `install    not found · searched /Applications, ~/Applications` - where the
 window's has two lines, `install none selected` and `searched`.
 
+**The dash stays `-`**: the user's decision on 2026-09-24, over the design's em dash.
+*The report is drawn, `8234b13`*, with the empty path rows in `--ink-3`. It leaves
+out two of the bundle's lines, `entries` and `placement`: neither depends on an
+installation, and a session that found none carries neither the home nor the
+preferences to state them from. The first picture of this state is
+`settings-no-installation.png`.
+
 ### A6. The inspector while it cannot write - change
 
 A footer where the Save question sits: info wash, a 6px dot in `--ink-2`,
@@ -764,20 +781,24 @@ No drop target, and no words. The platform's no-drop cursor is the refusal.
 ### B1. The catalog's action bar - yes, and one change
 
 Yes to all six. The change is that `Fetching...` also goes on the row, as an eighth
-published state: `--ink-2`, no action (`CatalogRow.dc.html:54`).
+published state: `--ink-2`, no action (`CatalogRow.dc.html:54`). *Drawn, `92490f0`*,
+for as long as the fetch is out.
 
 ### B2. The hidden-entries note - change
 
 It was meant to count pending work out of sight, because Apply acts on rows the user
 cannot see. `N changes hidden by the current filter`, N the pending changes the
 filter hides, shown whenever N is above zero and not only on an empty list. In the
-preparing mode the cost note keeps the line.
+preparing mode the cost note keeps the line. *Drawn, `6778a80`.* A change is what
+Apply counts - a ready row or a queued removal - so a row still to fix is not one.
 
 ### B3. The plan confirmation - yes, and one line
 
 Yes to the four. One line added after the registrations: `6 entries already
 registered keep their UUIDs; their description bundles are written again.` The press
-has no outline, so the window's 32 is right.
+has no outline, so the window's 32 is right. *Drawn, `53f61a2`*, counting the entries
+the press neither registers again nor removes. The singular is ours: `1 entry already
+registered keeps its UUID; its description bundles are written again.`
 
 ### B4. `Browse all` - yes
 
@@ -789,10 +810,10 @@ Dropped from `EmptyState.dc.html`.
 - The install bar is 42 on `noinstall` too - yes, round 3 item 1 settled.
 - `--shadow` is `.85` - yes.
 - ~~**The light shadows are stated, and not by ratio.**~~ *Drawn, `833ffa3`.*
-  `--shadow-menu` is `0 12px 28px rgba(0,0,0,.16)` in light, `--shadow-panel` `-14px 0 32px rgba(0,0,0,.12)`. The
-  window derived `.18` and `.13` and kept the dark geometry; the geometry moves too.
-  `CatalogDetail.dc.html:21` still writes the dark panel shadow as a literal; the
-  token is taken as the intent.
+  `--shadow-menu` is `0 12px 28px rgba(0,0,0,.16)` in light, `--shadow-panel`
+  `-14px 0 32px rgba(0,0,0,.12)`. The window derived `.18` and `.13` and kept the
+  dark geometry; the geometry moves too. `CatalogDetail.dc.html:21` still writes the
+  dark panel shadow as a literal; the token is taken as the intent.
 
 ### Not drawn, on purpose - yes, with one change
 
@@ -800,7 +821,7 @@ Dropped from `EmptyState.dc.html`.
   `Nothing in the installation changes until the patched archive verifies.` and no
   more; from Activate on, `Once the preparation completes, undoing it means
   Restore.` The window draws one note for every step, and its second sentence is not
-  the bundle's.
+  the bundle's. *Drawn, `a917bff`.*
 - Factory entries: yes.
 - `Licences`: yes for now. A public release has to ship the notices for Inter, Iosevka
   and Phosphor, so it comes back before 1.0.

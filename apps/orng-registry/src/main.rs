@@ -38,7 +38,7 @@ fn main() -> eframe::Result {
     // installation the window may not write is prepared by a second copy of
     // this binary that Windows started with the rights, and that copy has a
     // pipe to call back on and no interface of its own.
-    match elevate::Serving::from_arguments(std::env::args()) {
+    match elevate::Serving::from_arguments(std::env::args_os()) {
         Ok(Some(serving)) => std::process::exit(serving.serve()),
         Ok(None) => {}
         // Never the window. The window hears of it as a child that ended

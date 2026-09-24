@@ -62,7 +62,8 @@
 use std::collections::BTreeMap;
 use std::io::{BufRead, BufReader, Read, Write};
 #[cfg(any(windows, test))]
-use std::ffi::{OsStr, OsString};
+use std::ffi::OsStr;
+use std::ffi::OsString;
 #[cfg(any(windows, test))]
 use std::path::Path;
 use std::path::PathBuf;
@@ -721,10 +722,14 @@ fn ended(ending: Option<Result<String, String>>) -> Result<Manifest, String> {
 /// command line anybody types, they are one call between two copies of one
 /// binary, and a parser would invite them to grow into an interface that has to
 /// be kept.
+///
+/// Read as the platform's own strings and never as `String`. Two of the three
+/// are paths, a Windows path need not be Unicode, and [`command_line`] carries
+/// one across whole - so the child has to take it whole as well.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Serving {
     /// Where to call back.
-    pipe: String,
+    pipe: OsString,
     /// The installation to work on. Never taken from the job - see the module
     /// note on why this one is on the command line.
     install: PathBuf,
@@ -743,7 +748,7 @@ impl Serving {
     /// that opened the window would be the whole application running elevated
     /// with nobody having asked for it.
     pub fn from_arguments(
-        arguments: impl Iterator<Item = String>,
+        arguments: impl Iterator<Item = OsString>,
     ) -> Result<Option<Serving>, String> {
         let mut pipe = None;
         let mut install = None;
@@ -751,10 +756,10 @@ impl Serving {
         let mut any = false;
         let mut arguments = arguments.skip(1);
         while let Some(argument) = arguments.next() {
-            let value = match argument.as_str() {
-                SERVE => &mut pipe,
-                INSTALL => &mut install,
-                HOME => &mut home,
+            let value = match argument.to_str() {
+                Some(SERVE) => &mut pipe,
+                Some(INSTALL) => &mut install,
+                Some(HOME) => &mut home,
                 _ => continue,
             };
             any = true;
@@ -1831,7 +1836,7 @@ mod tests {
     /// The child's orders, and the fact that an ordinary launch has none.
     #[test]
     fn only_a_child_reads_orders_off_the_command_line() {
-        let window = ["orng-registry".to_owned()];
+        let window = [OsString::from("orng-registry")];
         assert_eq!(
             Serving::from_arguments(window.into_iter()),
             Ok(None),
@@ -1849,6 +1854,25 @@ mod tests {
         assert_eq!(serving.home, PathBuf::from(r"C:\Users\someone"));
     }
 
+    /// A value that is not Unicode is taken whole, rather than panicked on
+    /// before the orders are read.
+    ///
+    /// Windows' own case is in [`the_orders_survive_the_command_line`]; this is
+    /// the same rule where every other platform can hold it.
+    #[cfg(unix)]
+    #[test]
+    fn orders_that_are_not_unicode_are_taken_whole() {
+        use std::os::unix::ffi::OsStringExt;
+
+        let home = OsString::from_vec(b"/home/some\xffone".to_vec());
+        let mut orders = orders();
+        *orders.last_mut().expect("a home") = home.clone();
+        let serving = Serving::from_arguments(orders.into_iter())
+            .expect("a child refused orders that are not Unicode")
+            .expect("a child did not read its orders");
+        assert_eq!(serving.home, PathBuf::from(home));
+    }
+
     /// Anything short of all three is not orders, and not the window either.
     ///
     /// A child told where to call back but not what to work on would have to
@@ -1860,7 +1884,7 @@ mod tests {
     fn part_of_the_orders_is_refused() {
         for missing in [SERVE, INSTALL, HOME] {
             let mut short = orders();
-            let flag = short.iter().position(|argument| argument == missing).expect("the flag");
+            let flag = short.iter().position(|argument| *argument == *missing).expect("the flag");
             // The flag and the value behind it, which is how it is given.
             short.drain(flag..=flag + 1);
             assert!(
@@ -1909,25 +1933,31 @@ mod tests {
         use windows_sys::Win32::UI::Shell::CommandLineToArgvW;
 
         let pipe = r"\\.\pipe\orng-registry-1-abc";
-        for (install, home) in [
+        // A home holding an unpaired surrogate, which a Windows path may and
+        // Unicode may not: the value `command_line` exists to carry whole.
+        let unpaired =
+            OsString::from_wide(&[u16::from(b'C'), u16::from(b':'), u16::from(b'\\'), 0xD800]);
+        let cases = [
             ("D:\\", r"C:\Users\someone"),
             (r"C:\Program Files\Bitwig Studio", "E:\\"),
             (r"C:\Program Files\Bitwig Studio\\", r"C:\Users\some one\\"),
             (r"\\server\share\Bitwig", r"C:\Users\someone"),
-        ] {
-            let mut line = std::ffi::OsString::from("orng-registry.exe ");
-            line.push(command_line(OsStr::new(pipe), Path::new(install), Path::new(home)));
+        ]
+        .map(|(install, home)| (OsString::from(install), OsString::from(home)));
+        let not_unicode = (OsString::from(r"C:\Program Files\Bitwig Studio"), unpaired);
+        for (install, home) in cases.into_iter().chain([not_unicode]) {
+            let (install, home) = (Path::new(&install), Path::new(&home));
+            let mut line = OsString::from("orng-registry.exe ");
+            line.push(command_line(OsStr::new(pipe), install, home));
             let wide: Vec<u16> = line.encode_wide().chain(Some(0)).collect();
             let mut count = 0;
             let argv = unsafe { CommandLineToArgvW(wide.as_ptr(), &mut count) };
             assert!(!argv.is_null(), "Windows could not split {line:?}");
-            let split: Vec<String> = (0..count as usize)
+            let split: Vec<OsString> = (0..count as usize)
                 .map(|at| unsafe {
                     let argument = *argv.add(at);
                     let length = (0..).take_while(|&i| *argument.add(i) != 0).count();
-                    std::ffi::OsString::from_wide(std::slice::from_raw_parts(argument, length))
-                        .into_string()
-                        .expect("an argument that is not Unicode")
+                    OsString::from_wide(std::slice::from_raw_parts(argument, length))
                 })
                 .collect();
             unsafe { LocalFree(argv.cast()) };
@@ -1936,22 +1966,24 @@ mod tests {
                 .unwrap_or_else(|why| panic!("{line:?} came apart: {why}"))
                 .expect("the orders were read as the window");
             assert_eq!(serving.pipe, pipe);
-            assert_eq!(serving.install, PathBuf::from(install), "in {line:?}");
-            assert_eq!(serving.home, PathBuf::from(home), "in {line:?}");
+            assert_eq!(serving.install, install, "in {line:?}");
+            assert_eq!(serving.home, home, "in {line:?}");
         }
     }
 
     /// A child's whole command line, as the window builds it.
-    fn orders() -> Vec<String> {
-        vec![
-            "orng-registry".to_owned(),
-            SERVE.to_owned(),
-            r"\\.\pipe\orng-registry-1-abc".to_owned(),
-            INSTALL.to_owned(),
-            r"C:\Program Files\Bitwig Studio".to_owned(),
-            HOME.to_owned(),
-            r"C:\Users\someone".to_owned(),
+    fn orders() -> Vec<OsString> {
+        [
+            "orng-registry",
+            SERVE,
+            r"\\.\pipe\orng-registry-1-abc",
+            INSTALL,
+            r"C:\Program Files\Bitwig Studio",
+            HOME,
+            r"C:\Users\someone",
         ]
+        .map(OsString::from)
+        .to_vec()
     }
 
     /// A job the child cannot read is reported rather than died on.

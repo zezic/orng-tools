@@ -2967,6 +2967,54 @@ fn a_second_entrys_words_wait_behind_the_question_about_the_first() {
     assert!(asks_about(&harness, "DISPERSER"), "the second entry's words were never asked about");
 }
 
+/// A panel whose words are waiting is not let go of: closed, or turned to
+/// another row, it dropped the one copy of them there was without a word.
+///
+/// Waiting behind a run here, which every platform reaches. Behind the question
+/// about another entry is the same `write_words` answer, and Windows only.
+#[test]
+fn a_panel_holding_words_that_wait_is_not_let_go() {
+    let root = fixture("words-behind-a-run");
+    let session = found(&root, Helper::Present, GuardState::Disarmed);
+    let mut harness =
+        window(session, |app, _| app.set_inspecting(VOLSHAPER.parse().expect("an identity")));
+    harness.state_mut().set_applying(Applying::frozen(None, Stage::Registering, None));
+    harness.run();
+    add_a_keyword(&mut harness, "tremolo");
+    let panel = metric::WINDOW[0] - metric::ASIDE;
+    // Inside the panel: a wide enough list states the identity in a column of
+    // its own.
+    let open = |harness: &Harness<'_, App>| {
+        harness.query_all_by_label_contains(VOLSHAPER).any(|node| node.rect().left() > panel)
+    };
+    // The topmost mark in the panel's column: a banner under it has one too.
+    let close = |harness: &mut Harness<'_, App>| {
+        harness
+            .get_all_by_label(crate::widget::icon::DISMISS)
+            .filter(|node| node.rect().left() > panel)
+            .min_by(|a, b| a.rect().top().total_cmp(&b.rect().top()))
+            .expect("the panel has no close")
+            .click();
+        harness.run();
+    };
+    assert!(open(&harness), "the panel this test relies on is not open");
+
+    harness.get_by_label("DISPERSER").click();
+    harness.run();
+    assert!(open(&harness), "the panel was turned to another row over its words");
+    close(&mut harness);
+    assert!(open(&harness), "the panel closed over its words");
+
+    // And once the run has reported, the close writes them and goes.
+    let written = harness.state().registered().expect("an installation").clone();
+    let finished = Applying::frozen(None, Stage::Registering, Some(Ok(written)));
+    harness.state_mut().set_applying(finished);
+    harness.run();
+    close(&mut harness);
+    settle(&mut harness);
+    assert!(!open(&harness), "the panel stayed once its words were written");
+}
+
 /// While an install's fetch is out, the primary action does not start a run.
 ///
 /// The fetch's second half is a run, and one started beside another had to

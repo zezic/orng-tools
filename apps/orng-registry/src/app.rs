@@ -1535,10 +1535,13 @@ impl App {
             // with, and the one people take: the way to stop editing is to shut
             // the thing you were editing in.
             widget::Inspecting::Closed => {
-                self.write_words(ui.ctx());
-                self.inspecting = None;
+                if self.write_words(ui.ctx()) {
+                    self.inspecting = None;
+                }
             }
-            widget::Inspecting::Edited => self.write_words(ui.ctx()),
+            widget::Inspecting::Edited => {
+                self.write_words(ui.ctx());
+            }
             widget::Inspecting::CopiedUuid => ui.ctx().copy_text(uuid.to_string()),
             // Leaves the application, as the detail panel's own does and for
             // the same reason: the review is in the catalog's pull request.
@@ -1672,21 +1675,27 @@ impl App {
     ///
     /// Silent when nothing changed, which is most of the time - leaving a field
     /// untouched is still leaving it.
-    fn write_words(&mut self, ctx: &egui::Context) {
+    ///
+    /// **Answers whether the panel's words are settled**: written, asked about,
+    /// or nothing to write. `false` is words still waiting in the panel, behind
+    /// a run or behind the question about another entry, and the panel is then
+    /// kept rather than closed or turned to another row. Closed over them, it
+    /// would drop the one copy of them there is without a word.
+    fn write_words(&mut self, ctx: &egui::Context) -> bool {
+        let Some(open) = &self.inspecting else { return true };
+        let Session::Found(found) = &self.session else { return true };
+        let Some(entry) = found.entries().get(open.uuid) else {
+            return true;
+        };
+        let Some(revised) = revised(entry, &open.words) else { return true };
         // Nothing starts on top of something already running. The window has
         // one piece of work at a time, and a preparation must not be replaced
         // by a description. The buffer keeps what was typed and the next time
         // a field is left it is written, so nothing is lost and nothing is
         // claimed to have been saved that was not.
         if self.is_working() {
-            return;
+            return false;
         }
-        let Some(open) = &self.inspecting else { return };
-        let Session::Found(found) = &self.session else { return };
-        let Some(entry) = found.entries().get(open.uuid) else {
-            return;
-        };
-        let Some(revised) = revised(entry, &open.words) else { return };
         // Where the write has to be carried to a process holding rights this
         // one does not, it is not made here. A field losing focus is not a
         // press, and this write raises Windows' consent dialog - so the words
@@ -1699,12 +1708,13 @@ impl App {
             // about and never answered. They wait in the panel, as they wait
             // behind a run, and are asked about when a field is next left.
             if self.asking.as_ref().is_some_and(|asked| asked.uuid != open.uuid) {
-                return;
+                return false;
             }
             self.asking = Some(Unsaved { uuid: open.uuid, words: open.words.clone() });
-            return;
+            return true;
         }
         self.write(revised, ctx);
+        true
     }
 
     /// Write one revised entry, now.
@@ -3150,7 +3160,11 @@ impl App {
                 }
             }
         });
-        if let Some(entry) = opened {
+        // Only once the words of the panel standing open are settled, for the
+        // reason `write_words` gives.
+        if let Some(entry) = opened
+            && self.write_words(ui.ctx())
+        {
             self.inspecting = entry;
         }
         if let Some((on, action)) = pressed {

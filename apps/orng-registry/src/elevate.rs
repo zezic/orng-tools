@@ -328,13 +328,18 @@ impl Job {
     ///
     /// The one place a [`Job`] becomes an [`Update`], which is what keeps the
     /// local run and the elevated run from being two different runs.
-    pub fn update(&self) -> Result<Update, String> {
-        let documents: BTreeMap<Uuid, &Placing> =
-            self.documents.iter().map(|placing| (placing.uuid, placing)).collect();
+    ///
+    /// Takes the job, because the documents' bytes become the update's: a job
+    /// that went on holding them would be a second copy of every document for
+    /// as long as the run lasts, and nothing reads a job once it has been
+    /// turned into the work it describes.
+    pub fn update(self) -> Result<Update, String> {
+        let mut documents: BTreeMap<Uuid, Placing> =
+            self.documents.into_iter().map(|placing| (placing.uuid, placing)).collect();
 
-        let mut update = Update::to(self.base.clone());
+        let mut update = Update::to(self.base);
         for row in self.written.entries() {
-            match documents.get(&row.uuid) {
+            match documents.remove(&row.uuid) {
                 Some(placing) => update.add(row.clone(), placing.document()?),
                 None => update.revise(row.clone()),
             }
@@ -365,9 +370,9 @@ impl Placing {
     /// chose; reading them as the kind they claim to be is what says the two
     /// agree before anything is placed. The kind itself was refused earlier, as
     /// the message was read - see [`kind`].
-    fn document(&self) -> Result<Document, String> {
-        Document::parse(self.kind, self.bytes.clone())
-            .map_err(|e| format!("the document for {}: {e}", self.uuid))
+    fn document(self) -> Result<Document, String> {
+        let uuid = self.uuid;
+        Document::parse(self.kind, self.bytes).map_err(|e| format!("the document for {uuid}: {e}"))
     }
 }
 
@@ -904,9 +909,10 @@ fn apply(
     output: &mut impl Write,
 ) -> Result<String, String> {
     let to = job.destination(install, home);
+    let work = job.work;
     let update = job.update()?;
 
-    if job.work == Work::PrepareThenEntries {
+    if work == Work::PrepareThenEntries {
         let plan = orng_tools::Plan::compute(&to).map_err(|e| e.to_string())?;
         let steps = plan.steps().map(WireStep::from).collect();
         let _ = send(output, &Report::Planned(steps));

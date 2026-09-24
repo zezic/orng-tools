@@ -206,7 +206,7 @@ impl Applying {
                 ctx.request_repaint();
             };
             let result = match rights {
-                Rights::Held => run(&job, &to, &say),
+                Rights::Held => run(job, &to, &say),
                 // The installation is not this process's to write, so the press
                 // is carried rather than made. What comes back is the same
                 // conversation a worker here would have had, which is why the
@@ -363,9 +363,10 @@ impl Applying {
 /// The twin of [`elevate::serve`], which does the same against a job that
 /// arrived from another process. Both build their update through `Job::update`,
 /// so the two are one description of the work carried out in two places.
-fn run(job: &Job, to: &Destination, say: &impl Fn(Progress)) -> Result<Manifest, String> {
+fn run(job: Job, to: &Destination, say: &impl Fn(Progress)) -> Result<Manifest, String> {
+    let work = job.work;
     let update = job.update()?;
-    if job.work == Work::PrepareThenEntries {
+    if work == Work::PrepareThenEntries {
         let plan = Plan::compute(to).map_err(|e| e.to_string())?;
         say(Progress::Planned(plan.steps().collect()));
         plan.apply(|step| say(Progress::Began(step))).map_err(|e| e.to_string())?;

@@ -253,8 +253,7 @@ mod tests {
 
     fn staged(kind: Kind, name: &str) -> (Registration, Document) {
         let document = testing::document(kind, Uuid::new_v4(), name);
-        let file_name = format!("{name}.{}", kind.extension());
-        let registration = Registration::from_document(&document, &file_name).unwrap();
+        let registration = Registration::from_document(&document).unwrap();
         (registration, document)
     }
 

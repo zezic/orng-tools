@@ -208,7 +208,7 @@ fn read_one(
             return Staged { label: file_name, state: State::Rejected { why: rejection(&why) } };
         }
     };
-    settle(document, &file_name, entries, to, seen)
+    settle(document, entries, to, seen)
 }
 
 /// What one document in hand comes to, against everything else there is.
@@ -219,22 +219,38 @@ fn read_one(
 /// visible on another.
 fn settle(
     document: Document,
-    file_name: &str,
     entries: &Manifest,
     to: &Destination,
     seen: &[Registration],
 ) -> Staged {
-    // A name with a tab in it cannot survive the entry list, and is refused
-    // here rather than at the write, where it would be a failure after a press.
-    let registration = match Registration::from_document(&document, file_name) {
+    // A name with a tab in it cannot survive the entry list, and one with a
+    // slash cannot be a file. Refused here rather than at the write, where it
+    // would be a failure after a press.
+    let mut registration = match Registration::from_document(&document) {
         Ok(registration) => registration,
         Err(why) => {
             return Staged {
-                label: file_name.to_owned(),
+                label: document.identity().name.clone(),
                 state: State::Rejected { why: why.to_string() },
             };
         }
     };
+    // An identity already registered keeps the file it has. The document may
+    // have been renamed since, and following the name would leave the old file
+    // behind under the same identity - two files Bitwig takes for one device.
+    let registered = entries.get(registration.uuid).map(|entry| entry.library_path.clone());
+    if let Some(path) = registered {
+        if path.kind() != registration.kind() {
+            let why = format!(
+                "this identity is registered as a {}",
+                path.kind().label().to_lowercase()
+            );
+            let label = registration.name.clone();
+            let document = Box::new(document);
+            return Staged { label, state: State::Conflict { registration, document, why } };
+        }
+        registration.library_path = path;
+    }
 
     let label = registration.name.clone();
     let document = Box::new(document);
@@ -271,10 +287,8 @@ fn resettle(
     for (at, row) in rows.into_iter().enumerate() {
         let row = match row.state {
             State::Rejected { .. } => row,
-            State::Ready { registration, document }
-            | State::Conflict { registration, document, .. } => {
-                let file_name = registration.library_path.file_name().to_owned();
-                settle(each(at, *document), &file_name, entries, to, &seen)
+            State::Ready { document, .. } | State::Conflict { document, .. } => {
+                settle(each(at, *document), entries, to, &seen)
             }
         };
         if let Some(registration) = row.registration() {
@@ -361,7 +375,10 @@ fn objection(
         if other.name == registration.name {
             return Some(format!("another dropped document is also called {}", other.name));
         }
-        if other.library_path == registration.library_path {
+        // Without regard to case, which is how two of the three platforms
+        // compare file names.
+        let file = |path: &orng_tools::LibraryPath| path.as_str().to_lowercase();
+        if file(&other.library_path) == file(&registration.library_path) {
             return Some("another dropped document would be placed in the same file".to_owned());
         }
     }
@@ -534,13 +551,13 @@ mod tests {
         assert_eq!(staged[1].reason(), Some("another dropped document has the same identity"));
     }
 
-    /// Different identities, different names, one file name - so one file. The
-    /// library path is derived from the file name, so this is not contrived.
+    /// Different identities, different names, one file - on the two platforms
+    /// whose file names do not tell case apart, which is where people drop.
     #[test]
     fn two_dropped_documents_that_would_share_a_file_collide() {
         let machine = machine();
-        let first = machine.document("drop/one/SHARED.bwdevice", A, "FIRST");
-        let second = machine.document("drop/two/SHARED.bwdevice", B, "SECOND");
+        let first = machine.document("drop/one/SHARED.bwdevice", A, "SHARED");
+        let second = machine.document("drop/two/Shared.bwdevice", B, "Shared");
 
         let staged = machine.stage(&[first, second], &Manifest::default());
         assert_eq!(staged[1].status(), Status::Conflict);
@@ -556,7 +573,7 @@ mod tests {
     #[test]
     fn a_target_holding_somebody_elses_document_is_a_conflict() {
         let machine = machine();
-        let occupied = machine.to.library.folder(Kind::Device.user_folder()).join("X.bwdevice");
+        let occupied = machine.to.library.folder(Kind::Device.user_folder()).join("MINE.bwdevice");
         std::fs::create_dir_all(occupied.parent().unwrap()).unwrap();
         std::fs::copy(machine.document("other/X.bwdevice", B, "THEIRS"), &occupied).unwrap();
 
@@ -568,6 +585,44 @@ mod tests {
             "{:?}",
             staged[0].reason()
         );
+    }
+
+    /// The browser lists a device by its file name and the device's header by
+    /// the name inside it, so a document is placed under the second whatever
+    /// it arrived as.
+    #[test]
+    fn a_document_is_placed_under_its_own_name_and_not_its_files() {
+        let machine = machine();
+        let path = machine.document("drop/export (3).bwdevice", A, "DISPERSER");
+
+        let staged = machine.stage(&[path], &Manifest::default());
+        let registration = staged[0].registration().expect("a staged row has one");
+        assert_eq!(registration.library_path.as_str(), "devices/My Devices/DISPERSER.bwdevice");
+    }
+
+    /// A registered identity keeps its file, whatever the document is called
+    /// now: following the name would leave the old file behind, a second copy
+    /// Bitwig takes for the same device.
+    #[test]
+    fn a_registered_identity_keeps_its_file_and_its_kind() {
+        let machine = machine();
+        let registered = format!(
+            "#orng-registry 2\n\
+             {A}\tDEVICE\tDISPERSER\tdevices/My Devices/disperser v1.bwdevice\t\t\t\tlocal\n"
+        );
+        let entries = Manifest::parse(&registered).unwrap();
+        let renamed = machine.document("drop/DISPERSER.bwdevice", A, "DISPERSER MK2");
+        let other_kind = machine.document("drop/DISPERSER.bwmodulator", A, "DISPERSER");
+
+        let staged = machine.stage(&[renamed], &entries);
+        let registration = staged[0].registration().expect("a staged row has one");
+        assert_eq!(staged[0].status(), Status::Staged, "{:?}", staged[0].reason());
+        assert_eq!(registration.name, "DISPERSER MK2");
+        assert_eq!(registration.library_path.as_str(), "devices/My Devices/disperser v1.bwdevice");
+
+        let staged = machine.stage(&[other_kind], &entries);
+        assert_eq!(staged[0].status(), Status::Conflict);
+        assert_eq!(staged[0].reason(), Some("this identity is registered as a device"));
     }
 
     /// A dropped folder is what somebody with a library of their own drops.

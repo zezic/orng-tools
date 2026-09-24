@@ -80,12 +80,8 @@ pub enum Error {
     UnrepresentableField { field: &'static str, value: String },
     #[error("{path:?} does not end in a document's extension")]
     NotADocumentName { path: String },
-    #[error(
-        "{file_name:?} does not end in .{}, as a {} has to",
-        .kind.extension(),
-        .kind.label().to_lowercase()
-    )]
-    MisnamedDocument { file_name: String, kind: Kind },
+    #[error("{name} cannot be a file name")]
+    UnplaceableName { name: String },
     #[error("malformed entry list at line {line}: {reason}")]
     MalformedManifest { line: usize, reason: &'static str },
     #[error("this build does not state its version, so a backup could not be named for it")]
@@ -190,24 +186,31 @@ impl Destination {
 pub struct LibraryPath(String);
 
 impl LibraryPath {
-    /// The conventional location for registered content: the kind's directory
-    /// inside the installation, under the folder linked to the user library.
+    /// Where a document called `name` is registered: the kind's directory
+    /// inside the installation, under the folder linked to the user library,
+    /// as `<name>.<extension>`.
     ///
-    /// Refused if `file_name` is not named as a document of that kind is.
-    pub fn for_document(kind: Kind, file_name: &str) -> Result<Self> {
-        let path =
-            Self::new(format!("{}/{}/{}", kind.library_subdir(), kind.user_folder(), file_name))?;
-        if path.kind() != kind {
-            return Err(Error::MisnamedDocument { file_name: file_name.to_owned(), kind });
+    /// **The file is named after the document**, whatever it was called when
+    /// it arrived, because Bitwig's browser lists a device or a modulator by
+    /// its file name (6.1, `BQ.lL2`) and everything else by the name inside
+    /// it. Two names for one thing is the browser saying one and the device's
+    /// own header the other.
+    ///
+    /// Refused where the name cannot be a file on one of the three platforms,
+    /// which is a statement about the name rather than about the document.
+    pub fn named(kind: Kind, name: &str) -> Result<Self> {
+        let file_name = format!("{name}.{}", kind.extension());
+        if !placeable(name) || file_name.len() > MAX_FILE_NAME {
+            return Err(Error::UnplaceableName { name: name.to_owned() });
         }
-        Ok(path)
+        Self::new(format!("{}/{}/{file_name}", kind.library_subdir(), kind.user_folder()))
     }
 
     pub fn new(path: impl Into<String>) -> Result<Self> {
         let path = path.into();
         let rejected = path.is_empty()
             || path.starts_with('/')
-            || path.contains("..")
+            || path.split('/').any(|part| part == "..")
             || path.contains('\\')
             || path.contains(['\t', '\n', '\r']);
         if rejected {
@@ -313,13 +316,13 @@ impl Registration {
     /// Always [`Provenance::Local`]: this reads a file the user pointed at. A
     /// catalog install knows its version and says so when it builds the
     /// registration.
-    pub fn from_document(document: &Document, file_name: &str) -> Result<Self> {
+    pub fn from_document(document: &Document) -> Result<Self> {
         let identity = document.identity();
         let kind = document.kind();
         Ok(Registration {
             uuid: identity.uuid,
             name: validated("name", &identity.name)?,
-            library_path: LibraryPath::for_document(kind, file_name)?,
+            library_path: LibraryPath::named(kind, &identity.name)?,
             description: identity
                 .description
                 .clone()
@@ -329,6 +332,25 @@ impl Registration {
             provenance: Provenance::Local,
         })
     }
+}
+
+/// The longest file name all three platforms take, in the bytes macOS and
+/// Linux count. Windows counts UTF-16 units, of which there are never more.
+const MAX_FILE_NAME: usize = 255;
+
+/// Whether `name` can be a file name everywhere. The characters Windows
+/// refuses, which include the one separator everywhere else refuses, and the
+/// names it reserves for devices whatever the extension after them.
+fn placeable(name: &str) -> bool {
+    const RESERVED: [&str; 4] = ["CON", "PRN", "AUX", "NUL"];
+    let upper = name.to_ascii_uppercase();
+    let numbered = ["COM", "LPT"].iter().any(|port| {
+        upper.strip_prefix(port).is_some_and(|n| n.len() == 1 && n.as_bytes()[0].is_ascii_digit())
+    });
+    !name.is_empty()
+        && !name.chars().any(|c| c.is_control() || "<>:\"/\\|?*".contains(c))
+        && !RESERVED.contains(&upper.as_str())
+        && !numbered
 }
 
 /// Reject values that cannot survive a round trip through the entry list.
@@ -362,14 +384,27 @@ mod tests {
             assert!(matches!(refused, Err(Error::NotADocumentName { .. })), "{path}: {refused:?}");
         }
         assert_eq!(LibraryPath::new("modules/My Modules/A.bwmodule").unwrap().kind(), Kind::Module);
+    }
 
-        let misnamed = LibraryPath::for_document(Kind::Device, "SHAPER.bwmodulator");
-        assert!(matches!(misnamed, Err(Error::MisnamedDocument { kind: Kind::Device, .. })));
+    /// A name is refused where some platform would refuse the file, and only
+    /// there: dots are ordinary in a name, and `..` is only an escape as a
+    /// whole component.
+    #[test]
+    fn a_name_is_placed_only_where_every_platform_can_hold_it() {
+        for name in ["A/B", "A\\B", "WHAT?", "A:B", "CON", "nul", "com1", "LPT9", "", "A\tB"] {
+            let refused = LibraryPath::named(Kind::Device, name);
+            assert!(matches!(refused, Err(Error::UnplaceableName { .. })), "{name:?}: {refused:?}");
+        }
+        assert!(LibraryPath::named(Kind::Device, &"X".repeat(247)).is_err(), "past 255 bytes");
+        for name in ["Wait...", "..", "CONSOLE", "COM10", "\u{d8} Bend", &"X".repeat(246)] {
+            let path = LibraryPath::named(Kind::Device, name);
+            assert!(path.is_ok(), "{name:?}: {path:?}");
+        }
     }
 
     #[test]
     fn library_path_for_a_document_matches_bitwigs_shape() {
-        let path = LibraryPath::for_document(Kind::Modulator, "SHAPER.bwmodulator").unwrap();
+        let path = LibraryPath::named(Kind::Modulator, "SHAPER").unwrap();
         assert_eq!(path.as_str(), "modulators/My Modulators/SHAPER.bwmodulator");
         assert_eq!(path.parent(), "modulators/My Modulators");
         assert_eq!(path.file_name(), "SHAPER.bwmodulator");

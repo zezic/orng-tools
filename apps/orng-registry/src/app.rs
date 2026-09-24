@@ -4738,16 +4738,14 @@ fn published_registration(
     item: &orng_catalog::IndexEntry,
     document: &Document,
 ) -> orng_tools::Result<Registration> {
-    // The index's path is a repository path, so what is after the last slash is
-    // the file name the catalog publishes under. The same name goes into the
-    // library, so the document is where somebody looking for it would look.
-    let file_name = item.path.rsplit_once('/').map(|(_, tail)| tail).unwrap_or(&item.path);
+    // Placed under its own name and not the one the catalog files it under,
+    // as a drop is: the browser lists it by the file's.
     Ok(Registration {
         provenance: Provenance::Catalog {
             version: item.version,
             reviewed_in: item.merged_in.clone(),
         },
-        ..Registration::from_document(document, file_name)?
+        ..Registration::from_document(document)?
     })
 }
 

@@ -437,24 +437,24 @@ mod tests {
         }
     }
 
-    fn registration_for(document: &Document, file_name: &str) -> Registration {
-        Registration::from_document(document, file_name).unwrap()
+    fn registration_for(document: &Document) -> Registration {
+        Registration::from_document(document).unwrap()
     }
 
     /// The linking strategy writes into the folder Bitwig's own "Save device..."
     /// writes into, so what is already at the target is as likely to be the
     /// user's work as an older copy of what is being registered. Two unrelated
     /// documents sharing a file name is not a contrived case: the library path
-    /// is derived from the file name.
+    /// is derived from the name, and names are the author's to choose.
     #[test]
     fn a_document_belonging_to_something_else_is_never_written_over() {
         let temp = tempfile::tempdir().unwrap();
         let to = machine(temp.path(), Strategy::Link);
 
-        let theirs = document(Kind::Device, Uuid::new_v4(), "THEIRS");
-        let mine = document(Kind::Device, Uuid::new_v4(), "MINE");
-        let occupied = registration_for(&theirs, "SHARED.bwdevice");
-        let colliding = registration_for(&mine, "SHARED.bwdevice");
+        let theirs = document(Kind::Device, Uuid::new_v4(), "SHARED");
+        let mine = document(Kind::Device, Uuid::new_v4(), "SHARED");
+        let occupied = registration_for(&theirs);
+        let colliding = registration_for(&mine);
 
         let at = place(&to, &occupied, &theirs).unwrap();
         // Said before the write is attempted as well as by refusing it, because
@@ -478,7 +478,7 @@ mod tests {
         let temp = tempfile::tempdir().unwrap();
         let to = machine(temp.path(), Strategy::Copy);
         let mine = document(Kind::Device, Uuid::new_v4(), "DISPERSER");
-        let registration = registration_for(&mine, "DISPERSER.bwdevice");
+        let registration = registration_for(&mine);
         let at = place(&to, &registration, &mine).unwrap();
 
         let standing = Standing::of(&to.install, &registration);
@@ -518,7 +518,7 @@ mod tests {
         let uuid = Uuid::new_v4();
         let first = document(Kind::Device, uuid, "DISPERSER");
         let edited = document(Kind::Device, uuid, "DISPERSER MK2");
-        let registration = registration_for(&first, "DISPERSER.bwdevice");
+        let registration = registration_for(&first);
 
         place(&to, &registration, &first).unwrap();
         assert_eq!(would_replace(&to, &registration).unwrap(), None);
@@ -535,7 +535,7 @@ mod tests {
         let to = machine(temp.path(), Strategy::Link);
 
         let mine = document(Kind::Device, Uuid::new_v4(), "MINE");
-        let registration = registration_for(&mine, "MINE.bwdevice");
+        let registration = registration_for(&mine);
         let occupied = target(&to, &registration);
         fs::write_new(&occupied, b"not a document at all").unwrap();
 
@@ -551,7 +551,7 @@ mod tests {
     fn the_strategy_decides_which_of_the_two_libraries_is_written() {
         let temp = tempfile::tempdir().unwrap();
         let mine = document(Kind::Device, Uuid::new_v4(), "MINE");
-        let registration = registration_for(&mine, "MINE.bwdevice");
+        let registration = registration_for(&mine);
 
         let linked = machine(&temp.path().join("linked"), Strategy::Link);
         let at = place(&linked, &registration, &mine).unwrap();

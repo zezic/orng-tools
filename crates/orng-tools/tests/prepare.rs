@@ -305,8 +305,7 @@ fn the_injected_class_registers_the_entry_list() {
         manifest.insert(Registration {
             uuid: uuid::Uuid::new_v4(),
             name: name.into(),
-            library_path: LibraryPath::for_document(kind, &format!("{name}.{}", kind.extension()))
-                .unwrap(),
+            library_path: LibraryPath::named(kind, name).unwrap(),
             description: "written by a test".into(),
             keywords: vec!["orng".into(), "test".into()],
             digest: None,
@@ -442,7 +441,7 @@ fn copying_documents_keeps_them_inside_the_installation() {
     let registration = Registration {
         uuid: document.identity().uuid,
         name: "ORNG COPIED".into(),
-        library_path: LibraryPath::for_document(Kind::Device, "ORNG COPIED.bwdevice").unwrap(),
+        library_path: LibraryPath::named(Kind::Device, "ORNG COPIED").unwrap(),
         description: "written by a test".into(),
         keywords: Vec::new(),
         digest: None,

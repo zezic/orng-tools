@@ -1546,8 +1546,7 @@ mod windows {
                 home.clone(),
                 orng_tools::Strategy::Link,
             );
-            let file_name = largest.file_name().and_then(|n| n.to_str()).expect("a file name");
-            let registration = orng_tools::Registration::from_document(&document, file_name)
+            let registration = orng_tools::Registration::from_document(&document)
                 .expect("a sample that registers");
             let mut job = super::super::Job::against(
                 super::super::Work::PrepareThenEntries,
@@ -2205,7 +2204,7 @@ mod tests {
     /// here bends out of true.
     fn a_job() -> Job {
         let document = a_document();
-        let registration = Registration::from_document(&document, "Breath Follower.bwdevice")
+        let registration = Registration::from_document(&document)
             .expect("a document this crate built is not registrable");
 
         let mut job = Job {

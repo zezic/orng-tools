@@ -3084,6 +3084,209 @@ fn assigning_a_new_uuid_settles_two_documents_claiming_one_identity() {
     );
 }
 
+/// A dropped document whose name the list already holds, from another identity.
+///
+/// The sample list's DISPERSER, under an identity of its own: Bitwig's browser
+/// matches on name, so the two cannot both be registered, and a new identity
+/// would settle nothing.
+fn a_taken_name(root: &std::path::Path) -> (Session, Vec<Staged>) {
+    let to = destination(root);
+    let drop = root.join("dropped");
+    std::fs::create_dir_all(&drop).expect("a place to drop from");
+    let path = drop.join("DISPERSER.bwdevice");
+    let document = orng_tools::testing::document(
+        orng_tools::Kind::Device,
+        "5b1f0c3e-2d74-4a86-9e0b-7c3a1d2e4f50".parse().unwrap(),
+        "DISPERSER",
+    );
+    std::fs::write(&path, document.bytes()).expect("could not write the sample");
+    let staged = staging::read(&[path], &entries(), &to, &[]);
+    (found_with(root, Helper::Present, GuardState::Disarmed, entries()), staged)
+}
+
+/// The words beside a staged row whose name the list already holds, as the
+/// design writes them.
+const NAME_TAKEN: &str = "Name already used by a registered device";
+
+/// The rename's press, which is the only `Rename` in the dialog's foot - the
+/// heading says it too, but with the name after it.
+fn the_rename_press<'t>(harness: &'t Harness<'static, App>) -> egui_kittest::Node<'t> {
+    harness
+        .get_all_by_label("Rename")
+        .max_by(|a, b| a.rect().top().total_cmp(&b.rect().top()))
+        .expect("the question offers no press")
+}
+
+/// The field the new name is typed into: the lowest one in the window, since
+/// the toolbar's search is the only other.
+fn the_rename_field<'t>(harness: &'t Harness<'static, App>) -> egui_kittest::Node<'t> {
+    harness
+        .get_all_by_role(egui::accesskit::Role::TextInput)
+        .max_by(|a, b| a.rect().top().total_cmp(&b.rect().top()))
+        .expect("the question has no field")
+}
+
+/// A name that is taken is a conflict the pencil settles, not the fingerprint:
+/// the row offers the one remedy that works, the dialog says what is wrong with
+/// the name until it is not, and the name it is given is the document's and
+/// its file's.
+#[test]
+fn a_taken_name_is_renamed_from_its_row_and_its_file_follows() {
+    use egui_kittest::kittest::NodeT as _;
+    let root = fixture("rename-a-taken-name");
+    let (session, staged) = a_taken_name(&root);
+    let mut harness = window(session, |app, _| app.set_staged(staged));
+
+    harness.get_by_label(NAME_TAKEN).hover();
+    harness.run();
+    assert!(
+        harness.query_by_label("Assign new UUID").is_none(),
+        "a name conflict offered a new identity, which settles nothing"
+    );
+    harness.get_by_label("Rename...").click();
+    harness.run();
+
+    // Every block in a dialog is two nodes: the sizing pass lays it out too.
+    assert!(
+        harness.query_all_by_label("Rename DISPERSER").next().is_some(),
+        "the question has no title"
+    );
+    assert!(
+        harness
+            .query_all_by_label("A registered device is already called DISPERSER.")
+            .next()
+            .is_some(),
+        "the question does not say the name is taken"
+    );
+    let press = the_rename_press(&harness);
+    assert!(press.accesskit_node().is_disabled(), "a taken name could be pressed");
+
+    harness.key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::A);
+    the_rename_field(&harness).type_text("DISPERSER MK2");
+    harness.run();
+    assert!(
+        harness.query_all_by_label_contains("already called").next().is_none(),
+        "a free name is still said to be taken"
+    );
+    assert!(!the_rename_press(&harness).accesskit_node().is_disabled(), "a free name was refused");
+    the_rename_press(&harness).click();
+    harness.run();
+
+    assert!(!harness.state().is_confirming(), "the question outlived its answer");
+    let row = &harness.state().staged()[0];
+    let registration = row.registration().expect("the renamed row is not ready to write");
+    assert_eq!(registration.name, "DISPERSER MK2");
+    assert_eq!(
+        registration.library_path.as_str(),
+        "devices/My Devices/DISPERSER MK2.bwdevice",
+        "the file is not named after the document"
+    );
+    let document = row.document().expect("the renamed row lost its document");
+    assert_eq!(document.identity().name, "DISPERSER MK2", "only the row was renamed");
+    assert!(harness.query_by_label(NAME_TAKEN).is_none(), "the row still says its name is taken");
+}
+
+/// The rename's question as the design's state `renameconflict` draws it: the
+/// name that is taken, in the field, outlined in the error colour and said
+/// under it, and the press unavailable. The picture is for the layout; the
+/// words are asserted through the tree above.
+#[test]
+fn the_rename_question() {
+    let root = fixture("rename-question");
+    let (session, staged) = a_taken_name(&root);
+    let mut harness = window(session, |app, _| app.set_staged(staged));
+    harness.get_by_label(NAME_TAKEN).hover();
+    harness.run();
+    harness.get_by_label("Rename...").click();
+    look(&mut harness, "rename-question");
+}
+
+/// `Cancel` leaves the row as it was, and Enter is the press.
+#[test]
+fn a_rename_is_cancelled_untouched_and_pressed_with_enter() {
+    let root = fixture("rename-cancel-and-enter");
+    let (session, staged) = a_taken_name(&root);
+    let mut harness = window(session, |app, _| app.set_staged(staged));
+
+    for answer in ["Cancel", "Enter"] {
+        harness.get_by_label(NAME_TAKEN).hover();
+        harness.run();
+        harness.get_by_label("Rename...").click();
+        harness.run();
+        harness.key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::A);
+        the_rename_field(&harness).type_text("DIFFUSER");
+        harness.run();
+        match answer {
+            "Cancel" => {
+                harness
+                    .get_all_by_label("Cancel")
+                    .max_by(|a, b| a.rect().top().total_cmp(&b.rect().top()))
+                    .expect("the question has no way out")
+                    .click();
+                harness.run();
+                assert!(!harness.state().is_confirming());
+                assert!(harness.query_by_label(NAME_TAKEN).is_some(), "Cancel renamed the row");
+            }
+            _ => {
+                harness.key_press(egui::Key::Enter);
+                harness.run();
+                assert!(!harness.state().is_confirming(), "Enter did not answer the question");
+                assert_eq!(harness.state().staged()[0].label, "DIFFUSER");
+            }
+        }
+    }
+}
+
+/// A run that reports takes the rows it wrote out of the list, and a rename
+/// asked about one of them goes with it rather than asking about a row that is
+/// no longer there. Row controls stay live while a run is in flight, so the
+/// question can be open when the report arrives.
+#[test]
+fn a_rename_goes_with_the_row_a_run_wrote() {
+    let root = fixture("rename-outlived");
+    let (session, staged) = a_taken_name(&root);
+    let mut harness = window(session, |app, _| app.set_staged(staged));
+    harness.get_by_label(NAME_TAKEN).hover();
+    harness.run();
+    harness.get_by_label("Rename...").click();
+    harness.run();
+    assert!(harness.state().is_confirming());
+
+    harness
+        .state_mut()
+        .set_applying(Applying::frozen(None, Stage::Registering, Some(Ok(entries()))));
+    harness.run();
+    assert!(harness.state().staged().is_empty(), "the report left the rows it wrote");
+    assert!(!harness.state().is_confirming(), "the question outlived its row");
+}
+
+/// A conflict of identities keeps the fingerprint, and offers no pencil: a new
+/// name would leave two documents claiming one identity.
+#[test]
+fn a_conflict_of_identities_offers_no_rename() {
+    let root = fixture("no-rename-for-an-identity");
+    let to = destination(&root);
+    let drop = root.join("dropped");
+    std::fs::create_dir_all(&drop).expect("a place to drop from");
+    let shared = "1f6c85d4-9a02-47be-83c1-d5e70b14a629";
+    let mut paths = Vec::new();
+    for display in ["FIRST", "SECOND"] {
+        let path = drop.join(format!("{display}.bwdevice"));
+        let document =
+            orng_tools::testing::document(orng_tools::Kind::Device, shared.parse().unwrap(), display);
+        std::fs::write(&path, document.bytes()).expect("could not write the sample");
+        paths.push(path);
+    }
+    let staged = staging::read(&paths, &Manifest::default(), &to, &[]);
+    let session = found_with(&root, Helper::Present, GuardState::Disarmed, Manifest::default());
+    let mut harness = window(session, |app, _| app.set_staged(staged));
+
+    harness.get_by_label("SECOND").hover();
+    harness.run();
+    assert!(harness.query_by_label("Assign new UUID").is_some());
+    assert!(harness.query_by_label("Rename...").is_none(), "an identity conflict offered a rename");
+}
+
 /// A word typed into the keyword field becomes a keyword.
 ///
 /// The one interaction in the panel that is not a press, and the reason the

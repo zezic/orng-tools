@@ -22,7 +22,7 @@ use orng_tools::{
     Destination, Document, DocumentError, Kind, Manifest, Registration, Uuid, placement,
 };
 
-use crate::status::Status;
+use crate::status::{Collided, Status};
 
 /// A document the user has dropped, as the list shows it.
 #[derive(Debug)]
@@ -40,44 +40,139 @@ pub enum State {
     /// because it carries the whole file, and a staged list is a list of these.
     Ready { registration: Registration, document: Box<Document> },
     /// Readable, and registering it would collide with something already here.
-    /// The reason is the useful half and is carried on the row.
     ///
     /// Carries the document for the same reason [`State::Ready`] does, though
-    /// it will not be written as it stands: the row offers `Assign new UUID`,
-    /// and minting an identity means rewriting the bytes that hold the old one.
-    Conflict { registration: Registration, document: Box<Document>, why: String },
+    /// it will not be written as it stands: settling the collision means
+    /// rewriting the bytes, with a new identity or a new name. No registration,
+    /// because a name that cannot be a file has none, and what the row draws -
+    /// the kind, the identity, the name - is the document's own.
+    Conflict { document: Box<Document>, collision: Collision },
     /// Not something this application can register.
     Rejected { why: String },
+}
+
+/// What a readable document collides with, and so what settles it.
+///
+/// The design tells the two remedies apart on the row - a pencil for a name,
+/// a fingerprint for an identity - so this is an enum of causes rather than a
+/// sentence: the row and the rename dialog say each one differently, and which
+/// remedy a cause takes is a property of the cause.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Collision {
+    /// Another dropped document claims the same identity.
+    SameIdentity,
+    /// The identity is registered here as another kind, whose file the
+    /// registration keeps and whose extension would name this document wrongly.
+    RegisteredAs(Kind),
+    /// An entry of another identity already has this name. Bitwig's browser is
+    /// flat and matches on name, so the two would be indistinguishable there
+    /// (identity rule 7.3.4).
+    NameRegistered,
+    /// Another dropped document has this name.
+    NameDropped,
+    /// Another dropped document would be placed in the same file.
+    SameFile,
+    /// The file this would be placed in holds a different document. The path
+    /// as drawn.
+    FileOccupied(String),
+    /// The file this would be placed in could not be read, and whatever
+    /// stopped that will stop it being written.
+    FileUnreadable(String),
+    /// The name cannot be a file name, or cannot be written in the list.
+    Unplaceable,
+}
+
+impl Collision {
+    pub fn collided(&self) -> Collided {
+        match self {
+            Collision::SameIdentity | Collision::RegisteredAs(_) => Collided::Identity,
+            // The file is named after the document, so a new name is a new
+            // file - and a file that cannot be read may be the one place the
+            // name leads, rather than the folder.
+            Collision::NameRegistered
+            | Collision::NameDropped
+            | Collision::SameFile
+            | Collision::FileOccupied(_)
+            | Collision::FileUnreadable(_)
+            | Collision::Unplaceable => Collided::Name,
+        }
+    }
+
+    /// What the row says beside the document's name.
+    ///
+    /// `NameRegistered` is the design's own words (`ORNG Registry.dc.html`,
+    /// state `renameconflict`); the rest are ours, in its shape.
+    fn on_the_row(&self, name: &str, kind: Kind) -> String {
+        let kind = kind.label().to_lowercase();
+        match self {
+            Collision::SameIdentity => "Another dropped document has the same identity".to_owned(),
+            Collision::RegisteredAs(registered) => format!(
+                "This identity is registered as a {}",
+                registered.label().to_lowercase()
+            ),
+            Collision::NameRegistered => format!("Name already used by a registered {kind}"),
+            Collision::NameDropped => format!("Another dropped document is also called {name}"),
+            Collision::SameFile => {
+                "Another dropped document would be placed in the same file".to_owned()
+            }
+            Collision::FileOccupied(path) => format!("{path} already holds a different document"),
+            Collision::FileUnreadable(why) => why.clone(),
+            Collision::Unplaceable => format!("{name} cannot be a file name"),
+        }
+    }
+
+    /// What the rename dialog says under its field about the name typed into
+    /// it. The design draws one of these, `NameRegistered`'s, and the rest are
+    /// ours in the same sentence.
+    pub fn in_the_dialog(&self, name: &str, kind: Kind) -> String {
+        match self {
+            Collision::NameRegistered => {
+                format!("A registered {} is already called {name}.", kind.label().to_lowercase())
+            }
+            Collision::NameDropped => format!("Another dropped document is already called {name}."),
+            other => format!("{}.", other.on_the_row(name, kind)),
+        }
+    }
 }
 
 impl Staged {
     /// Which of the design's states this row is in.
     pub fn status(&self) -> Status {
-        match self.state {
+        match &self.state {
             State::Ready { .. } => Status::Staged,
-            State::Conflict { .. } => Status::Conflict,
+            State::Conflict { collision, .. } => Status::Conflict(collision.collided()),
             State::Rejected { .. } => Status::Rejected,
         }
     }
 
     /// Why this row is not simply staged, when it is not.
-    pub fn reason(&self) -> Option<&str> {
+    pub fn reason(&self) -> Option<String> {
         match &self.state {
             State::Ready { .. } => None,
-            State::Conflict { why, .. } | State::Rejected { why } => Some(why),
+            State::Conflict { collision, document } => {
+                Some(collision.on_the_row(&self.label, document.kind()))
+            }
+            State::Rejected { why } => Some(why.clone()),
         }
     }
 
-    /// The registration this row describes, when the document could be read.
+    /// The document this row read, when it could be read.
     ///
-    /// A conflicting row has one too: it is what the collision is *about*, and
-    /// what the row draws its kind and identity from.
+    /// What the row draws its kind and identity from, a conflicting row's too:
+    /// it is what the collision is *about*.
+    pub fn document(&self) -> Option<&Document> {
+        match &self.state {
+            State::Ready { document, .. } | State::Conflict { document, .. } => Some(document),
+            State::Rejected { .. } => None,
+        }
+    }
+
+    /// The registration a ready row will be written under. Only a ready row
+    /// has one to be written under.
     pub fn registration(&self) -> Option<&Registration> {
         match &self.state {
-            State::Ready { registration, .. } | State::Conflict { registration, .. } => {
-                Some(registration)
-            }
-            State::Rejected { .. } => None,
+            State::Ready { registration, .. } => Some(registration),
+            State::Conflict { .. } | State::Rejected { .. } => None,
         }
     }
 
@@ -135,7 +230,7 @@ impl Reading {
         paths: Vec<PathBuf>,
         entries: Manifest,
         to: Destination,
-        already: Vec<Registration>,
+        already: Vec<Claim>,
         ctx: egui::Context,
     ) -> Reading {
         let count = paths.len();
@@ -176,26 +271,19 @@ pub fn read(
     paths: &[PathBuf],
     entries: &Manifest,
     to: &Destination,
-    already: &[Registration],
+    already: &[Claim],
 ) -> Vec<Staged> {
-    let mut seen: Vec<Registration> = already.to_vec();
+    let mut seen: Vec<Claim> = already.to_vec();
     let mut staged = Vec::new();
     for path in documents_in(paths) {
         let one = read_one(&path, entries, to, &seen);
-        if let Some(registration) = one.registration() {
-            seen.push(registration.clone());
-        }
+        seen.extend(one.claim());
         staged.push(one);
     }
     staged
 }
 
-fn read_one(
-    path: &Path,
-    entries: &Manifest,
-    to: &Destination,
-    seen: &[Registration],
-) -> Staged {
+fn read_one(path: &Path, entries: &Manifest, to: &Destination, seen: &[Claim]) -> Staged {
     let file_name = path
         .file_name()
         .unwrap_or(path.as_os_str())
@@ -215,48 +303,124 @@ fn read_one(
 ///
 /// Split out of [`read_one`] because a row is settled twice: once when the file
 /// is read, and again whenever something it was measured against changes -
-/// which is [`restage`]'s job and is the whole reason a repair on one row is
+/// which is [`resettle`]'s job and is the whole reason a repair on one row is
 /// visible on another.
-fn settle(
-    document: Document,
+///
+/// An identity's collisions are asked about before a name's. Both would be the
+/// row's to settle, and a new name cannot settle the first.
+fn settle(document: Document, entries: &Manifest, to: &Destination, seen: &[Claim]) -> Staged {
+    let label = document.identity().name.clone();
+    let settled = identity_collision(&document, entries, seen)
+        .map_or_else(|| placed(&document, entries, to, seen), Err);
+    let document = Box::new(document);
+    let state = match settled {
+        Ok(registration) => State::Ready { registration, document },
+        Err(collision) => State::Conflict { document, collision },
+    };
+    Staged { label, state }
+}
+
+/// Whether the document's identity is already spoken for.
+fn identity_collision(
+    document: &Document,
+    entries: &Manifest,
+    seen: &[Claim],
+) -> Option<Collision> {
+    let uuid = document.identity().uuid;
+    if let Some(entry) = entries.get(uuid)
+        && entry.kind() != document.kind()
+    {
+        return Some(Collision::RegisteredAs(entry.kind()));
+    }
+    seen.iter().any(|other| other.uuid == uuid).then_some(Collision::SameIdentity)
+}
+
+/// The registration the document would be placed under, or what about its name
+/// stops it.
+///
+/// Note what is *not* here: an identity already in the entry list. Re-dropping a
+/// document that is registered is how an edited one is re-applied, and the list
+/// updates that entry rather than growing a second under the same UUID.
+///
+/// The one statement of what a name has to be, which is why the rename dialog
+/// asks it too: a name the dialog let through would otherwise be a conflict on
+/// the row it was typed to settle.
+fn placed(
+    document: &Document,
     entries: &Manifest,
     to: &Destination,
-    seen: &[Registration],
-) -> Staged {
+    seen: &[Claim],
+) -> Result<Registration, Collision> {
     // A name with a tab in it cannot survive the entry list, and one with a
-    // slash cannot be a file. Refused here rather than at the write, where it
+    // slash cannot be a file. Said here rather than at the write, where it
     // would be a failure after a press.
-    let mut registration = match Registration::from_document(&document) {
-        Ok(registration) => registration,
-        Err(why) => {
-            return Staged {
-                label: document.identity().name.clone(),
-                state: State::Rejected { why: why.to_string() },
-            };
-        }
-    };
+    let mut registration =
+        Registration::from_document(document).map_err(|_| Collision::Unplaceable)?;
     // An identity already registered keeps the file it has. The document may
     // have been renamed since, and following the name would leave the old file
     // behind under the same identity - two files Bitwig takes for one device.
-    let registered = entries.get(registration.uuid).map(|entry| entry.library_path.clone());
-    if let Some(path) = registered {
-        if path.kind() != registration.kind() {
-            let why = format!(
-                "this identity is registered as a {}",
-                path.kind().label().to_lowercase()
-            );
-            let label = registration.name.clone();
-            let document = Box::new(document);
-            return Staged { label, state: State::Conflict { registration, document, why } };
-        }
-        registration.library_path = path;
+    if let Some(entry) = entries.get(registration.uuid) {
+        registration.library_path = entry.library_path.clone();
     }
 
-    let label = registration.name.clone();
-    let document = Box::new(document);
-    match objection(&registration, entries, to, seen) {
-        Some(why) => Staged { label, state: State::Conflict { registration, document, why } },
-        None => Staged { label, state: State::Ready { registration, document } },
+    let taken = entries
+        .entries()
+        .iter()
+        .any(|entry| entry.name == registration.name && entry.uuid != registration.uuid);
+    if taken {
+        return Err(Collision::NameRegistered);
+    }
+    let file = Claim::file_of(&registration.library_path);
+    for other in seen {
+        if other.name == registration.name {
+            return Err(Collision::NameDropped);
+        }
+        if other.file.as_ref() == Some(&file) {
+            return Err(Collision::SameFile);
+        }
+    }
+    match placement::would_replace(to, &registration) {
+        Ok(None) => Ok(registration),
+        Ok(Some(path)) => Err(Collision::FileOccupied(crate::widget::drawn_path(&path))),
+        // Whatever stopped the target being read will stop it being written.
+        Err(e) => Err(Collision::FileUnreadable(e.to_string())),
+    }
+}
+
+/// What a row already holds, which a document settled after it collides with.
+///
+/// The identity and the name of every row that was read, and the file only of
+/// one that will be written: a conflicting row places nothing, so its file is
+/// not taken until it is settled - at which point [`resettle`] reads the rows
+/// after it again.
+#[derive(Debug, Clone)]
+pub struct Claim {
+    uuid: Uuid,
+    name: String,
+    /// Without regard to case, which is how two of the three platforms compare
+    /// file names.
+    file: Option<String>,
+}
+
+impl Claim {
+    fn file_of(path: &orng_tools::LibraryPath) -> String {
+        path.as_str().to_lowercase()
+    }
+}
+
+impl Staged {
+    /// What this row holds against the rows read after it.
+    pub fn claim(&self) -> Option<Claim> {
+        let document = self.document()?;
+        let file = match &self.state {
+            State::Ready { registration, .. } => Some(Claim::file_of(&registration.library_path)),
+            _ => None,
+        };
+        Some(Claim {
+            uuid: document.identity().uuid,
+            name: document.identity().name.clone(),
+            file,
+        })
     }
 }
 
@@ -282,7 +446,7 @@ fn resettle(
     to: &Destination,
     mut each: impl FnMut(usize, Document) -> Document,
 ) -> Vec<Staged> {
-    let mut seen: Vec<Registration> = Vec::new();
+    let mut seen: Vec<Claim> = Vec::new();
     let mut settled = Vec::with_capacity(rows.len());
     for (at, row) in rows.into_iter().enumerate() {
         let row = match row.state {
@@ -291,9 +455,7 @@ fn resettle(
                 settle(each(at, *document), entries, to, &seen)
             }
         };
-        if let Some(registration) = row.registration() {
-            seen.push(registration.clone());
-        }
+        seen.extend(row.claim());
         settled.push(row);
     }
     settled
@@ -322,11 +484,10 @@ pub fn restaged(rows: Vec<Staged>, entries: &Manifest, to: &Destination) -> Vec<
 /// document, and doing that to something already registered would orphan every
 /// project that refers to it.
 ///
-/// A new identity settles exactly one of the collisions [`objection`] raises.
-/// A name already taken stays taken and the row goes on saying so. The design
-/// offers the control on every staged and conflicting row rather than only on
-/// the one it fixes, and a row that answers honestly is better than a control
-/// that refuses to try.
+/// A new identity settles the collisions of identities and none of the rest: a
+/// name already taken stays taken and the row goes on saying so. Which is why
+/// revision 8 offers it on a staged row and on a conflict of identities, and
+/// the pencil on a conflict of names in its place.
 pub fn reassign(
     rows: Vec<Staged>,
     at: usize,
@@ -347,51 +508,54 @@ pub fn reassign(
     })
 }
 
-/// Why this document cannot be registered as it stands, if it cannot.
+/// Give the staged row at `at` a new name, and read the set again.
 ///
-/// Note what is *not* here: an identity already in the entry list. Re-dropping a
-/// document that is registered is how an edited one is re-applied, and the list
-/// updates that entry rather than growing a second under the same UUID.
-fn objection(
-    registration: &Registration,
+/// By position, as [`reassign`] is and for its reason. The name is written into
+/// the document, because that is the name Bitwig shows: the one in the entry
+/// list only finds search keywords. The file it will be placed in follows,
+/// being named after the document.
+///
+/// Only a name [`refusal`] has let through: the dialog asks it before its press
+/// is live, so a name this cannot write is a press the dialog should not have
+/// allowed.
+pub fn rename(
+    rows: Vec<Staged>,
+    at: usize,
+    name: &str,
     entries: &Manifest,
     to: &Destination,
-    seen: &[Registration],
-) -> Option<String> {
-    // Bitwig's browser is flat and matches on name, so two entries under one
-    // display name are indistinguishable there (identity rule 7.3.4).
-    let taken = entries
-        .entries()
+) -> Vec<Staged> {
+    resettle(rows, entries, to, |which, document| {
+        if which != at {
+            return document;
+        }
+        document.with_name(name).expect("a name the rename dialog let through")
+    })
+}
+
+/// What stops the staged row at `at` being called `name`, if anything does.
+///
+/// Measured against every other row and not only those before it, as reading
+/// the set does: a name taken from a row further down would settle this one by
+/// putting that one in conflict, which is a rename that makes a conflict.
+pub fn refusal(
+    rows: &[Staged],
+    at: usize,
+    name: &str,
+    entries: &Manifest,
+    to: &Destination,
+) -> Option<Collision> {
+    let document = rows[at].document().expect("a rename is offered only on a row that was read");
+    let Ok(renamed) = document.with_name(name) else {
+        return Some(Collision::Unplaceable);
+    };
+    let others: Vec<Claim> = rows
         .iter()
-        .any(|entry| entry.name == registration.name && entry.uuid != registration.uuid);
-    if taken {
-        return Some(format!("{} is already registered under another identity", registration.name));
-    }
-
-    for other in seen {
-        if other.uuid == registration.uuid {
-            return Some("another dropped document has the same identity".to_owned());
-        }
-        if other.name == registration.name {
-            return Some(format!("another dropped document is also called {}", other.name));
-        }
-        // Without regard to case, which is how two of the three platforms
-        // compare file names.
-        let file = |path: &orng_tools::LibraryPath| path.as_str().to_lowercase();
-        if file(&other.library_path) == file(&registration.library_path) {
-            return Some("another dropped document would be placed in the same file".to_owned());
-        }
-    }
-
-    match placement::would_replace(to, registration) {
-        Ok(None) => None,
-        Ok(Some(path)) => {
-            let path = crate::widget::drawn_path(&path);
-            Some(format!("{path} already holds a different document"))
-        }
-        // Whatever stopped the target being read will stop it being written.
-        Err(e) => Some(e.to_string()),
-    }
+        .enumerate()
+        .filter(|(which, _)| *which != at)
+        .filter_map(|(_, row)| row.claim())
+        .collect();
+    placed(&renamed, entries, to, &others).err()
 }
 
 /// A document error in the words the row shows.
@@ -496,10 +660,10 @@ mod tests {
         // acceptable files out of what it was given.
         assert_eq!(staged.len(), 2, "{staged:?}");
         assert_eq!(staged[0].status(), Status::Rejected);
-        assert_eq!(staged[0].reason(), Some("Not a Bitwig document"));
+        assert_eq!(staged[0].reason().as_deref(), Some("Not a Bitwig document"));
         assert_eq!(staged[0].label, "BROKEN.bwdevice", "a rejected row is named by its file");
         assert!(staged[0].registration().is_none());
-        assert_eq!(staged[1].reason(), Some("Not a complete Bitwig document"));
+        assert_eq!(staged[1].reason().as_deref(), Some("Not a complete Bitwig document"));
     }
 
     /// Bitwig's browser is flat and matches on name, so two entries under one
@@ -514,11 +678,8 @@ mod tests {
         let path = machine.document("drop/DISPERSER.bwdevice", A, "DISPERSER");
 
         let staged = machine.stage(&[path], &entries);
-        assert_eq!(staged[0].status(), Status::Conflict);
-        assert_eq!(
-            staged[0].reason(),
-            Some("DISPERSER is already registered under another identity")
-        );
+        assert_eq!(staged[0].status(), Status::Conflict(Collided::Name));
+        assert_eq!(staged[0].reason().as_deref(), Some("Name already used by a registered device"));
     }
 
     /// The same identity is not a collision. It is how an edited document is
@@ -547,8 +708,11 @@ mod tests {
 
         let staged = machine.stage(&[first, second], &Manifest::default());
         assert_eq!(staged[0].status(), Status::Staged);
-        assert_eq!(staged[1].status(), Status::Conflict);
-        assert_eq!(staged[1].reason(), Some("another dropped document has the same identity"));
+        assert_eq!(staged[1].status(), Status::Conflict(Collided::Identity));
+        assert_eq!(
+            staged[1].reason().as_deref(),
+            Some("Another dropped document has the same identity")
+        );
     }
 
     /// Different identities, different names, one file - on the two platforms
@@ -560,10 +724,10 @@ mod tests {
         let second = machine.document("drop/two/Shared.bwdevice", B, "Shared");
 
         let staged = machine.stage(&[first, second], &Manifest::default());
-        assert_eq!(staged[1].status(), Status::Conflict);
+        assert_eq!(staged[1].status(), Status::Conflict(Collided::Name));
         assert_eq!(
-            staged[1].reason(),
-            Some("another dropped document would be placed in the same file")
+            staged[1].reason().as_deref(),
+            Some("Another dropped document would be placed in the same file")
         );
     }
 
@@ -579,7 +743,7 @@ mod tests {
 
         let path = machine.document("drop/X.bwdevice", A, "MINE");
         let staged = machine.stage(&[path], &Manifest::default());
-        assert_eq!(staged[0].status(), Status::Conflict);
+        assert_eq!(staged[0].status(), Status::Conflict(Collided::Name));
         assert!(
             staged[0].reason().expect("a conflict says why").ends_with("a different document"),
             "{:?}",
@@ -621,8 +785,42 @@ mod tests {
         assert_eq!(registration.library_path.as_str(), "devices/My Devices/disperser v1.bwdevice");
 
         let staged = machine.stage(&[other_kind], &entries);
-        assert_eq!(staged[0].status(), Status::Conflict);
-        assert_eq!(staged[0].reason(), Some("this identity is registered as a device"));
+        assert_eq!(staged[0].status(), Status::Conflict(Collided::Identity));
+        assert_eq!(staged[0].reason().as_deref(), Some("This identity is registered as a device"));
+    }
+
+    /// A name no platform could hold as a file is a conflict a rename settles,
+    /// not a rejection: the document is fine, and only what it is called is not.
+    #[test]
+    fn a_name_that_cannot_be_a_file_is_a_conflict_of_names() {
+        let machine = machine();
+        let path = machine.document("drop/AB.bwdevice", A, "A/B");
+
+        let staged = machine.stage(&[path], &Manifest::default());
+        assert_eq!(staged[0].status(), Status::Conflict(Collided::Name));
+        assert_eq!(staged[0].reason().as_deref(), Some("A/B cannot be a file name"));
+    }
+
+    /// What the rename dialog is told about a name: measured against every
+    /// other row, the ones after this one included, and against nothing about
+    /// this row itself.
+    #[test]
+    fn a_rename_is_refused_a_name_any_other_row_has() {
+        let machine = machine();
+        let first = machine.document("drop/FIRST.bwdevice", A, "FIRST");
+        let second = machine.document("drop/SECOND.bwdevice", B, "SECOND");
+        let (to, entries) = (&machine.to, &Manifest::default());
+        let rows = machine.stage(&[first, second], entries);
+
+        assert_eq!(refusal(&rows, 0, "SECOND", entries, to), Some(Collision::NameDropped));
+        assert_eq!(refusal(&rows, 0, "A/B", entries, to), Some(Collision::Unplaceable));
+        assert_eq!(refusal(&rows, 0, "FIRST", entries, to), None, "its own name is not taken");
+        assert_eq!(refusal(&rows, 0, "THIRD", entries, to), None);
+
+        let renamed = rename(rows, 0, "THIRD", entries, to);
+        assert_eq!(renamed[0].label, "THIRD");
+        assert_eq!(renamed[1].label, "SECOND", "the other row was renamed");
+        assert!(renamed.iter().all(Staged::is_ready));
     }
 
     /// A dropped folder is what somebody with a library of their own drops.

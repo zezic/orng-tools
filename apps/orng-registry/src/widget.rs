@@ -713,6 +713,8 @@ pub mod icon {
     /// The four remedies a row offers besides revealing. Each is drawn only in
     /// the states that can use it - see [`crate::status`].
     pub const ASSIGN: &str = light::FINGERPRINT;
+    /// Give a document another name - the remedy for a name that is taken.
+    pub const RENAME: &str = light::PENCIL_SIMPLE;
     /// Go and find a document the entry says should be there and is not. Not
     /// [`REVEAL`]'s folder: nothing is there to open, and the design colours
     /// this one with the accent because it is the remedy rather than a look.
@@ -1222,6 +1224,7 @@ pub fn catalog_action(
 pub fn action_glyph(action: Action) -> &'static str {
     match action {
         Action::Assign => icon::ASSIGN,
+        Action::Rename => icon::RENAME,
         Action::Locate => icon::LOCATE,
         Action::Undo => icon::UNDO,
         Action::Reveal => icon::REVEAL,
@@ -1232,10 +1235,11 @@ pub fn action_glyph(action: Action) -> &'static str {
 fn row_action(ui: &mut Ui, palette: Palette, action: Action, label: &str) -> Response {
     let glyph = action_glyph(action);
     let (ink, lit, fill) = match action {
-        // The remedy on a broken row, and the only one the design gives the
-        // accent rather than the quiet grey the others wear. It keeps its
+        // The remedies on a broken row, and the only ones the design gives the
+        // accent rather than the quiet grey the others wear - the pencil "the
+        // same weight as `Locate`", in the round-five answers. Each keeps its
         // colour under the pointer; only the ground behind it arrives.
-        Action::Locate => (palette.accent, palette.accent, palette.accent_soft),
+        Action::Locate | Action::Rename => (palette.accent, palette.accent, palette.accent_soft),
         // The one press on a row that can destroy the user's own work, so it
         // turns red under the pointer instead of merely lighting up.
         Action::Remove => (palette.ink_2, palette.err, palette.err_bg),
@@ -1332,7 +1336,7 @@ pub fn status_colour(palette: Palette, status: Status) -> Color32 {
     match status {
         Status::Staged | Status::PendingRestart => palette.ink_2,
         Status::Changed | Status::UpdateAvailable => palette.accent_text,
-        Status::MissingFile | Status::Conflict => palette.err_text,
+        Status::MissingFile | Status::Conflict(_) => palette.err_text,
         Status::Registered | Status::Rejected | Status::PendingRemoval => palette.ink_3,
     }
 }
@@ -2269,7 +2273,11 @@ enum Weight {
 /// surface and not the other.
 fn weight_of(action: Action) -> Weight {
     match action {
+        // Not the pencil: the panel's `Rename...` is the quiet grey of the
+        // lines around it (`Inspector.dc.html:113`), where the row's is the
+        // accent because there it is the remedy.
         Action::Locate => Weight::Remedy,
+        Action::Rename => Weight::Ordinary,
         Action::Remove => Weight::Destructive,
         Action::Assign | Action::Undo | Action::Reveal => Weight::Ordinary,
     }
@@ -4271,6 +4279,9 @@ pub struct Answers<'a> {
     /// Whether the primary asks the system for administrator rights, and so
     /// wears the shield.
     pub elevates: bool,
+    /// Why the primary cannot be pressed yet, if it cannot. Said on hover, as
+    /// the action bar's primary says it.
+    pub refused: Option<&'a str>,
 }
 
 /// A strip inside a dialog saying one thing about this machine: a wash, a dot,
@@ -4301,6 +4312,7 @@ pub enum Answer {
 const PROGRESS_WIDTH: f32 = 436.0;
 const CONFIRMATION_WIDTH: f32 = 476.0;
 const UPDATE_WIDTH: f32 = 428.0;
+const RENAME_WIDTH: f32 = 404.0;
 const DIALOG_RADIUS: u8 = 8;
 /// The dialog's own padding, which is not the window's: 14 across, and a little
 /// less under a heading than over it.
@@ -4338,6 +4350,13 @@ const CAVEAT_DOT: f32 = 6.0;
 const OVER_A_CAVEAT_DOT: f32 = 5.0;
 const ALONG_A_CAVEAT: f32 = 9.0;
 
+/// The rename's body, `RenameDialog.dc.html:21-37`: eleven between its parts,
+/// five inside the field's, and a field two pixels taller than the inspector's
+/// with its outline inside it.
+const BETWEEN_RENAME_BLOCKS: f32 = 11.0;
+const WITHIN_A_RENAME_FIELD: f32 = 5.0;
+const RENAME_FIELD: f32 = 29.0;
+
 /// A dialog over the window, holding it still.
 ///
 /// Drawn twice, like every block the design centres: once into a sizing pass
@@ -4351,7 +4370,7 @@ fn dialog<R>(
     palette: Palette,
     name: &str,
     width: f32,
-    contents: impl Fn(&mut Ui) -> R,
+    mut contents: impl FnMut(&mut Ui) -> R,
 ) -> R {
     // Over everything, bars included: the window is holding still, and a scrim
     // that stopped at the working area would say that the bars are not.
@@ -4380,7 +4399,7 @@ fn dialog<R>(
     sink.allocate_rect(window, Sense::CLICK | Sense::DRAG);
     ui.ctx().memory_mut(|memory| memory.set_modal_layer(layer));
 
-    let contents = |ui: &mut Ui| {
+    let mut contents = |ui: &mut Ui| {
         ui.spacing_mut().item_spacing.y = 0.0;
         // Nothing in a dialog is a bar control, and the theme's floor under a
         // row would put nine pixels into its heading and ten into every line
@@ -4538,25 +4557,7 @@ pub fn confirmation_dialog(
     confirmation: &Confirmation<'_>,
 ) -> Option<Answer> {
     dialog(ui, palette, "confirmation-dialog", CONFIRMATION_WIDTH, |ui| {
-        dialog_band(ui, palette, Edge::Top, heading_margin(), |ui| {
-            // One row, as tall as the title, with the tag centred on it.
-            let title = font::emphasis(ui.ctx(), font::DIALOG_TITLE);
-            let height = ui.fonts_mut(|fonts| fonts.row_height(&title));
-            ui.allocate_ui_with_layout(
-                vec2(ui.available_width(), height),
-                Layout::left_to_right(Align::Center),
-                |ui| {
-                    ui.spacing_mut().item_spacing.x = 0.0;
-                    ui.label(font::run(confirmation.title, title).color(palette.ink));
-                    ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                        ui.label(
-                            font::run(confirmation.tag, font::plain(font::NOTE))
-                                .color(palette.ink_3),
-                        );
-                    });
-                },
-            );
-        });
+        tagged_heading(ui, palette, confirmation.title, confirmation.tag);
 
         Frame::new()
             .inner_margin(Margin {
@@ -4583,6 +4584,159 @@ pub fn confirmation_dialog(
             });
 
         answer_foot(ui, palette, &confirmation.answers)
+    })
+}
+
+/// A dialog's heading with a word at its right for what the body is about: one
+/// row, as tall as the title, with the word centred on it.
+///
+/// The title gives way to the word and is cut short rather than wrapped, as
+/// `RenameDialog.dc.html:20` sets it: the one title here that carries a name,
+/// and a name can be any length.
+fn tagged_heading(ui: &mut Ui, palette: Palette, title: &str, tag: &str) {
+    dialog_band(ui, palette, Edge::Top, heading_margin(), |ui| {
+        let face = font::emphasis(ui.ctx(), font::DIALOG_TITLE);
+        let height = ui.fonts_mut(|fonts| fonts.row_height(&face));
+        let word = font::plain(font::NOTE);
+        let room = ui.available_width() - text_width(ui, tag, word.clone()) - ALONG_A_HEADING;
+        ui.allocate_ui_with_layout(
+            vec2(ui.available_width(), height),
+            Layout::left_to_right(Align::Center),
+            |ui| {
+                ui.spacing_mut().item_spacing.x = 0.0;
+                ui.scope(|ui| {
+                    ui.set_max_width(room);
+                    ui.add(
+                        egui::Label::new(font::run(title, face).color(palette.ink)).truncate(),
+                    );
+                });
+                ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                    ui.label(font::run(tag, word).color(palette.ink_3));
+                });
+            },
+        );
+    });
+}
+
+/// Between a heading's title and the word at its right.
+const ALONG_A_HEADING: f32 = 10.0;
+
+/// The rename's question, `RenameDialog.dc.html`.
+pub struct RenameQuestion<'a> {
+    /// `Rename <the name it has now>`.
+    pub title: &'a str,
+    /// What kind of document it is, at the heading's right.
+    pub kind: &'a str,
+    /// The name being typed.
+    pub name: &'a mut String,
+    /// What is wrong with it, under the field, where something is.
+    pub refusal: Option<&'a str>,
+    /// Why names must differ, and what renaming changes.
+    pub rule: &'a str,
+    /// When the new name is written.
+    pub note: &'a str,
+    pub answers: Answers<'a>,
+}
+
+/// The rename's question, over the window, and what it was answered with.
+///
+/// The heading is the plan's, with the kind for its word; the body is the
+/// field, the rule and when it is written; the foot is every question's.
+/// Enter in the field is the press, where the press can be made.
+///
+/// Answers whether the name was edited as well, since what is wrong with a
+/// name is asked of the disk and is worth asking once per edit rather than
+/// once per frame.
+pub fn rename_dialog(
+    ui: &mut Ui,
+    palette: Palette,
+    question: &mut RenameQuestion<'_>,
+) -> (bool, Option<Answer>) {
+    dialog(ui, palette, "rename-dialog", RENAME_WIDTH, |ui| {
+        tagged_heading(ui, palette, question.title, question.kind);
+
+        let mut edited = false;
+        let mut entered = false;
+        Frame::new()
+            .inner_margin(Margin {
+                left: DIALOG_PAD as i8,
+                right: DIALOG_PAD as i8,
+                top: ABOVE_A_QUESTION as i8,
+                bottom: DIALOG_PAD as i8,
+            })
+            .show(ui, |ui| {
+                ui.set_width(ui.available_width());
+                label_above(ui, palette, "Display name", WITHIN_A_RENAME_FIELD);
+                let outline = if question.refusal.is_some() { palette.err } else { palette.accent };
+                Frame::new()
+                    .fill(palette.field)
+                    .corner_radius(CornerRadius::same(metric::FIELD_RADIUS))
+                    // Inside the box, as the design's inset shadow is, so the
+                    // box is 29 whatever colour its outline.
+                    .stroke(Stroke::new(metric::HAIRLINE, outline))
+                    .inner_margin(Margin::symmetric(
+                        (metric::FIELD_PAD - metric::HAIRLINE) as i8,
+                        0,
+                    ))
+                    .show(ui, |ui| {
+                        ui.set_width(ui.available_width());
+                        ui.set_height(RENAME_FIELD - 2.0 * metric::HAIRLINE);
+                        ui.horizontal_centered(|ui| {
+                            let field = ui.add(
+                                egui::TextEdit::singleline(question.name)
+                                    .id_salt("rename-name")
+                                    .desired_width(f32::INFINITY)
+                                    .font(font::plain(font::FIELD_VALUE))
+                                    .text_color(palette.ink)
+                                    .frame(Frame::NONE)
+                                    .margin(Margin::ZERO),
+                            );
+                            edited = field.changed();
+                            entered = field.lost_focus()
+                                && ui.input(|input| input.key_pressed(egui::Key::Enter));
+                            // The field is the question, so it has the keyboard
+                            // unless something else in the dialog was given it.
+                            // After the Enter is read: asked for first, the
+                            // focus it gave up is back and nothing was lost.
+                            // Never the sizing pass's copy, which is drawn
+                            // first and would take the typing out of sight.
+                            let free = ui.memory(|memory| memory.focused().is_none());
+                            if free && !ui.is_sizing_pass() {
+                                field.request_focus();
+                            }
+                        });
+                    });
+                if let Some(refusal) = question.refusal {
+                    ui.add_space(WITHIN_A_RENAME_FIELD);
+                    ui.add(
+                        egui::Label::new(
+                            font::wrapping(refusal, font::NOTE, font::Leading::Explaining)
+                                .color(palette.err_text),
+                        )
+                        .wrap(),
+                    );
+                }
+                ui.add_space(BETWEEN_RENAME_BLOCKS);
+                ui.add(
+                    egui::Label::new(
+                        font::wrapping(question.rule, font::CHIP, font::Leading::Describing)
+                            .color(palette.ink_2),
+                    )
+                    .wrap(),
+                );
+                ui.add_space(BETWEEN_RENAME_BLOCKS);
+                ui.add(
+                    egui::Label::new(
+                        font::wrapping(question.note, font::NOTE, font::Leading::Planning)
+                            .color(palette.ink_3),
+                    )
+                    .wrap(),
+                );
+            });
+
+        let answered = answer_foot(ui, palette, &question.answers);
+        let entered = entered && question.answers.refused.is_none();
+        (edited, answered.or(entered.then_some(Answer::Proceed)))
     })
 }
 
@@ -4655,12 +4809,17 @@ fn answer_foot(ui: &mut Ui, palette: Palette, answers: &Answers<'_>) -> Option<A
             Layout::right_to_left(Align::Center),
             |ui| {
                 ui.spacing_mut().item_spacing.x = 0.0;
-                let (primary, icon) = (answers.primary, answers.icon);
-                let pressed = if answers.elevates {
-                    elevating_button(ui, palette, primary, icon)
-                } else {
-                    primary_button(ui, palette, primary, icon, true, "")
-                };
+                let (label, icon) = (answers.primary, answers.icon);
+                let refused = answers.refused;
+                let pressed = primary(
+                    ui,
+                    palette,
+                    answers.elevates,
+                    label,
+                    icon,
+                    refused.is_none(),
+                    refused.unwrap_or(""),
+                );
                 ui.add_space(ALONG_A_DIALOG_FOOT);
                 let way_out = cancel_button(ui, palette, answers.cancel, Foot::Dialog);
                 if pressed.clicked() {

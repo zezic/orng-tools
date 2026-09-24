@@ -50,13 +50,25 @@ pub enum Status {
     Changed,
     /// The catalog has a newer version of this identity.
     UpdateAvailable,
-    /// Something about this document collides with what is already here.
-    Conflict,
+    /// Something about this document collides with what is already here, and
+    /// which of two things settles it.
+    Conflict(Collided),
     /// Not a Bitwig document at all. It was never read, so it has neither a
     /// kind nor an identity.
     Rejected,
     /// Queued for removal, and still registered until the next apply.
     PendingRemoval,
+}
+
+/// Which of the design's two conflicts a row is in: `EntryRow`'s
+/// `conflict: "name" | "uuid"`. Both read `Conflict`; they differ in the
+/// remedy the row offers, which is the point of telling them apart.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Collided {
+    /// Settled by a new name, so the row offers the pencil.
+    Name,
+    /// Settled by a new identity, so the row offers the fingerprint.
+    Identity,
 }
 
 /// One thing a row offers to do to its entry.
@@ -70,6 +82,8 @@ pub enum Action {
     /// Mint a new identity for a document that cannot be registered under the
     /// one it carries.
     Assign,
+    /// Give the document another name, where the one it carries is taken.
+    Rename,
     /// Point a registered entry back at its document.
     Locate,
     /// Take a row out of the removal queue.
@@ -91,7 +105,7 @@ impl Status {
             Status::MissingFile => "Missing file",
             Status::Changed => "Changed",
             Status::UpdateAvailable => "Update available",
-            Status::Conflict => "Conflict",
+            Status::Conflict(_) => "Conflict",
             Status::Rejected => "Rejected",
             Status::PendingRemoval => "Pending removal",
         }
@@ -104,7 +118,8 @@ impl Status {
     /// is drawn every frame. Reversible for the same reason - the design's DOM
     /// order is left to right and the group is laid out from its right edge.
     pub fn actions(self) -> impl DoubleEndedIterator<Item = Action> {
-        [Action::Assign, Action::Locate, Action::Undo, Action::Reveal, Action::Remove]
+        use Action::*;
+        [Assign, Rename, Locate, Undo, Reveal, Remove]
             .into_iter()
             .filter(move |action| self.offers(*action))
     }
@@ -114,15 +129,17 @@ impl Status {
         use Status::*;
         match action {
             // A staged document is the only one whose identity can still be
-            // changed, because nothing has been written under it yet.
-            Action::Assign => matches!(self, Staged | Conflict),
+            // changed, because nothing has been written under it yet. Not on a
+            // conflict a name settles: the pencil stands in its place there.
+            Action::Assign => matches!(self, Staged | Conflict(Collided::Identity)),
+            Action::Rename => self == Conflict(Collided::Name),
             Action::Locate => self == MissingFile,
             Action::Undo => self == PendingRemoval,
             // Not on a missing file, which is the point of the table: that is
             // the one state where revealing cannot work. Not on a staged or
             // conflicting one either - the document is still wherever the user
             // dropped it from, and nothing has been placed to reveal.
-            Action::Reveal => !matches!(self, Rejected | MissingFile | Staged | Conflict),
+            Action::Reveal => !matches!(self, Rejected | MissingFile | Staged | Conflict(_)),
             // A rejected row was never read and there is nothing to remove; a
             // row already queued for removal offers the undo instead.
             Action::Remove => !matches!(self, Rejected | PendingRemoval),
@@ -152,13 +169,17 @@ impl Action {
             // trailing "..." says the press opens something, and it is the
             // panel's labelled line that does, not this.
             Action::Assign => "Assign new UUID".to_owned(),
+            // With the ellipsis, where the other row titles have none: the
+            // bundle writes it on this one (`EntryRow.dc.html:49`), and the
+            // press does open something.
+            Action::Rename => "Rename...".to_owned(),
             Action::Locate => "Locate file".to_owned(),
             Action::Undo => "Undo removal".to_owned(),
             Action::Reveal => "Reveal file".to_owned(),
             // Nothing has been written for a staged row, so there is no entry
             // to remove and no file of ours to delete. The design calls that
             // press Cancel, and it says nothing about a document.
-            Action::Remove if matches!(status, Status::Staged | Status::Conflict) => {
+            Action::Remove if matches!(status, Status::Staged | Status::Conflict(_)) => {
                 "Cancel".to_owned()
             }
             Action::Remove => match document {
@@ -192,7 +213,10 @@ impl Action {
     fn writes(self) -> bool {
         match self {
             Action::Locate => true,
-            Action::Assign | Action::Undo | Action::Reveal | Action::Remove => false,
+            // Renaming a staged document writes nothing until Apply either.
+            Action::Assign | Action::Rename | Action::Undo | Action::Reveal | Action::Remove => {
+                false
+            }
         }
     }
 
@@ -208,6 +232,7 @@ impl Action {
     pub fn in_the_panel(self) -> &'static str {
         match self {
             Action::Assign => "Assign new UUID...",
+            Action::Rename => "Rename...",
             Action::Locate => "Locate file...",
             Action::Undo => "Undo removal",
             Action::Reveal => "Reveal file",
@@ -418,17 +443,18 @@ mod tests {
         status.actions().collect()
     }
 
-    /// The nine this draws, so a test can walk them all. Here rather than on
-    /// [`Status`] because nothing that draws needs the list - each surface is
-    /// handed the one status its row is in.
-    const EVERY: [Status; 9] = [
+    /// The nine this draws, one of them in its two kinds, so a test can walk
+    /// them all. Here rather than on [`Status`] because nothing that draws needs
+    /// the list - each surface is handed the one status its row is in.
+    const EVERY: [Status; 10] = [
         Status::Staged,
         Status::Registered,
         Status::PendingRestart,
         Status::MissingFile,
         Status::Changed,
         Status::UpdateAvailable,
-        Status::Conflict,
+        Status::Conflict(Collided::Name),
+        Status::Conflict(Collided::Identity),
         Status::Rejected,
         Status::PendingRemoval,
     ];
@@ -440,7 +466,10 @@ mod tests {
     fn every_state_offers_what_the_bundle_offers() {
         use Action::*;
         assert_eq!(offered(Status::Staged), [Assign, Remove]);
-        assert_eq!(offered(Status::Conflict), [Assign, Remove]);
+        // The pencil in place of the fingerprint on a name, as revision 8's
+        // `EntryRow.dc.html:151-152` has it.
+        assert_eq!(offered(Status::Conflict(Collided::Name)), [Rename, Remove]);
+        assert_eq!(offered(Status::Conflict(Collided::Identity)), [Assign, Remove]);
         assert_eq!(offered(Status::Registered), [Reveal, Remove]);
         assert_eq!(offered(Status::PendingRestart), [Reveal, Remove]);
         assert_eq!(offered(Status::Changed), [Reveal, Remove]);
@@ -462,7 +491,10 @@ mod tests {
     /// whole control group on a separate `factory` boolean.
     #[test]
     fn the_words_are_the_designs_nine() {
-        let said: Vec<&str> = EVERY.iter().map(|status| status.word()).collect();
+        // The two conflicts are one word: the design tells them apart by the
+        // remedy on the row, not by what the row says it is.
+        let mut said: Vec<&str> = EVERY.iter().map(|status| status.word()).collect();
+        said.dedup();
         assert_eq!(
             said,
             [
@@ -489,6 +521,7 @@ mod tests {
     fn each_control_says_what_the_bundle_says_it_does() {
         let said = |action: Action| action.label(Status::Registered, TheDocument::Kept);
         assert_eq!(said(Action::Assign), "Assign new UUID");
+        assert_eq!(said(Action::Rename), "Rename...");
         assert_eq!(said(Action::Locate), "Locate file");
         assert_eq!(said(Action::Undo), "Undo removal");
         assert_eq!(said(Action::Reveal), "Reveal file");
@@ -503,7 +536,8 @@ mod tests {
         assert_eq!(locate, "Locate file \u{b7} asks Windows for administrator rights");
         let quiet = Consequences { asks: false, ..asks };
         assert_eq!(Action::Locate.hover(Status::MissingFile, quiet), "Locate file");
-        for action in [Action::Assign, Action::Undo, Action::Reveal, Action::Remove] {
+        use Action::*;
+        for action in [Assign, Rename, Undo, Reveal, Remove] {
             let said = action.hover(Status::Registered, asks);
             assert!(!said.contains("administrator"), "{action:?} said {said:?}");
         }
@@ -521,6 +555,7 @@ mod tests {
     fn the_panels_words_carry_the_ellipsis_the_rows_do_not() {
         use Action::*;
         assert_eq!(Assign.in_the_panel(), "Assign new UUID...");
+        assert_eq!(Rename.in_the_panel(), "Rename...");
         assert_eq!(Locate.in_the_panel(), "Locate file...");
         assert_eq!(Undo.in_the_panel(), "Undo removal");
         assert_eq!(Reveal.in_the_panel(), "Reveal file");
@@ -564,7 +599,9 @@ mod tests {
         // not a removal at all and says so under either setting.
         for setting in [TheDocument::Kept, TheDocument::Deleted] {
             assert_eq!(Action::Remove.label(Status::Staged, setting), "Cancel");
-            assert_eq!(Action::Remove.label(Status::Conflict, setting), "Cancel");
+            for kind in [Collided::Name, Collided::Identity] {
+                assert_eq!(Action::Remove.label(Status::Conflict(kind), setting), "Cancel");
+            }
         }
     }
 

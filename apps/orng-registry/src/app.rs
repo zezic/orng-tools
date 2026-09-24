@@ -224,13 +224,24 @@ impl Default for Filter {
 
 impl Filter {
     fn accepts(&self, entry: &Registration) -> bool {
-        if !self.kinds.contains(&entry.kind()) {
+        self.admits(entry.kind(), &entry.name, entry.uuid)
+    }
+
+    /// The same, of a dropped document, which a conflicting one has no
+    /// registration to be asked through.
+    fn accepts_document(&self, document: &Document) -> bool {
+        let identity = document.identity();
+        self.admits(document.kind(), &identity.name, identity.uuid)
+    }
+
+    fn admits(&self, kind: Kind, name: &str, uuid: Uuid) -> bool {
+        if !self.kinds.contains(&kind) {
             return false;
         }
         let query = self.query.trim().to_lowercase();
         query.is_empty()
-            || entry.name.to_lowercase().contains(&query)
-            || entry.uuid.to_string().contains(&query)
+            || name.to_lowercase().contains(&query)
+            || uuid.to_string().contains(&query)
     }
 
     /// The same three questions asked of a published item.
@@ -282,12 +293,12 @@ impl<'a> Listing<'a> {
         // the list it is drawn from: the alternative walks the pending rows
         // once per registered entry.
         let spoken_for: BTreeSet<Uuid> =
-            staged.iter().filter_map(Staged::registration).map(|row| row.uuid).collect();
+            staged.iter().filter_map(Staged::document).map(|row| row.identity().uuid).collect();
         Listing {
             pending: staged
                 .iter()
                 .enumerate()
-                .filter(|(_, row)| row.registration().is_none_or(|row| filter.accepts(row)))
+                .filter(|(_, row)| row.document().is_none_or(|row| filter.accepts_document(row)))
                 .collect(),
             registered: entries
                 .iter()
@@ -351,8 +362,8 @@ impl Pending {
                 && !self
                     .staged
                     .iter()
-                    .filter_map(Staged::registration)
-                    .any(|staged| staged.uuid == *uuid)
+                    .filter_map(Staged::document)
+                    .any(|staged| staged.identity().uuid == *uuid)
         })
     }
 
@@ -671,6 +682,12 @@ impl App {
     #[cfg(test)]
     pub fn set_staged(&mut self, staged: Vec<Staged>) {
         self.pending.staged = staged;
+    }
+
+    /// What is staged, as the list holds it. Tests only.
+    #[cfg(test)]
+    pub fn staged(&self) -> &[Staged] {
+        &self.pending.staged
     }
 
     /// Narrow the list without typing. Tests only.
@@ -1950,8 +1967,14 @@ impl App {
                 self.outcome = Some(outcome);
             }
             Ok(entries) => {
-                // What was written is no longer pending.
+                // What was written is no longer pending, and a rename asked
+                // about a row of it has no row to be about. The one place rows
+                // leave the list under an open question: everything else that
+                // takes one is a press, and the scrim is over every press.
                 self.pending.written();
+                if matches!(self.confirming, Some(Confirming::Rename(_))) {
+                    self.confirming = None;
+                }
                 let in_effect = entries.entries().len();
                 if errand.prepares() {
                     // A preparation changes what is true of the installation:
@@ -2033,8 +2056,8 @@ impl App {
         }
         // What is already staged goes with it, so a second drop collides with
         // the first rather than quietly winning when the list is written.
-        let already: Vec<Registration> =
-            self.pending.staged.iter().filter_map(Staged::registration).cloned().collect();
+        let already: Vec<staging::Claim> =
+            self.pending.staged.iter().filter_map(Staged::claim).collect();
         self.reading = Some(Reading::start(
             paths,
             found.entries().clone(),
@@ -2765,8 +2788,8 @@ impl App {
                     .pending
                     .staged
                     .iter()
-                    .filter_map(Staged::registration)
-                    .filter(|r| r.kind() == kind)
+                    .filter_map(Staged::document)
+                    .filter(|document| document.kind() == kind)
                     .count();
                 (kind, registered + staged)
             })
@@ -3418,6 +3441,14 @@ impl App {
                 let staged = std::mem::take(&mut self.pending.staged);
                 self.pending.staged = staging::reassign(staged, at, found.entries(), &found.to);
             }
+            // Asked, not done: the dialog opens on the name the document has,
+            // which is the one that is taken, and says so.
+            (Acting::Pending(at), Action::Rename) => {
+                let name = self.pending.staged[at].label.clone();
+                let (entries, to) = (found.entries(), &found.to);
+                let refusal = staging::refusal(&self.pending.staged, at, &name, entries, to);
+                self.confirming = Some(Confirming::Rename(Renaming { at, name, refusal }));
+            }
             // Queued, not done. The design keeps the entry registered and
             // struck through until the apply that removes it, which is what
             // makes one press of the primary action the confirmation for every
@@ -4045,6 +4076,71 @@ impl App {
         match self.confirming {
             Some(Confirming::Preparation(_)) => self.confirm_preparation(ui),
             Some(Confirming::Update(uuid)) => self.confirm_update(ui, uuid),
+            Some(Confirming::Rename(_)) => self.confirm_rename(ui),
+            None => {}
+        }
+    }
+
+    /// The rename, over the window, until it is answered.
+    ///
+    /// The rule and the note are the design's words. The note is the staged
+    /// one: nothing is written until Apply, so the press stages a new name and
+    /// wears no shield.
+    fn confirm_rename(&mut self, ui: &mut egui::Ui) {
+        let (Session::Found(found), Some(Confirming::Rename(renaming))) =
+            (&self.session, &mut self.confirming)
+        else {
+            return;
+        };
+        let row = &self.pending.staged[renaming.at];
+        let kind = row.document().expect("a rename is offered only on a row that was read").kind();
+        let title = format!("Rename {}", row.label);
+        let refusal = renaming.refusal.as_ref().map(|why| why.in_the_dialog(&renaming.name, kind));
+        let refused = if renaming.name.is_empty() {
+            Some("Type the name it should have")
+        } else {
+            refusal.is_some().then_some("Choose a name no other entry uses")
+        };
+        let word = kind.label().to_lowercase();
+        let (edited, answer) = widget::rename_dialog(
+            ui,
+            self.palette,
+            &mut widget::RenameQuestion {
+                title: &title,
+                kind: kind.label(),
+                name: &mut renaming.name,
+                refusal: refusal.as_deref(),
+                rule: &format!(
+                    "Bitwig's browser finds entries by name, so no two can share one. Renaming \
+                     changes the name inside the document too. The UUID stays, so projects \
+                     that use this {word} still recall it."
+                ),
+                note: "This document is not registered yet, so nothing is written until Apply \
+                       runs.",
+                answers: widget::Answers {
+                    cancel: "Cancel",
+                    primary: "Rename",
+                    icon: "",
+                    elevates: false,
+                    refused,
+                },
+            },
+        );
+        let (entries, to) = (found.entries(), &found.to);
+        if edited {
+            renaming.refusal =
+                staging::refusal(&self.pending.staged, renaming.at, &renaming.name, entries, to);
+        }
+        match answer {
+            Some(widget::Answer::Proceed) => {
+                let Some(Confirming::Rename(Renaming { at, name, .. })) = self.confirming.take()
+                else {
+                    unreachable!("the rename was being asked a moment ago");
+                };
+                let staged = std::mem::take(&mut self.pending.staged);
+                self.pending.staged = staging::rename(staged, at, &name, entries, to);
+            }
+            Some(widget::Answer::Cancel) => self.confirming = None,
             None => {}
         }
     }
@@ -4068,6 +4164,7 @@ impl App {
                 note: "A Bitwig update resets the installation. Prepare it again afterwards. \
                        Your registered devices are kept.",
                 answers: widget::Answers {
+                    refused: None,
                     cancel: "Cancel",
                     primary: PREPARE,
                     icon: icon::PREPARE,
@@ -4151,6 +4248,7 @@ impl App {
                 ],
                 caveats: &caveats,
                 answers: widget::Answers {
+                    refused: None,
                     cancel: "Cancel",
                     primary: "Update",
                     icon: icon::PREPARE,
@@ -4332,7 +4430,7 @@ impl App {
     }
 }
 
-/// The two presses in the window that ask before they run.
+/// The questions the window asks over itself, before a press runs.
 enum Confirming {
     /// The plan, from `Prepare installation` on the bar: the one press that
     /// modifies Bitwig Studio itself - README, section 6.
@@ -4351,6 +4449,21 @@ enum Confirming {
     /// versions and the caveats are read as the question is drawn, so a
     /// catalog refreshed under the scrim is asked about as it now is.
     Update(Uuid),
+    /// A new name for a dropped document, from the pencil on a row whose name
+    /// is taken: `RenameDialog.dc.html`.
+    Rename(Renaming),
+}
+
+/// A rename being asked about.
+struct Renaming {
+    /// The staged row, by its place in the pending list - [`Acting::Pending`]'s
+    /// reason: two rows can share an identity.
+    at: usize,
+    /// What is in the field.
+    name: String,
+    /// What is wrong with that, as it was when it was typed. Asked of the disk
+    /// and of every other row, so once per edit and not once per frame.
+    refusal: Option<staging::Collision>,
 }
 
 /// What the plan says that the disk has to be asked about, read once when the
@@ -4812,8 +4925,8 @@ fn this_entrys_document(
 }
 
 /// The first segment of an identity, which is what a row has room for.
-fn short_uuid(registration: &Registration) -> String {
-    registration.uuid.to_string().split('-').next().unwrap_or_default().to_owned()
+fn short_uuid(uuid: Uuid) -> String {
+    uuid.to_string().split('-').next().unwrap_or_default().to_owned()
 }
 
 /// One registered entry.
@@ -4848,7 +4961,7 @@ fn row(
         });
         if let Some(at) = columns.uuid {
             widget::cell(ui, at, Align::Min, |ui| {
-                identity(ui, secondary, entry);
+                identity(ui, secondary, entry.uuid);
             });
         }
         widget::cell(ui, columns.status, Align::Min, |ui| {
@@ -4866,12 +4979,12 @@ fn row(
 /// An identity, short enough for a column and whole on hover. Clicking copies
 /// it, because a UUID is a thing people paste into bug reports and nobody
 /// transcribes one by hand.
-fn identity(ui: &mut egui::Ui, ink: egui::Color32, entry: &Registration) {
-    let full = entry.uuid.to_string();
+fn identity(ui: &mut egui::Ui, ink: egui::Color32, uuid: Uuid) {
+    let full = uuid.to_string();
     let response = ui
         .add(
             egui::Label::new(
-                font::run(short_uuid(entry), font::mono(font::MONO)).color(ink),
+                font::run(short_uuid(uuid), font::mono(font::MONO)).color(ink),
             )
             .sense(egui::Sense::click()),
         )
@@ -4913,8 +5026,8 @@ fn staged_row(
         widget::cell(ui, columns.kind, Align::Min, |ui| {
             // A rejected row has no kind, because nothing readable said what it
             // was. Drawing one would be inventing it.
-            match staged.registration() {
-                Some(registration) => widget::kind_label(ui, palette.ink_3, registration.kind()),
+            match staged.document() {
+                Some(document) => widget::kind_label(ui, palette.ink_3, document.kind()),
                 None => {
                     ui.label(font::run("-", font::plain(font::CHIP)).color(palette.ink_3));
                 }
@@ -4942,8 +5055,8 @@ fn staged_row(
             }
         });
         if let Some(at) = columns.uuid {
-            widget::cell(ui, at, Align::Min, |ui| match staged.registration() {
-                Some(registration) => identity(ui, palette.ink_3, registration),
+            widget::cell(ui, at, Align::Min, |ui| match staged.document() {
+                Some(document) => identity(ui, palette.ink_3, document.identity().uuid),
                 None => {
                     ui.label(font::run("-", font::mono(font::MONO)).color(palette.ink_3));
                 }

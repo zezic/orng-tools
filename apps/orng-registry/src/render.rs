@@ -2999,6 +2999,16 @@ fn the_primary_action_waits_for_an_install_fetch() {
     assert!(press.accesskit_node().is_disabled(), "a run could be started beside a fetch");
 }
 
+/// Take the rights to write the installation away from a session read off this
+/// machine, where every directory is writable by the test.
+fn withhold(session: &mut Session) {
+    let Session::Found(found) = session else { panic!("no installation to withhold") };
+    found.rights = orng_tools::Rights::Withheld {
+        directory: found.to.install.root().to_path_buf(),
+        why: "this account may not write there".to_owned(),
+    };
+}
+
 /// A window whose installation this account may not write, with one entry's
 /// inspector open.
 ///
@@ -3008,12 +3018,7 @@ fn the_primary_action_waits_for_an_install_fetch() {
 fn without_rights(name: &str, inspecting: &'static str) -> Harness<'static, App> {
     let root = fixture(name);
     let mut session = found(&root, Helper::Present, GuardState::Disarmed);
-    if let Session::Found(found) = &mut session {
-        found.rights = orng_tools::Rights::Withheld {
-            directory: found.to.install.root().to_path_buf(),
-            why: "this account may not write there".to_owned(),
-        };
-    }
+    withhold(&mut session);
     window(session, move |app, _| app.set_inspecting(inspecting.parse().expect("an identity")))
 }
 
@@ -3068,12 +3073,7 @@ fn a_press_that_needs_rights_is_refused_only_where_nothing_can_ask() {
     let entries = entries();
     let staged = dropped(&root, &to, &entries);
     let mut session = found_with(&root, Helper::Present, GuardState::Disarmed, entries);
-    if let Session::Found(found) = &mut session {
-        found.rights = orng_tools::Rights::Withheld {
-            directory: found.to.install.root().to_path_buf(),
-            why: "this account may not write there".to_owned(),
-        };
-    }
+    withhold(&mut session);
     let harness = window(session, |app, _| app.set_staged(staged));
 
     // Found by what it says rather than how it starts: where it can ask, a
@@ -3109,11 +3109,8 @@ fn a_press_that_asks_for_rights_wears_the_shield() {
         let entries = entries();
         let staged = dropped(&root, &to, &entries);
         let mut session = found_with(&root, Helper::Absent, GuardState::Armed, entries);
-        if withheld && let Session::Found(found) = &mut session {
-            found.rights = orng_tools::Rights::Withheld {
-                directory: found.to.install.root().to_path_buf(),
-                why: "this account may not write there".to_owned(),
-            };
+        if withheld {
+            withhold(&mut session);
         }
         let mut harness = window(session, |app, _| app.set_staged(staged));
         let asks = withheld && crate::elevate::can_ask();
@@ -3162,11 +3159,8 @@ fn the_bar_says_when_applying_asks_for_rights() {
         let entries = entries();
         let staged = dropped(&root, &to, &entries);
         let mut session = found_with(&root, Helper::Present, GuardState::Disarmed, entries);
-        if withheld && let Session::Found(found) = &mut session {
-            found.rights = orng_tools::Rights::Withheld {
-                directory: found.to.install.root().to_path_buf(),
-                why: "this account may not write there".to_owned(),
-            };
+        if withheld {
+            withhold(&mut session);
         }
         let harness = window(session, |app, _| app.set_staged(staged));
         let separator = crate::widget::SEPARATOR;
@@ -3175,6 +3169,65 @@ fn the_bar_says_when_applying_asks_for_rights() {
         let expected = withheld && crate::elevate::can_ask();
         assert_eq!(asks, expected, "the note about rights (withheld: {withheld})");
         assert_eq!(open, !expected, "the note about Bitwig (withheld: {withheld})");
+    }
+}
+
+/// The small presses that write into the installation say so where the press
+/// will raise the consent dialog, each the way the designer placed it: the
+/// catalog row's `Install` wears the shield before its word, the Restore press
+/// wears it in place of its clock, and `Locate`, a glyph with no room for a
+/// second one, says it on hover. A press that only opens something does not.
+#[test]
+fn the_small_presses_that_ask_for_rights_say_so() {
+    use egui::accesskit::Role;
+    use egui_kittest::kittest::NodeT as _;
+    let label = |node: egui_kittest::Node<'_>| {
+        node.accesskit_node().label().unwrap_or_default().to_owned()
+    };
+
+    for withheld in [false, true] {
+        let asks = withheld && crate::elevate::can_ask();
+        let rights = |mut session: Session| {
+            if withheld {
+                withhold(&mut session);
+            }
+            session
+        };
+        let name = |what: &str| format!("{what}-{}", if withheld { "withheld" } else { "held" });
+
+        let session = rights(copying(&fixture(&name("shield-catalog")), superseded_entries()));
+        let catalog = window(session, |app, _| {
+            app.set_catalog(Catalog::just_fetched(superseded()));
+            app.show_view(View::Catalog);
+        });
+        let presses: Vec<String> = catalog.get_all_by_role(Role::Button).map(label).collect();
+        let install: Vec<&String> = presses.iter().filter(|l| l.ends_with("Install")).collect();
+        assert!(!install.is_empty(), "the sample offers nothing to install");
+        for press in install {
+            assert_eq!(press.contains(crate::widget::icon::ELEVATES), asks, "{press:?}");
+        }
+        let replacement = presses.iter().find(|l| l.ends_with("See replacement"));
+        let replacement = replacement.expect("the sample offers no replacement");
+        assert!(!replacement.contains(crate::widget::icon::ELEVATES), "{replacement:?}");
+
+        let root = fixture(&name("shield-restore"));
+        let session = rights(found(&root, Helper::Absent, GuardState::Armed));
+        let restore = window(session, |app, _| app.show_restore());
+        let press = restore
+            .get_all_by_role(Role::Button)
+            .map(label)
+            .find(|l| l.contains("Restore this backup"))
+            .expect("the screen has no press");
+        assert_eq!(press.contains(crate::widget::icon::ELEVATES), asks, "{press:?}");
+        assert_eq!(press.contains(crate::widget::icon::RESTORE), !asks, "{press:?}");
+
+        let mut damaged = local_window(rights(damaged(&fixture(&name("shield-locate")))));
+        damaged.get_by_label("SHAPER").hover();
+        damaged.run();
+        let separator = crate::widget::SEPARATOR;
+        let asking = format!("Locate file {separator} asks Windows for administrator rights");
+        assert_eq!(damaged.query_by_label(&asking).is_some(), asks);
+        assert_eq!(damaged.query_by_label("Locate file").is_some(), !asks);
     }
 }
 

@@ -23,7 +23,7 @@ use eframe::egui::{
 };
 use orng_tools::{Kind, Placement, TheDocument};
 
-use crate::status::{Action, Offer, Published, Status};
+use crate::status::{Action, Consequences, Offer, Published, Status};
 use crate::theme::{Palette, font, metric};
 
 /// The frame behind the install bar and the action bar.
@@ -1111,7 +1111,7 @@ pub fn row_actions(
     at: Rect,
     controls: Controls,
     status: Status,
-    document: TheDocument,
+    consequences: Consequences,
 ) -> Option<Action> {
     if controls == Controls::Hidden {
         return None;
@@ -1122,7 +1122,7 @@ pub fn row_actions(
     );
     group.spacing_mut().item_spacing.x = metric::ROW_ACTION_GAP;
     for action in status.actions().rev() {
-        let label = action.label(status, document);
+        let label = action.hover(status, consequences);
         if row_action(&mut group, palette, action, &label).clicked() {
             pressed = Some(action);
         }
@@ -1148,6 +1148,7 @@ pub fn catalog_action(
     palette: Palette,
     at: Rect,
     status: &Published,
+    asks: bool,
 ) -> Option<Offer> {
     let offer = status.offer()?;
     // The design colours the words and never the fill: the action bar's primary
@@ -1161,8 +1162,28 @@ pub fn catalog_action(
     let mut group = ui.new_child(
         egui::UiBuilder::new().max_rect(at).layout(Layout::right_to_left(Align::Center)),
     );
-    let label = offer.label();
-    let button = egui::Button::new(font::run(label, font::emphasis(group.ctx(), font::CHIP)).color(ink))
+    // The shield leads, as it does on the action bar's press, where the press
+    // will raise Windows' consent dialog.
+    let mut text = egui::text::LayoutJob::default();
+    if asks && offer.writes() {
+        let glyph = egui::TextFormat {
+            color: ink,
+            valign: Align::Center,
+            ..font::format(font::icon(group.ctx(), font::ICON))
+        };
+        text.append(icon::ELEVATES, 0.0, glyph);
+    }
+    let leading = if text.is_empty() { 0.0 } else { metric::CATALOG_ACTION_GAP };
+    text.append(
+        offer.label(),
+        leading,
+        egui::TextFormat {
+            color: ink,
+            valign: Align::Center,
+            ..font::format(font::emphasis(group.ctx(), font::CHIP))
+        },
+    );
+    let button = egui::Button::new(text)
         .stroke(Stroke::NONE)
         .corner_radius(CornerRadius::same(metric::RADIUS))
         .min_size(vec2(0.0, metric::CATALOG_ACTION));

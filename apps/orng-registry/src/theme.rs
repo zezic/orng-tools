@@ -345,6 +345,9 @@ pub mod metric {
     /// offers - `Install`, `See replacement` - cannot be read off an icon.
     pub const CATALOG_ACTION: f32 = 24.0;
     pub const CATALOG_ACTION_PAD_X: f32 = 10.0;
+    /// From the shield to the word, on a press that asks for rights:
+    /// `CatalogRow.dc.html:84`.
+    pub const CATALOG_ACTION_GAP: f32 = 6.0;
     /// A panel over the right of the list: the inspector in Local, the item's
     /// detail in Catalog. Everything under here is shared by both, read off
     /// `Inspector.dc.html` and `CatalogDetail.dc.html` - which agree on all

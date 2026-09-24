@@ -172,6 +172,30 @@ impl Action {
         }
     }
 
+    /// What the control says on hover, with what else the press will bring
+    /// about: `EntryRow.dc.html`'s `locateTitle`. A glyph-only control has no
+    /// room for the shield, so where the press will raise Windows' consent
+    /// dialog the tooltip says so instead.
+    pub fn hover(self, status: Status, consequences: Consequences) -> String {
+        let label = self.label(status, consequences.document);
+        if consequences.asks && self.writes() {
+            let separator = crate::widget::SEPARATOR;
+            format!("{label} {separator} asks Windows for administrator rights")
+        } else {
+            label
+        }
+    }
+
+    /// Whether the press writes into the installation. Only locating does: the
+    /// rest stage something, or undo staging it, and nothing is written until
+    /// Apply - which wears the shield itself.
+    fn writes(self) -> bool {
+        match self {
+            Action::Locate => true,
+            Action::Assign | Action::Undo | Action::Reveal | Action::Remove => false,
+        }
+    }
+
     /// What the inspector writes beside the icon.
     ///
     /// The panel has room for words where the row has only a tooltip, so these
@@ -340,6 +364,26 @@ impl Offer {
             Offer::CopyDetails => "Copy details",
         }
     }
+
+    /// Whether the press writes into the installation, and so needs the same
+    /// rights a preparation does. Both fetch an item and register it, which
+    /// rewrites the description bundles inside the installation.
+    pub fn writes(self) -> bool {
+        match self {
+            Offer::Install | Offer::Retry => true,
+            Offer::SeeReplacement | Offer::CopyDetails => false,
+        }
+    }
+}
+
+/// What a press on a row brings about beyond itself, which its tooltip has to
+/// say.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Consequences {
+    /// What becomes of the document when an entry is removed.
+    pub document: TheDocument,
+    /// Whether a press that writes raises Windows' consent dialog.
+    pub asks: bool,
 }
 
 /// What the inspector's `Remove entry` says it will do.
@@ -441,6 +485,21 @@ mod tests {
         assert_eq!(said(Action::Locate), "Locate file");
         assert_eq!(said(Action::Undo), "Undo removal");
         assert_eq!(said(Action::Reveal), "Reveal file");
+    }
+
+    /// Where the press will ask for rights, the one control that writes says
+    /// so on hover, and the ones that only stage something do not.
+    #[test]
+    fn only_locating_says_it_asks_for_rights() {
+        let asks = Consequences { document: TheDocument::Kept, asks: true };
+        let locate = Action::Locate.hover(Status::MissingFile, asks);
+        assert_eq!(locate, "Locate file \u{b7} asks Windows for administrator rights");
+        let quiet = Consequences { asks: false, ..asks };
+        assert_eq!(Action::Locate.hover(Status::MissingFile, quiet), "Locate file");
+        for action in [Action::Assign, Action::Undo, Action::Reveal, Action::Remove] {
+            let said = action.hover(Status::Registered, asks);
+            assert!(!said.contains("administrator"), "{action:?} said {said:?}");
+        }
     }
 
     /// The panel's words, against `Inspector.dc.html:148-156`, and against the

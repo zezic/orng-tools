@@ -35,7 +35,7 @@ use crate::restore::Backups;
 use crate::session::{Badge, Found, Session};
 use crate::settings::{Appearance, Preferences, Settings};
 use crate::staging::{self, Reading, Staged};
-use crate::status::{Action, Offer, Published, Status, removal_consequence};
+use crate::status::{Action, Consequences, Offer, Published, Status, removal_consequence};
 use crate::theme::{self, Palette, font, metric};
 use crate::widget::{self, Emphasis, Fact, Measure, Padding, Tone, icon};
 use crate::work::{Applying, Errand, Stage, Work};
@@ -1128,6 +1128,11 @@ impl App {
             },
             _ => Some("There is no installation to restore into.".to_owned()),
         };
+        // Where the press will raise Windows' consent dialog, the shield takes
+        // the place of the clock: the design's rule for a control that already
+        // leads with a glyph (`RestoreScreen.dc.html:81-83`).
+        let asks = matches!(&self.session, Session::Found(found) if asks_for_rights(found));
+        let lead = if asks { icon::ELEVATES } else { icon::RESTORE };
 
         let mut pressed = Restoring::Nothing;
         egui::Panel::top("screen")
@@ -1177,7 +1182,7 @@ impl App {
                         if widget::screen_primary(
                             ui,
                             palette,
-                            icon::RESTORE,
+                            lead,
                             "Restore this backup",
                             blocked.is_none() && backups.chosen_day().is_some(),
                             &reason,
@@ -3043,9 +3048,6 @@ impl App {
                 }
             }
             Session::Found(_) if self.view == View::Catalog => {
-                let palette = self.palette;
-                let width = self.width();
-                let open = self.detailing;
                 // Nothing is started here. Opening the window reads the kept
                 // index and asks the catalog about it, so by the time this
                 // region is drawn the answer is either in hand, on its way, or
@@ -3054,8 +3056,7 @@ impl App {
                 // Local list takes its own: opening the panel changes how wide
                 // every row is, and changing that half way down a list draws
                 // the rest of it to a different grid.
-                let pressed =
-                    published(ui, palette, &self.catalog, width, open, states, &self.filter);
+                let pressed = self.published(ui, states);
                 if let Some(opened) = pressed.opened {
                     self.detailing = opened;
                 }
@@ -3137,7 +3138,10 @@ impl App {
         let palette = self.palette;
         let open = self.inspecting.as_ref().map(|open| open.uuid);
         let width = self.width();
-        let document = self.deleting();
+        let consequences = Consequences {
+            document: self.deleting(),
+            asks: matches!(&self.session, Session::Found(found) if asks_for_rights(found)),
+        };
         // What the list was clicked on, taken after it has been drawn: opening
         // the panel changes how wide every row is, and changing that half way
         // down a list draws the rest of it to a different grid. A row control
@@ -3152,7 +3156,7 @@ impl App {
             if !pending.is_empty() {
                 widget::section(ui, palette, "Pending", palette.accent_text, pending.len());
                 for (at, row) in pending {
-                    if let Some(action) = staged_row(ui, palette, width, row, document) {
+                    if let Some(action) = staged_row(ui, palette, width, row, consequences) {
                         pressed = Some((Acting::Pending(*at), action));
                     }
                 }
@@ -3162,7 +3166,7 @@ impl App {
                 let selected = open == Some(entry.uuid);
                 let status = self.status_of(found, entry);
                 let (response, action) =
-                    row(ui, palette, width, selected, entry, status, document);
+                    row(ui, palette, width, selected, entry, status, consequences);
                 if let Some(action) = action {
                     pressed = Some((Acting::Registered(entry.uuid), action));
                 }
@@ -4571,7 +4575,7 @@ fn row(
     selected: bool,
     entry: &Registration,
     status: Status,
-    document: TheDocument,
+    consequences: Consequences,
 ) -> (egui::Response, Option<Action>) {
     let secondary = widget::supporting_ink(palette, selected);
     let mut pressed = None;
@@ -4601,7 +4605,7 @@ fn row(
             );
         });
         pressed =
-            widget::row_actions(ui, palette, columns.actions, controls, status, document);
+            widget::row_actions(ui, palette, columns.actions, controls, status, consequences);
     });
     (response, pressed)
 }
@@ -4648,7 +4652,7 @@ fn staged_row(
     palette: Palette,
     width: widget::Width,
     staged: &Staged,
-    document: TheDocument,
+    consequences: Consequences,
 ) -> Option<Action> {
     let status = staged.status();
     let mut pressed = None;
@@ -4699,7 +4703,7 @@ fn staged_row(
             );
         });
         pressed =
-            widget::row_actions(ui, palette, columns.actions, controls, status, document);
+            widget::row_actions(ui, palette, columns.actions, controls, status, consequences);
     });
     pressed
 }
@@ -4732,205 +4736,213 @@ struct Pressed {
     retried: bool,
 }
 
-/// The Catalog view: what ORNG Catalog publishes, once it has been proved.
-fn published(
-    ui: &mut egui::Ui,
-    palette: Palette,
-    catalog: &Catalog,
-    width: widget::Width,
-    open: Option<Uuid>,
-    states: &std::collections::BTreeMap<Uuid, Published>,
-    filter: &Filter,
-) -> Pressed {
-    // Nothing held is the only state with an empty region, and being offline is
-    // not one of them: a kept index browses exactly as a fetched one does,
-    // which is the whole of what the design means by a degraded state rather
-    // than an error.
-    match catalog.index() {
-        None if catalog.failure().is_none() => {
-            let empty = widget::Empty {
-                icon: icon::CATALOG,
-                inviting: false,
-                marks: true,
-                title: "Fetching the catalog",
-                body: "Checking its signature before anything in it is believed.",
-                extensions: false,
-                aside: None,
-                action: None,
-                action_is_primary: false,
-                alt: None,
-                foot: None,
-                minor: false,
-            };
-            widget::empty_state(ui, palette, &empty);
-        }
-        None => {
-            let why = catalog.failure().expect("the arm above took the other case");
-            let empty = widget::Empty {
-                icon: icon::UNREADABLE,
-                inviting: false,
-                marks: true,
-                title: "The catalog could not be read",
-                // The last clause is `EmptyState.dc.html:89`'s, and it is worth
-                // saying now that it is true: what this state costs is one
-                // fetch and not a permanent requirement, which is the point of
-                // the scenario the design draws it for.
-                body: "Nothing is installed from an index that does not verify. The catalog \
-                       is one small file over HTTPS, signed by the key this application was \
-                       built with, and once fetched it is cached - so browsing works offline \
-                       afterwards.",
-                extensions: false,
-                aside: Some(why),
-                action: Some("Try again"),
-                action_is_primary: true,
-                alt: None,
-                foot: Some("Everything already registered keeps working offline"),
-                minor: false,
-            };
-            if widget::empty_state(ui, palette, &empty) == widget::Pressed::Action {
-                return Pressed { retried: true, ..Pressed::default() };
-            }
-        }
-        Some(index) if index.items.is_empty() => {
-            let empty = widget::Empty {
-                icon: icon::CATALOG,
-                inviting: false,
-                marks: true,
-                title: "The catalog is empty",
-                body: "Nothing is published yet.",
-                extensions: false,
-                aside: None,
-                action: None,
-                action_is_primary: false,
-                alt: None,
-                foot: None,
-                minor: false,
-            };
-            widget::empty_state(ui, palette, &empty);
-        }
-        // No section heading here, and that is the design's decision: the Local
-        // view divides into pending, registered and factory, and the catalog is
-        // one list of one kind of thing.
-        Some(index) => {
-            let shown: Vec<&orng_catalog::IndexEntry> = index
-                .items
-                .iter()
-                .filter(|item| {
-                    let status = states
-                        .get(&item.uuid)
-                        .expect("every published item was answered for before the list was drawn");
-                    filter.accepts_published(item, status)
-                })
-                .collect();
-            if shown.is_empty() {
-                // The design's own words, and a different sentence from the
-                // Local list's: this one names three filters because the
-                // catalog has three - `EmptyState.dc.html:93-97`.
-                //
-                // **`Browse all` is drawn as the alt there and is not drawn
-                // here.** The shell's two handlers do the same thing -
-                // `ORNG Registry.dc.html:770` and `:773` both put the kinds and
-                // the install filter back to their defaults - so the second
-                // control offers the user nothing the first does not.
-                // `docs/design-review.md` round 3 item 3.
+impl App {
+    /// The Catalog view: what ORNG Catalog publishes, once it has been proved.
+    fn published(
+        &self,
+        ui: &mut egui::Ui,
+        states: &std::collections::BTreeMap<Uuid, Published>,
+    ) -> Pressed {
+        let (palette, catalog, filter) = (self.palette, &self.catalog, &self.filter);
+        let (width, open) = (self.width(), self.detailing);
+        // Every press a row offers that writes goes through the same rights.
+        let asks = matches!(&self.session, Session::Found(found) if asks_for_rights(found));
+        // Nothing held is the only state with an empty region, and being offline is
+        // not one of them: a kept index browses exactly as a fetched one does,
+        // which is the whole of what the design means by a degraded state rather
+        // than an error.
+        match catalog.index() {
+            None if catalog.failure().is_none() => {
                 let empty = widget::Empty {
-                    icon: icon::NO_MATCH,
+                    icon: icon::CATALOG,
                     inviting: false,
-                    marks: false,
-                    title: "Nothing in the catalog matches",
-                    body: "No item matches the current search, kind and install filters.",
+                    marks: true,
+                    title: "Fetching the catalog",
+                    body: "Checking its signature before anything in it is believed.",
                     extensions: false,
                     aside: None,
-                    action: Some("Clear filters"),
+                    action: None,
                     action_is_primary: false,
                     alt: None,
                     foot: None,
-                    minor: true,
+                    minor: false,
                 };
-                let cleared = widget::empty_state(ui, palette, &empty) == widget::Pressed::Action;
-                return Pressed { cleared, ..Pressed::default() };
+                widget::empty_state(ui, palette, &empty);
             }
+            None => {
+                let why = catalog.failure().expect("the arm above took the other case");
+                let empty = widget::Empty {
+                    icon: icon::UNREADABLE,
+                    inviting: false,
+                    marks: true,
+                    title: "The catalog could not be read",
+                    // The last clause is `EmptyState.dc.html:89`'s, and it is worth
+                    // saying now that it is true: what this state costs is one
+                    // fetch and not a permanent requirement, which is the point of
+                    // the scenario the design draws it for.
+                    body: "Nothing is installed from an index that does not verify. The catalog \
+                           is one small file over HTTPS, signed by the key this application was \
+                           built with, and once fetched it is cached - so browsing works offline \
+                           afterwards.",
+                    extensions: false,
+                    aside: Some(why),
+                    action: Some("Try again"),
+                    action_is_primary: true,
+                    alt: None,
+                    foot: Some("Everything already registered keeps working offline"),
+                    minor: false,
+                };
+                if widget::empty_state(ui, palette, &empty) == widget::Pressed::Action {
+                    return Pressed { retried: true, ..Pressed::default() };
+                }
+            }
+            Some(index) if index.items.is_empty() => {
+                let empty = widget::Empty {
+                    icon: icon::CATALOG,
+                    inviting: false,
+                    marks: true,
+                    title: "The catalog is empty",
+                    body: "Nothing is published yet.",
+                    extensions: false,
+                    aside: None,
+                    action: None,
+                    action_is_primary: false,
+                    alt: None,
+                    foot: None,
+                    minor: false,
+                };
+                widget::empty_state(ui, palette, &empty);
+            }
+            // No section heading here, and that is the design's decision: the Local
+            // view divides into pending, registered and factory, and the catalog is
+            // one list of one kind of thing.
+            Some(index) => {
+                let shown: Vec<&orng_catalog::IndexEntry> = index
+                    .items
+                    .iter()
+                    .filter(|item| {
+                        let status = states.get(&item.uuid).expect(
+                            "every published item was answered for before the list was drawn",
+                        );
+                        filter.accepts_published(item, status)
+                    })
+                    .collect();
+                if shown.is_empty() {
+                    // The design's own words, and a different sentence from the
+                    // Local list's: this one names three filters because the
+                    // catalog has three - `EmptyState.dc.html:93-97`.
+                    //
+                    // **`Browse all` is drawn as the alt there and is not drawn
+                    // here.** The shell's two handlers do the same thing -
+                    // `ORNG Registry.dc.html:770` and `:773` both put the kinds and
+                    // the install filter back to their defaults - so the second
+                    // control offers the user nothing the first does not.
+                    // `docs/design-review.md` round 3 item 3.
+                    let empty = widget::Empty {
+                        icon: icon::NO_MATCH,
+                        inviting: false,
+                        marks: false,
+                        title: "Nothing in the catalog matches",
+                        body: "No item matches the current search, kind and install filters.",
+                        extensions: false,
+                        aside: None,
+                        action: Some("Clear filters"),
+                        action_is_primary: false,
+                        alt: None,
+                        foot: None,
+                        minor: true,
+                    };
+                    let cleared =
+                        widget::empty_state(ui, palette, &empty) == widget::Pressed::Action;
+                    return Pressed { cleared, ..Pressed::default() };
+                }
 
-            let mut pressed = Pressed::default();
-            let mut acted = None;
-            widget::list(ui, |ui| {
-                for entry in shown {
-                    let selected = open == Some(entry.uuid);
-                    let secondary = widget::supporting_ink(palette, selected);
-                    let status = states
-                        .get(&entry.uuid)
-                        .expect("every published item was answered for before the list was drawn");
-                    let row = widget::catalog_row(ui, palette, width, selected, |ui, columns| {
-                        widget::cell(ui, columns.kind, Align::Min, |ui| {
-                            widget::kind_label(ui, secondary, entry.kind.into());
-                        });
-                        // The name over the description, not beside it. A
-                        // catalog row leads with what the item is; the
-                        // description is how somebody choosing decides, and it
-                        // needs the width of the column rather than what is
-                        // left of one line.
-                        widget::stacked_cell(ui, columns.name, |ui| {
-                            ui.label(
-                                font::run(&entry.name, font::emphasis(ui.ctx(), font::ROW_NAME))
-                                    .color(widget::published_name_colour(palette, status)),
-                            );
-                            ui.add_space(UNDER_THE_NAME);
-                            ui.add(
-                                egui::Label::new(
-                                    font::run(&entry.description, font::plain(font::NOTE))
-                                        .color(secondary),
-                                )
-                                .truncate(),
-                            );
-                        });
-                        // The author is the trust signal, because an item is
-                        // DSP that Bitwig will run, so it gets a column of its
-                        // own rather than a place at the end of the line.
-                        if let Some(at) = columns.author {
-                            widget::cell(ui, at, Align::Min, |ui| {
+                let mut pressed = Pressed::default();
+                let mut acted = None;
+                widget::list(ui, |ui| {
+                    for entry in shown {
+                        let selected = open == Some(entry.uuid);
+                        let secondary = widget::supporting_ink(palette, selected);
+                        let status = states.get(&entry.uuid).expect(
+                            "every published item was answered for before the list was drawn",
+                        );
+                        let row = widget::catalog_row(ui, palette, width, selected, |ui, columns| {
+                            widget::cell(ui, columns.kind, Align::Min, |ui| {
+                                widget::kind_label(ui, secondary, entry.kind.into());
+                            });
+                            // The name over the description, not beside it. A
+                            // catalog row leads with what the item is; the
+                            // description is how somebody choosing decides, and it
+                            // needs the width of the column rather than what is
+                            // left of one line.
+                            widget::stacked_cell(ui, columns.name, |ui| {
+                                ui.label(
+                                    font::run(&entry.name, font::emphasis(ui.ctx(), font::ROW_NAME))
+                                        .color(widget::published_name_colour(palette, status)),
+                                );
+                                ui.add_space(UNDER_THE_NAME);
                                 ui.add(
                                     egui::Label::new(
-                                        font::run(entry.author.to_string(), font::plain(font::CHIP))
-                                            .color(palette.ink_2),
+                                        font::run(&entry.description, font::plain(font::NOTE))
+                                            .color(secondary),
                                     )
                                     .truncate(),
                                 );
                             });
-                        }
-                        if let Some(at) = columns.version {
-                            widget::cell(ui, at, Align::Min, |ui| {
-                                ui.label(
-                                    font::run(entry.version.to_string(), font::mono(font::MONO))
-                                        .color(secondary),
+                            // The author is the trust signal, because an item is
+                            // DSP that Bitwig will run, so it gets a column of its
+                            // own rather than a place at the end of the line.
+                            if let Some(at) = columns.author {
+                                widget::cell(ui, at, Align::Min, |ui| {
+                                    ui.add(
+                                        egui::Label::new(
+                                            font::run(
+                                                entry.author.to_string(),
+                                                font::plain(font::CHIP),
+                                            )
+                                            .color(palette.ink_2),
+                                        )
+                                        .truncate(),
+                                    );
+                                });
+                            }
+                            if let Some(at) = columns.version {
+                                widget::cell(ui, at, Align::Min, |ui| {
+                                    ui.label(
+                                        font::run(entry.version.to_string(), font::mono(font::MONO))
+                                            .color(secondary),
+                                    );
+                                });
+                            }
+                            widget::cell(ui, columns.status, Align::Min, |ui| {
+                                ui.add(
+                                    egui::Label::new(
+                                        font::run(status.word(), font::plain(font::CHIP))
+                                            .color(widget::published_colour(palette, status)),
+                                    )
+                                    .truncate(),
                                 );
                             });
-                        }
-                        widget::cell(ui, columns.status, Align::Min, |ui| {
-                            ui.add(
-                                egui::Label::new(
-                                    font::run(status.word(), font::plain(font::CHIP))
-                                        .color(widget::published_colour(palette, status)),
-                                )
-                                .truncate(),
-                            );
+                            let at = columns.actions;
+                            if let Some(offer) =
+                                widget::catalog_action(ui, palette, at, status, asks)
+                            {
+                                acted = Some((entry.uuid, offer));
+                            }
                         });
-                        if let Some(offer) = widget::catalog_action(ui, palette, columns.actions, status)
-                        {
-                            acted = Some((entry.uuid, offer));
+                        if row.clicked() {
+                            // The same row again closes it, which is what makes the
+                            // panel answerable from the list it is about.
+                            pressed.opened = Some(if selected { None } else { Some(entry.uuid) });
                         }
-                    });
-                    if row.clicked() {
-                        // The same row again closes it, which is what makes the
-                        // panel answerable from the list it is about.
-                        pressed.opened = Some(if selected { None } else { Some(entry.uuid) });
                     }
-                }
-            });
-            pressed.acted = acted;
-            return pressed;
+                });
+                pressed.acted = acted;
+                return pressed;
+            }
         }
+        Pressed::default()
     }
-    Pressed::default()
 }
 
 #[cfg(test)]

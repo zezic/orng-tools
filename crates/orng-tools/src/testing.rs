@@ -75,4 +75,20 @@ mod tests {
         assert_eq!(document.serialization(), crate::Serialization::Text);
         assert_eq!(document.identity().suggested_keywords(), ["shaper", "test"]);
     }
+
+    /// The textual form is the one the rename is not proven on by a sample
+    /// here, and the one with a name it cannot hold: its reader takes a quoted
+    /// run as it stands, so an escaped quote would read back as two characters.
+    #[test]
+    fn a_text_document_is_renamed_and_refuses_what_it_would_read_back_wrong() {
+        let original = document(Kind::Device, Uuid::new_v4(), "SHAPER");
+        let renamed = original.with_name("VOLUME SHAPER").unwrap();
+        assert_eq!(renamed.identity().name, "VOLUME SHAPER");
+        assert_eq!(renamed.identity().uuid, original.identity().uuid);
+        assert_eq!(renamed.with_name("SHAPER").unwrap().bytes(), original.bytes());
+
+        for bad in ["SAY \"HI\"", "BACK\\SLASH"] {
+            assert!(original.with_name(bad).is_err(), "{bad:?}");
+        }
+    }
 }

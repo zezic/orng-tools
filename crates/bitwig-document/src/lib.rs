@@ -5,12 +5,14 @@
 //! `.bwmodule` documents.
 //!
 //! Scope is deliberately narrow: the identity a registry entry needs, and the
-//! ability to give a document a new UUID. The document body is walked for its
-//! structure but never modelled.
+//! ability to give a document a new UUID or a new name. The document body is
+//! walked for its structure but never modelled.
 //!
 //! Bitwig writes three serializations and all of them turn up in the wild, so
 //! all three are read. In every one the identity is a fixed-width value, which
-//! is what lets a new UUID be spliced in without re-serializing the document.
+//! is what lets a new UUID be spliced in without re-serializing the document. A
+//! name is not, and is spliced all the same: no section addresses anything by
+//! offset, so only the header has to be told what moved.
 
 mod cipher;
 mod kind;
@@ -52,6 +54,10 @@ pub enum Error {
     MissingField(&'static str),
     #[error("replacement is {got} bytes, must be {expected}")]
     LengthChanged { expected: usize, got: usize },
+    #[error("{0:?} cannot be written as a document's name")]
+    UnrepresentableName(String),
+    #[error("a document of {0} bytes is past what its header can address")]
+    TooLarge(usize),
     #[error(
         "this document is encrypted, which is Bitwig's own factory content; \
          reading it needs the section key from an installation"
@@ -258,6 +264,69 @@ impl Document {
 
         Document::parse_inner(self.kind, raw, self.key.as_ref())
     }
+
+    /// Produce the document under a new display name.
+    ///
+    /// Only the metadata's `device_name` is rewritten, because that is the one
+    /// Bitwig reads: loading a document sets the contents' name from it, over
+    /// the copy the body carries (6.1, `document.core.master.device.MAR` and
+    /// `ccL`, both through `file.format.Ii.Jdl`), and the header, the browser
+    /// and the description key all take it from there. `preset_name` is read by
+    /// nothing, and a name inside the body's own curves or panels is the
+    /// author's content rather than the document's identity.
+    ///
+    /// A name is not fixed width, so unlike [`Document::with_uuid`] this moves
+    /// every byte after it. Nothing inside a section addresses another by
+    /// offset; the header does, and is moved with them.
+    #[must_use = "returns the rewritten document rather than mutating in place"]
+    pub fn with_name(&self, new: &str) -> Result<Document> {
+        if new.is_empty() || new.chars().any(char::is_control) {
+            return Err(Error::UnrepresentableName(new.to_owned()));
+        }
+        let raw = match &self.layout {
+            Layout::Text { fields } => {
+                // Written between quotes and read back without unescaping, so
+                // a quote or a backslash would come back as something else.
+                if new.contains(['"', '\\']) {
+                    return Err(Error::UnrepresentableName(new.to_owned()));
+                }
+                let field = fields.get(F_NAME).ok_or(Error::MissingField(F_NAME))?;
+                let span = field.offset..field.offset + field.len;
+                let mut raw = self.raw.clone();
+                raw.splice(span, new.bytes());
+                raw
+            }
+            Layout::Binary { meta, meta_fields, .. } => {
+                let key = self.key.as_ref();
+                let Some(Value::Text { text, offset, wide }) =
+                    meta_fields.get(&FieldKey::Name(F_NAME.into()))
+                else {
+                    return Err(Error::MissingField(F_NAME));
+                };
+                // The length prefix and then the characters, in the width the
+                // old name was written in unless the new one needs wider.
+                let old = 4 + encode_text(text, *wide).len();
+                let wide = *wide || new.chars().any(|c| u32::from(c) > 0xFF);
+                let units = if wide { new.encode_utf16().count() } else { new.chars().count() };
+                let mut name = ((units as u32) | if wide { 0x8000_0000 } else { 0 })
+                    .to_be_bytes()
+                    .to_vec();
+                name.extend(encode_text(new, wide));
+
+                let mut plain = meta.plaintext(&self.raw, key);
+                plain.splice(*offset..offset + old, name);
+                let (start, end) = meta.payload;
+                let mut raw = self.raw[..start].to_vec();
+                raw.extend(meta.encoded(&plain, key));
+                raw.extend_from_slice(&self.raw[end..]);
+                raw
+            }
+        };
+        let mut raw = raw;
+        let moved = raw.len() as i64 - self.raw.len() as i64;
+        Header::parse(&raw)?.moved_by(moved, &mut raw)?;
+        Document::parse_inner(self.kind, raw, self.key.as_ref())
+    }
 }
 
 fn splice_uuid(plain: &mut [u8], fields: &BinaryFields, key: &FieldKey, new: Uuid) -> Result<()> {
@@ -392,11 +461,17 @@ impl SectionSpan {
     }
 
     fn write_back(&self, raw: &mut [u8], plain: &[u8], key: Option<&SectionKey>) {
-        let encoded = match (&self.nonce, key) {
+        raw[self.payload.0..self.payload.1].copy_from_slice(&self.encoded(plain, key));
+    }
+
+    /// `plain` as this section stores it, at whatever length it now is. The
+    /// cipher runs from the start of the payload, so a section that grew is
+    /// encrypted exactly as one Bitwig wrote at that length.
+    fn encoded(&self, plain: &[u8], key: Option<&SectionKey>) -> Vec<u8> {
+        match (&self.nonce, key) {
             (Some(nonce), Some(key)) => cipher::transform(key, nonce, plain),
             _ => plain.to_vec(),
-        };
-        raw[self.payload.0..self.payload.1].copy_from_slice(&encoded);
+        }
     }
 }
 
@@ -404,7 +479,13 @@ impl SectionSpan {
 struct Header {
     serialization_format: u32,
     object_offset: usize,
+    /// Where a ZIP of embedded resources starts, or zero for none.
+    resources_offset: u64,
 }
+
+/// Where the header writes the body's offset, and where the resources'.
+const OBJECT_OFFSET: std::ops::Range<usize> = 16..24;
+const RESOURCES_OFFSET: std::ops::Range<usize> = 24..40;
 
 impl Header {
     fn parse(data: &[u8]) -> Result<Self> {
@@ -418,8 +499,27 @@ impl Header {
         };
         Ok(Header {
             serialization_format: hex(8..12)? as u32,
-            object_offset: hex(16..24)? as usize,
+            object_offset: hex(OBJECT_OFFSET)? as usize,
+            resources_offset: hex(RESOURCES_OFFSET)?,
         })
+    }
+
+    /// Rewrite the offsets in `raw`'s header for a metadata section that grew
+    /// by `by` bytes, or shrank. Everything the header points at lies after
+    /// the metadata, so everything it points at moved.
+    fn moved_by(&self, by: i64, raw: &mut [u8]) -> Result<()> {
+        let object = self.object_offset as i64 + by;
+        let written = format!("{object:08x}");
+        if written.len() != OBJECT_OFFSET.len() {
+            return Err(Error::TooLarge(raw.len()));
+        }
+        raw[OBJECT_OFFSET].copy_from_slice(written.as_bytes());
+        // Zero is "none", and stays none.
+        if self.resources_offset != 0 {
+            let resources = self.resources_offset as i64 + by;
+            raw[RESOURCES_OFFSET].copy_from_slice(format!("{resources:016x}").as_bytes());
+        }
+        Ok(())
     }
 }
 
@@ -550,6 +650,107 @@ mod tests {
             let restored = rewritten.with_uuid(doc.identity().uuid).unwrap();
             assert_eq!(restored.bytes(), doc.bytes(), "{} did not round-trip", path.display());
         }
+    }
+
+    /// Longer and shorter, so the header is moved both ways, and back again to
+    /// prove nothing else was touched on the way.
+    #[test]
+    fn renaming_moves_the_body_and_nothing_else() {
+        let key = section_key();
+        let factory = if key.is_some() { factory_samples(4) } else { Vec::new() };
+        let all: Vec<_> = custom_samples().into_iter().chain(factory).collect();
+        if all.is_empty() {
+            skip_or_fail();
+            return;
+        }
+        for path in &all {
+            let doc = open(path, key.as_ref()).unwrap();
+            let body = |d: &Document| {
+                d.bytes()[Header::parse(d.bytes()).unwrap().object_offset..].to_vec()
+            };
+            for new in ["X", "A MUCH LONGER NAME THAN ANY SAMPLE CARRIES"] {
+                let renamed = doc.with_name(new).unwrap();
+                let (was, now) = (doc.identity(), renamed.identity());
+                assert_eq!(now.name, new, "{}", path.display());
+                assert_eq!(Identity { name: was.name.clone(), ..now.clone() }, *was);
+                assert_eq!(body(&renamed), body(&doc), "{}", path.display());
+
+                let restored = renamed.with_name(&was.name).unwrap();
+                assert_eq!(restored.bytes(), doc.bytes(), "{} did not round-trip", path.display());
+            }
+        }
+    }
+
+    #[test]
+    fn a_name_the_document_cannot_hold_is_refused() {
+        let doc = binary(&[]);
+        for bad in ["", "TWO\nLINES"] {
+            assert!(matches!(doc.with_name(bad), Err(Error::UnrepresentableName(_))), "{bad:?}");
+        }
+    }
+
+    /// A plain binary document carrying `resources` after its body, built by
+    /// hand so the binary path is proven where there are no samples.
+    fn binary(resources: &[u8]) -> Document {
+        fn string(out: &mut Vec<u8>, text: &str) {
+            out.extend((text.len() as u32).to_be_bytes());
+            out.extend(text.bytes());
+        }
+        fn named(out: &mut Vec<u8>, name: &str, tag: u8) {
+            out.extend(1i32.to_be_bytes());
+            string(out, name);
+            out.push(tag);
+        }
+        let uuid = Uuid::from_u128(0x6d2a2f1e_0a4f_4d8e_9a6c_1d2e3f405162);
+
+        let mut meta = 7i32.to_be_bytes().to_vec();
+        named(&mut meta, F_UUID, 21);
+        meta.extend(uuid.as_bytes());
+        named(&mut meta, F_NAME, 8);
+        string(&mut meta, "SHAPER");
+        named(&mut meta, F_CREATOR, 8);
+        string(&mut meta, "Caviio");
+        meta.extend(0i32.to_be_bytes());
+
+        let mut body = 7i32.to_be_bytes().to_vec();
+        body.extend(BODY_UUID.to_be_bytes());
+        body.push(21);
+        body.extend(uuid.as_bytes());
+        body.extend(0i32.to_be_bytes());
+
+        let object = HEADER_LEN + meta.len() + BINARY_PADDING;
+        let after = object + body.len();
+        let resources_at = if resources.is_empty() { 0 } else { after };
+        let mut raw = format!("BtWg00030002000c{object:08x}{resources_at:016x}00").into_bytes();
+        raw.extend(meta);
+        raw.extend(std::iter::repeat_n(b' ', BINARY_PADDING - 1));
+        raw.push(b'\n');
+        raw.extend(body);
+        raw.extend(resources);
+        Document::parse(Kind::Modulator, raw).unwrap()
+    }
+
+    #[test]
+    fn a_binary_rename_moves_the_resources_with_the_body() {
+        let resources = b"PK\x03\x04 an archive of whatever the document embeds";
+        let doc = binary(resources);
+        let renamed = doc.with_name("VOLUME SHAPER").unwrap();
+        assert_eq!(renamed.identity().name, "VOLUME SHAPER");
+        assert_eq!(renamed.identity().creator.as_deref(), Some("Caviio"));
+
+        let header = Header::parse(renamed.bytes()).unwrap();
+        let at = usize::try_from(header.resources_offset).unwrap();
+        assert_eq!(&renamed.bytes()[at..], resources, "the header lost its resources");
+        assert_eq!(renamed.with_name("SHAPER").unwrap().bytes(), doc.bytes());
+    }
+
+    /// Latin-1 is one byte a character and anything wider is UTF-16, so a name
+    /// past Latin-1 has to change the width it is written in, not be mangled
+    /// into it.
+    #[test]
+    fn a_name_past_latin_1_is_written_wide() {
+        let renamed = binary(&[]).with_name("\u{424}\u{43e}\u{440}\u{43c}\u{430}").unwrap();
+        assert_eq!(renamed.identity().name, "\u{424}\u{43e}\u{440}\u{43c}\u{430}");
     }
 }
 

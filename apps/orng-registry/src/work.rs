@@ -78,6 +78,11 @@ pub enum Errand {
     /// Words changed in the inspector. Entries only - a description is not a
     /// reason to touch the installation.
     Edit,
+    /// A registered entry given another name from the inspector. Entries
+    /// only, as an edit is, and apart from one because it rewrites the
+    /// document where it is: a failure can leave the document renamed and the
+    /// list not, which an edit's words cannot say.
+    Rename,
     /// An entry that had lost its document was pointed back at one. Entries
     /// only, and the one run that places a document without registering
     /// anything new: the entry was already there, and what was missing was the
@@ -108,6 +113,7 @@ impl Errand {
             Errand::Preparation => Work::PrepareThenEntries,
             Errand::Registration
             | Errand::Edit
+            | Errand::Rename
             | Errand::Locate
             | Errand::Install
             | Errand::Update => Work::Entries,

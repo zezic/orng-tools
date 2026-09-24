@@ -35,7 +35,7 @@ use crate::restore::Backups;
 use crate::session::{Badge, Found, Session};
 use crate::settings::{Appearance, Preferences, Settings};
 use crate::staging::{self, Reading, Staged};
-use crate::status::{Action, Consequences, Offer, Published, Status, removal_consequence};
+use crate::status::{Action, Consequences, Naming, Offer, Published, Status, removal_consequence};
 use crate::theme::{self, Palette, font, metric};
 use crate::widget::{self, Emphasis, Fact, Measure, Padding, Tone, icon};
 use crate::work::{Applying, Errand, Stage, Work};
@@ -1474,11 +1474,13 @@ impl App {
             return None;
         };
 
-        let (source, source_icon) = match &entry.provenance {
-            Provenance::Local => ("Local file".to_owned(), widget::icon::LOCAL_FILE),
-            Provenance::Catalog { version, .. } => {
-                (format!("ORNG Catalog {} {version}", widget::SEPARATOR), widget::icon::CATALOG)
-            }
+        let (source, source_icon, naming) = match &entry.provenance {
+            Provenance::Local => ("Local file".to_owned(), widget::icon::LOCAL_FILE, Naming::Own),
+            Provenance::Catalog { version, .. } => (
+                format!("ORNG Catalog {} {version}", widget::SEPARATOR),
+                widget::icon::CATALOG,
+                Naming::Catalogs,
+            ),
         };
         // Off the entry rather than off the catalog, and that is the point of
         // recording it: this says which review *this copy* came through, and the
@@ -1511,6 +1513,7 @@ impl App {
             provenance: provenance.as_ref().map(|(at, url)| (at.as_str(), url.as_str())),
             placement,
             status,
+            naming,
             document,
             hold: held.map(|held| match held {
                 Held::Asking => widget::Hold::Asking { install: &install },
@@ -1726,7 +1729,7 @@ impl App {
         }
         if let Some(applying) = &self.applying {
             return match applying.errand {
-                Errand::Edit if applying.writing.contains(&open.uuid) => None,
+                Errand::Edit | Errand::Rename if applying.writing.contains(&open.uuid) => None,
                 Errand::Preparation => Some(Held::Waiting("the preparation")),
                 _ => Some(Held::Waiting("the registration")),
             };
@@ -1925,8 +1928,9 @@ impl App {
         match result {
             // An edit is not announced. The panel is already showing what the
             // entry now says, and a banner after every description would be the
-            // window reading its own fields back.
-            Ok(entries) if errand == Errand::Edit => {
+            // window reading its own fields back. A rename is the same: the
+            // panel's heading and the row carry the new name.
+            Ok(entries) if matches!(errand, Errand::Edit | Errand::Rename) => {
                 if let Session::Found(found) = &mut self.session {
                     found.relist(entries, wrote);
                 }
@@ -1972,7 +1976,9 @@ impl App {
                 // leave the list under an open question: everything else that
                 // takes one is a press, and the scrim is over every press.
                 self.pending.written();
-                if matches!(self.confirming, Some(Confirming::Rename(_))) {
+                if let Some(Confirming::Rename(Renaming { on: Acting::Pending(_), .. })) =
+                    self.confirming
+                {
                     self.confirming = None;
                 }
                 let in_effect = entries.entries().len();
@@ -2425,6 +2431,18 @@ impl Outcome {
                 "Descriptions and search keywords live in the installation's own files, and \
                  that is the write that can be refused. The entry list is written after it \
                  and is unchanged."
+                    .to_owned(),
+                Some("Copy details"),
+            ),
+            // Ours. The document is written before the list, as every run
+            // writes them, so a failure between the two leaves a document with
+            // the new name under an entry with the old one - which renaming
+            // again settles, and nothing else says.
+            Outcome::Failed { what: Errand::Rename, .. } => (
+                Tone::Err,
+                "The entry was not renamed.".to_owned(),
+                "The document is written first and the entry list last, so the list still \
+                 names the entry as it was. Renaming it again finishes the job."
                     .to_owned(),
                 Some("Copy details"),
             ),
@@ -3447,7 +3465,14 @@ impl App {
                 let name = self.pending.staged[at].label.clone();
                 let (entries, to) = (found.entries(), &found.to);
                 let refusal = staging::refusal(&self.pending.staged, at, &name, entries, to);
-                self.confirming = Some(Confirming::Rename(Renaming { at, name, refusal }));
+                self.confirming = Some(Confirming::Rename(Renaming { on, name, refusal }));
+            }
+            // From the inspector. Opened on the name the entry has, which is
+            // free by definition, so the question starts with nothing to say.
+            (Acting::Registered(uuid), Action::Rename) => {
+                let entry = found.entries().get(uuid).expect("the entry the panel is open on");
+                let name = entry.name.clone();
+                self.confirming = Some(Confirming::Rename(Renaming { on, name, refusal: None }));
             }
             // Queued, not done. The design keeps the entry registered and
             // struck through until the apply that removes it, which is what
@@ -4083,23 +4108,59 @@ impl App {
 
     /// The rename, over the window, until it is answered.
     ///
-    /// The rule and the note are the design's words. The note is the staged
-    /// one: nothing is written until Apply, so the press stages a new name and
-    /// wears no shield.
+    /// The rule and both notes are the design's words, and the one sentence
+    /// after the registered note is ours: an entry keeps its file whatever it is
+    /// called, the user's choice of 2026-09-24, and Bitwig's browser lists a
+    /// device or a modulator by the file's name.
     fn confirm_rename(&mut self, ui: &mut egui::Ui) {
+        let working = self.is_working();
         let (Session::Found(found), Some(Confirming::Rename(renaming))) =
             (&self.session, &mut self.confirming)
         else {
             return;
         };
-        let row = &self.pending.staged[renaming.at];
-        let kind = row.document().expect("a rename is offered only on a row that was read").kind();
-        let title = format!("Rename {}", row.label);
-        let refusal = renaming.refusal.as_ref().map(|why| why.in_the_dialog(&renaming.name, kind));
+        let (was, kind, note) = match renaming.on {
+            Acting::Pending(at) => {
+                let row = &self.pending.staged[at];
+                let document =
+                    row.document().expect("a rename is offered only on a row that was read");
+                let note = "This document is not registered yet, so nothing is written until \
+                            Apply runs."
+                    .to_owned();
+                (row.label.as_str(), document.kind(), note)
+            }
+            Acting::Registered(uuid) => {
+                // The inspector closes when its entry goes, and so does this.
+                let Some(entry) = found.entries().get(uuid) else {
+                    self.confirming = None;
+                    return;
+                };
+                let mut note = "Written when you press Rename. An open Bitwig shows the new name \
+                                after a restart."
+                    .to_owned();
+                let file = entry.library_path.file_name();
+                let listed = file.strip_suffix(&format!(".{}", entry.kind().extension()));
+                let by_file = matches!(entry.kind(), Kind::Device | Kind::Modulator);
+                if let Some(listed) = listed.filter(|listed| by_file && *listed != renaming.name) {
+                    note.push_str(&format!(
+                        " The file keeps its name, so the browser goes on listing it as {listed}."
+                    ));
+                }
+                (entry.name.as_str(), entry.kind(), note)
+            }
+        };
+        let title = format!("Rename {was}");
+        let refusal = renaming.refusal.as_ref().map(|why| why.in_the_dialog(&renaming.name));
+        // A registered rename is a run, and nothing starts on top of one.
+        let registered = matches!(renaming.on, Acting::Registered(_));
         let refused = if renaming.name.is_empty() {
             Some("Type the name it should have")
+        } else if refusal.is_some() {
+            Some("Choose a name no other entry uses")
+        } else if registered && working {
+            Some("In progress")
         } else {
-            refusal.is_some().then_some("Choose a name no other entry uses")
+            None
         };
         let word = kind.label().to_lowercase();
         let (edited, answer) = widget::rename_dialog(
@@ -4115,34 +4176,78 @@ impl App {
                      changes the name inside the document too. The UUID stays, so projects \
                      that use this {word} still recall it."
                 ),
-                note: "This document is not registered yet, so nothing is written until Apply \
-                       runs.",
+                note: &note,
                 answers: widget::Answers {
                     cancel: "Cancel",
                     primary: "Rename",
                     icon: "",
-                    elevates: false,
+                    elevates: registered && asks_for_rights(found),
                     refused,
                 },
             },
         );
-        let (entries, to) = (found.entries(), &found.to);
+        let (entries, to, rows) = (found.entries(), &found.to, &self.pending.staged);
         if edited {
-            renaming.refusal =
-                staging::refusal(&self.pending.staged, renaming.at, &renaming.name, entries, to);
+            renaming.refusal = match renaming.on {
+                Acting::Pending(at) => staging::refusal(rows, at, &renaming.name, entries, to),
+                Acting::Registered(uuid) => {
+                    staging::registered_refusal(uuid, &renaming.name, entries, rows)
+                }
+            };
         }
         match answer {
             Some(widget::Answer::Proceed) => {
-                let Some(Confirming::Rename(Renaming { at, name, .. })) = self.confirming.take()
+                let Some(Confirming::Rename(Renaming { on, name, .. })) = self.confirming.take()
                 else {
                     unreachable!("the rename was being asked a moment ago");
                 };
-                let staged = std::mem::take(&mut self.pending.staged);
-                self.pending.staged = staging::rename(staged, at, &name, entries, to);
+                match on {
+                    Acting::Pending(at) => {
+                        let staged = std::mem::take(&mut self.pending.staged);
+                        self.pending.staged = staging::rename(staged, at, &name, entries, to);
+                    }
+                    Acting::Registered(uuid) => self.rename(uuid, &name, ui.ctx()),
+                }
             }
             Some(widget::Answer::Cancel) => self.confirming = None,
             None => {}
         }
+    }
+
+    /// Give a registered entry another name: in its document, where the
+    /// document is, and then in the list.
+    ///
+    /// Through [`Job::add`], as locating a file is, because the document is
+    /// rewritten and a registration placed with its document is what that
+    /// writes: the digest recorded is the renamed document's, so the entry does
+    /// not read `Changed` for a change this made. The words and the path are
+    /// the entry's; only the name is new.
+    ///
+    /// A document that cannot be read where the entry says it is fails the
+    /// rename before anything is written, with the banner a failed run gets.
+    fn rename(&mut self, uuid: Uuid, name: &str, ctx: &egui::Context) {
+        let Session::Found(found) = &self.session else { return };
+        let entry = found.entries().get(uuid).expect("the entry being renamed");
+        let at = found.standing(uuid).placement().path().to_path_buf();
+        let renamed = Document::read(&at)
+            .map_err(|why| why.to_string())
+            .and_then(|document| document.with_name(name).map_err(|why| why.to_string()));
+        let document = match renamed {
+            Ok(document) => document,
+            Err(why) => {
+                self.outcome = Some(Outcome::Failed { what: Errand::Rename, why });
+                return;
+            }
+        };
+        let mut job = Job::against(Work::Entries, &found.to, found.entries());
+        job.add(Registration { name: name.to_owned(), ..entry.clone() }, &document);
+        self.applying = Some(Applying::start(
+            Errand::Rename,
+            found.to.clone(),
+            job,
+            found.rights.clone(),
+            ctx.clone(),
+        ));
     }
 
     /// The plan, over the window, until it is answered.
@@ -4449,16 +4554,18 @@ enum Confirming {
     /// versions and the caveats are read as the question is drawn, so a
     /// catalog refreshed under the scrim is asked about as it now is.
     Update(Uuid),
-    /// A new name for a dropped document, from the pencil on a row whose name
-    /// is taken: `RenameDialog.dc.html`.
+    /// A new name, for a dropped document from the pencil on a row whose name
+    /// is taken, or for a registered entry from the inspector's `Rename...`:
+    /// `RenameDialog.dc.html`.
     Rename(Renaming),
 }
 
 /// A rename being asked about.
 struct Renaming {
-    /// The staged row, by its place in the pending list - [`Acting::Pending`]'s
-    /// reason: two rows can share an identity.
-    at: usize,
+    /// Which row, as its own controls name it: a staged one by its place in
+    /// the pending list, since two can share an identity, and an entry by its
+    /// identity.
+    on: Acting,
     /// What is in the field.
     name: String,
     /// What is wrong with that, as it was when it was typed. Asked of the disk

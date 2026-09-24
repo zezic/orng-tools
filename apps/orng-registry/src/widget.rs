@@ -23,7 +23,7 @@ use eframe::egui::{
 };
 use orng_tools::{Kind, Placement, TheDocument};
 
-use crate::status::{Action, Consequences, Offer, Published, Status};
+use crate::status::{Action, Consequences, Naming, Offer, Published, Status};
 use crate::theme::{Palette, font, metric};
 
 /// The frame behind the install bar and the action bar.
@@ -1503,6 +1503,8 @@ pub struct Inspected<'a> {
     /// Which of the nine states this entry is in, which is what decides the
     /// panel's action list - see [`crate::status`].
     pub status: Status,
+    /// Whose name it carries, which decides whether the list offers a rename.
+    pub naming: Naming,
     /// What removing this entry would do to its document, which is a setting
     /// and not a property of the entry. Carried here because the panel's
     /// removal control has to name it, exactly as the row's does.
@@ -1614,8 +1616,9 @@ pub fn inspector(
         // rules, not a second set". So this list is [`Status::actions`], in the
         // order the row lays them out, and the defect the README names -
         // offering `Reveal file` on the one entry whose file cannot be found -
-        // is unreachable rather than avoided.
-        for action in item.status.actions() {
+        // is unreachable rather than avoided. Revision 8 adds the one the row
+        // does not have, `Rename...`, above them.
+        for action in item.status.in_the_panel(item.naming) {
             let control =
                 panel_action(ui, palette, action_glyph(action), action.in_the_panel(), weight_of(action));
             // The one control here whose tooltip is not its label: what

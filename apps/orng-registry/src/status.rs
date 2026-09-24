@@ -71,6 +71,17 @@ pub enum Collided {
     Identity,
 }
 
+/// Whose name a registered entry carries, which is what decides whether it can
+/// be renamed here.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Naming {
+    /// The user's: a file they chose.
+    Own,
+    /// The catalog's. An update replaces the document by identity and would
+    /// bring the catalog's name back, so revision 8 offers no rename.
+    Catalogs,
+}
+
 /// One thing a row offers to do to its entry.
 ///
 /// The design's overflow control is deliberately not here: the bundle draws the
@@ -122,6 +133,30 @@ impl Status {
         [Assign, Rename, Locate, Undo, Reveal, Remove]
             .into_iter()
             .filter(move |action| self.offers(*action))
+    }
+
+    /// The inspector's list: `Rename...` first, where the name is the entry's
+    /// own to change, and then the row's controls in the row's order -
+    /// `Inspector.dc.html:112-126`.
+    ///
+    /// Revision 8 put the one control on the panel that the row does not have,
+    /// so the panel's rules are the row's plus that one rather than the row's
+    /// alone.
+    pub fn in_the_panel(self, naming: Naming) -> impl Iterator<Item = Action> {
+        let renames = naming == Naming::Own && self.renames_in_the_panel();
+        renames.then_some(Action::Rename).into_iter().chain(self.actions())
+    }
+
+    /// Whether the panel offers a rename in this state.
+    ///
+    /// `Inspector.dc.html:205` leaves out `Rejected` and `Pending removal`. The
+    /// panel opens only on registered entries, so the staged states are not
+    /// here either. **Nor is `Missing file`, which is ours**: the new name is
+    /// written into the document, and there is none to write it into until the
+    /// file is located.
+    fn renames_in_the_panel(self) -> bool {
+        use Status::*;
+        matches!(self, Registered | PendingRestart | Changed | UpdateAvailable)
     }
 
     /// Whether this state offers that one control.
@@ -477,6 +512,21 @@ mod tests {
         assert_eq!(offered(Status::MissingFile), [Locate, Remove]);
         assert_eq!(offered(Status::PendingRemoval), [Undo, Reveal]);
         assert_eq!(offered(Status::Rejected), []);
+    }
+
+    /// The panel's list is the row's with `Rename...` over it, where revision 8
+    /// offers one (`Inspector.dc.html:205`) and where there is a document to
+    /// write the name into - which is ours, and leaves out `Missing file`.
+    #[test]
+    fn the_panel_offers_a_rename_over_the_rows_controls() {
+        use Action::*;
+        let panel = |status: Status, naming| status.in_the_panel(naming).collect::<Vec<_>>();
+        for status in [Status::Registered, Status::PendingRestart, Status::Changed] {
+            assert_eq!(panel(status, Naming::Own), [Rename, Reveal, Remove], "{status:?}");
+            assert_eq!(panel(status, Naming::Catalogs), [Reveal, Remove], "{status:?}");
+        }
+        assert_eq!(panel(Status::MissingFile, Naming::Own), [Locate, Remove]);
+        assert_eq!(panel(Status::PendingRemoval, Naming::Own), [Undo, Reveal]);
     }
 
     /// The nine words, in the order the bundle's own `STATUS` map lists them -

@@ -3287,6 +3287,116 @@ fn a_conflict_of_identities_offers_no_rename() {
     assert!(harness.query_by_label("Rename...").is_none(), "an identity conflict offered a rename");
 }
 
+const DISPERSER: &str = "80c0dc4c-d142-53a7-85ee-b91427819b66";
+
+/// The panel's `Rename...`, which carries its glyph in its label.
+fn panel_rename() -> String {
+    format!("{}Rename...", crate::widget::icon::RENAME)
+}
+
+/// The inspector offers a rename above the rest where the name is the entry's
+/// own to change, and nowhere else: not on the catalog's, whose next update
+/// would bring its name back, and not on a missing file, which has no document
+/// to write a name into.
+#[test]
+fn the_inspector_offers_a_rename_only_where_the_name_is_the_entrys() {
+    let root = fixture("rename-offered");
+    let at = |uuid: &str, session: Session| {
+        window(session, |app, _| app.set_inspecting(uuid.parse().expect("a sample identity")))
+    };
+
+    let harness = at(DISPERSER, copying(&root, entries()));
+    let rename = harness.get_by_label(&panel_rename()).rect();
+    let reveal = format!("{}Reveal file", crate::widget::icon::REVEAL);
+    let reveal = harness.get_by_label(&reveal).rect();
+    assert!(rename.bottom() <= reveal.top(), "Rename... is not above Reveal file");
+
+    let harness = at(VOLSHAPER, copying(&root, entries()));
+    assert!(harness.query_by_label(&panel_rename()).is_none(), "a catalog item offered a rename");
+
+    // The fixture that deletes SHAPER's document.
+    let harness = at("1f2e3d4c-5b6a-4798-8899-aabbccddeeff", damaged(&fixture("rename-missing")));
+    assert!(harness.query_by_label("Missing file").is_some(), "the fixture lost nothing");
+    assert!(harness.query_by_label(&panel_rename()).is_none(), "a missing file offered a rename");
+}
+
+/// A registered entry is renamed in its document, where the document is, and
+/// then in the list - and keeps its file, which the question says, because
+/// Bitwig's browser goes on listing a device by it. The entry is not `Changed`
+/// afterwards: the document differs from what was placed because this placed
+/// it.
+#[test]
+fn a_registered_entry_is_renamed_in_its_document_and_keeps_its_file() {
+    use egui_kittest::kittest::NodeT as _;
+    let root = fixture("rename-registered");
+    let uuid: orng_tools::Uuid = DISPERSER.parse().expect("a sample identity");
+    let mut harness = window(copying(&root, entries()), |app, _| app.set_inspecting(uuid));
+
+    // The action list is the panel's last block, and in this window it runs
+    // under the action bar until the panel is scrolled.
+    harness.get_by_label(&panel_rename()).scroll_to_me();
+    harness.run();
+    harness.get_by_label(&panel_rename()).click();
+    harness.run();
+    assert!(
+        harness.query_all_by_label_contains("Written when you press Rename.").next().is_some(),
+        "the note is the staged one"
+    );
+
+    harness.key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::A);
+    the_rename_field(&harness).type_text("SHAPER");
+    harness.run();
+    assert!(
+        anywhere(&harness, "A registered modulator is already called SHAPER."),
+        "a name another entry holds was not refused, or not as that entry's"
+    );
+    assert!(the_rename_press(&harness).accesskit_node().is_disabled());
+
+    harness.key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::A);
+    the_rename_field(&harness).type_text("DISPERSER MK2");
+    harness.run();
+    let listed = "The file keeps its name, so the browser goes on listing it as DISPERSER.";
+    assert!(
+        harness.query_all_by_label_contains(listed).next().is_some(),
+        "the question does not say the browser keeps the old name"
+    );
+    the_rename_press(&harness).click();
+    settle(&mut harness);
+
+    let entries = harness.state().registered().expect("an installation");
+    let entry = entries.get(uuid).expect("the renamed entry");
+    assert_eq!(entry.name, "DISPERSER MK2");
+    let kept = "devices/My Devices/DISPERSER.bwdevice";
+    assert_eq!(entry.library_path.as_str(), kept, "the file moved");
+    let to = Destination { placement: Strategy::Copy, ..destination(&root) };
+    let bytes = std::fs::read(entry.library_path.resolve(&to.install)).expect("the document moved");
+    let document = orng_tools::Document::parse(orng_tools::Kind::Device, bytes.clone()).unwrap();
+    assert_eq!(document.identity().name, "DISPERSER MK2", "the document kept its old name");
+    assert_eq!(entry.digest, Some(orng_tools::Digest::of(&bytes)), "the rename reads as a change");
+    assert!(!anywhere(&harness, "The entry was not renamed."), "{:?}", harness.state().staged());
+}
+
+/// A registered entry's rename is a run, and nothing starts on top of one: while
+/// other work is in flight its press waits, and says why.
+#[test]
+fn a_registered_rename_waits_for_work_in_flight() {
+    use egui_kittest::kittest::NodeT as _;
+    let root = fixture("rename-while-working");
+    let uuid: orng_tools::Uuid = DISPERSER.parse().expect("a sample identity");
+    let mut harness = window(copying(&root, entries()), |app, _| {
+        app.set_inspecting(uuid);
+        app.set_applying(Applying::frozen(None, Stage::Registering, None));
+    });
+    harness.get_by_label(&panel_rename()).scroll_to_me();
+    harness.run();
+    harness.get_by_label(&panel_rename()).click();
+    harness.run();
+    harness.key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::A);
+    the_rename_field(&harness).type_text("DISPERSER MK2");
+    harness.run();
+    assert!(the_rename_press(&harness).accesskit_node().is_disabled(), "it started over a run");
+}
+
 /// A word typed into the keyword field becomes a keyword.
 ///
 /// The one interaction in the panel that is not a press, and the reason the
@@ -3827,6 +3937,33 @@ fn the_small_presses_that_ask_for_rights_say_so() {
         let asking = format!("Locate file {separator} asks Windows for administrator rights");
         assert_eq!(damaged.query_by_label(&asking).is_some(), asks);
         assert_eq!(damaged.query_by_label("Locate file").is_some(), !asks);
+
+        // A registered entry's rename writes on the press, and wears it. A
+        // staged one's writes nothing until Apply, and does not.
+        let root = fixture(&name("shield-rename"));
+        let uuid: orng_tools::Uuid = DISPERSER.parse().expect("a sample identity");
+        let mut renaming = window(rights(copying(&root, entries())), |app, _| {
+            app.set_inspecting(uuid);
+        });
+        renaming.get_by_label(&panel_rename()).scroll_to_me();
+        renaming.run();
+        renaming.get_by_label(&panel_rename()).click();
+        renaming.run();
+        let presses = renaming.get_all_by_role(Role::Button).map(label);
+        let press = presses.into_iter().find(|l| l.ends_with("Rename"));
+        let press = press.expect("the question offers no press");
+        assert_eq!(press.contains(crate::widget::icon::ELEVATES), asks, "{press:?}");
+
+        let (session, staged) = a_taken_name(&fixture(&name("shield-rename-staged")));
+        let mut staging = window(rights(session), |app, _| app.set_staged(staged));
+        staging.get_by_label(NAME_TAKEN).hover();
+        staging.run();
+        staging.get_by_label("Rename...").click();
+        staging.run();
+        let presses = staging.get_all_by_role(Role::Button).map(label);
+        let press = presses.into_iter().find(|l| l.ends_with("Rename"));
+        let press = press.expect("the question offers no press");
+        assert!(!press.contains(crate::widget::icon::ELEVATES), "{press:?}");
     }
 }
 

@@ -64,10 +64,10 @@ pub enum Collision {
     /// The identity is registered here as another kind, whose file the
     /// registration keeps and whose extension would name this document wrongly.
     RegisteredAs(Kind),
-    /// An entry of another identity already has this name. Bitwig's browser is
-    /// flat and matches on name, so the two would be indistinguishable there
-    /// (identity rule 7.3.4).
-    NameRegistered,
+    /// An entry of another identity already has this name, and is this kind.
+    /// Bitwig's browser is flat and matches on name, so the two would be
+    /// indistinguishable there (identity rule 7.3.4).
+    NameRegistered(Kind),
     /// Another dropped document has this name.
     NameDropped,
     /// Another dropped document would be placed in the same file.
@@ -89,7 +89,7 @@ impl Collision {
             // The file is named after the document, so a new name is a new
             // file - and a file that cannot be read may be the one place the
             // name leads, rather than the folder.
-            Collision::NameRegistered
+            Collision::NameRegistered(_)
             | Collision::NameDropped
             | Collision::SameFile
             | Collision::FileOccupied(_)
@@ -102,15 +102,16 @@ impl Collision {
     ///
     /// `NameRegistered` is the design's own words (`ORNG Registry.dc.html`,
     /// state `renameconflict`); the rest are ours, in its shape.
-    fn on_the_row(&self, name: &str, kind: Kind) -> String {
-        let kind = kind.label().to_lowercase();
+    fn on_the_row(&self, name: &str) -> String {
         match self {
             Collision::SameIdentity => "Another dropped document has the same identity".to_owned(),
             Collision::RegisteredAs(registered) => format!(
                 "This identity is registered as a {}",
                 registered.label().to_lowercase()
             ),
-            Collision::NameRegistered => format!("Name already used by a registered {kind}"),
+            Collision::NameRegistered(holder) => {
+                format!("Name already used by a registered {}", holder.label().to_lowercase())
+            }
             Collision::NameDropped => format!("Another dropped document is also called {name}"),
             Collision::SameFile => {
                 "Another dropped document would be placed in the same file".to_owned()
@@ -124,13 +125,13 @@ impl Collision {
     /// What the rename dialog says under its field about the name typed into
     /// it. The design draws one of these, `NameRegistered`'s, and the rest are
     /// ours in the same sentence.
-    pub fn in_the_dialog(&self, name: &str, kind: Kind) -> String {
+    pub fn in_the_dialog(&self, name: &str) -> String {
         match self {
-            Collision::NameRegistered => {
-                format!("A registered {} is already called {name}.", kind.label().to_lowercase())
+            Collision::NameRegistered(holder) => {
+                format!("A registered {} is already called {name}.", holder.label().to_lowercase())
             }
             Collision::NameDropped => format!("Another dropped document is already called {name}."),
-            other => format!("{}.", other.on_the_row(name, kind)),
+            other => format!("{}.", other.on_the_row(name)),
         }
     }
 }
@@ -149,9 +150,7 @@ impl Staged {
     pub fn reason(&self) -> Option<String> {
         match &self.state {
             State::Ready { .. } => None,
-            State::Conflict { collision, document } => {
-                Some(collision.on_the_row(&self.label, document.kind()))
-            }
+            State::Conflict { collision, .. } => Some(collision.on_the_row(&self.label)),
             State::Rejected { why } => Some(why.clone()),
         }
     }
@@ -363,21 +362,12 @@ fn placed(
         registration.library_path = entry.library_path.clone();
     }
 
-    let taken = entries
-        .entries()
-        .iter()
-        .any(|entry| entry.name == registration.name && entry.uuid != registration.uuid);
-    if taken {
-        return Err(Collision::NameRegistered);
+    if let Some(taken) = name_collision(&registration.name, registration.uuid, entries, seen) {
+        return Err(taken);
     }
     let file = Claim::file_of(&registration.library_path);
-    for other in seen {
-        if other.name == registration.name {
-            return Err(Collision::NameDropped);
-        }
-        if other.file.as_ref() == Some(&file) {
-            return Err(Collision::SameFile);
-        }
+    if seen.iter().any(|other| other.file.as_ref() == Some(&file)) {
+        return Err(Collision::SameFile);
     }
     match placement::would_replace(to, &registration) {
         Ok(None) => Ok(registration),
@@ -385,6 +375,43 @@ fn placed(
         // Whatever stopped the target being read will stop it being written.
         Err(e) => Err(Collision::FileUnreadable(e.to_string())),
     }
+}
+
+/// Whether another entry or another dropped document already has `name`.
+///
+/// Another identity's, for an entry: re-dropping or renaming an entry is that
+/// entry taking its own name, and the list updates one row rather than growing
+/// a second.
+fn name_collision(name: &str, uuid: Uuid, entries: &Manifest, seen: &[Claim]) -> Option<Collision> {
+    let holder = entries.entries().iter().find(|entry| entry.name == name && entry.uuid != uuid);
+    if let Some(holder) = holder {
+        return Some(Collision::NameRegistered(holder.kind()));
+    }
+    seen.iter().any(|other| other.name == name).then_some(Collision::NameDropped)
+}
+
+/// What stops the registered entry `uuid` being called `name`, if anything
+/// does: [`refusal`]'s question, asked of an entry.
+///
+/// No file is asked about. A registered entry keeps its file whatever it is
+/// called, so a new name moves nothing and cannot land on anything. It has to
+/// be a name a file could have all the same: the next re-drop of the renamed
+/// document is read as any drop is.
+pub fn registered_refusal(
+    uuid: Uuid,
+    name: &str,
+    entries: &Manifest,
+    rows: &[Staged],
+) -> Option<Collision> {
+    let entry = entries.get(uuid).expect("a rename is offered only on a registered entry");
+    if orng_tools::LibraryPath::named(entry.kind(), name).is_err() {
+        return Some(Collision::Unplaceable);
+    }
+    // The rows that are this entry dropped again take its name with them, and
+    // are not another document's claim on it.
+    let others: Vec<Claim> =
+        rows.iter().filter_map(Staged::claim).filter(|claim| claim.uuid != uuid).collect();
+    name_collision(name, uuid, entries, &others)
 }
 
 /// What a row already holds, which a document settled after it collides with.

@@ -718,7 +718,13 @@ The rest:
 - **The Save question moves into the inspector's footer**, below the fields it saves,
   rather than across the bottom of the window where the app draws it now: warn wash,
   `11px 12px 12px`, 28-tall `Cancel` and `Save`. While it is open the panel's close
-  control is dimmed to .4 with `Save or cancel the changes first` on hover.
+  control is dimmed to .4 with `Save or cancel the changes first` on hover. *Drawn,
+  `fde26c0`*, measured against the bundle's boxes. The question cannot outlive its
+  panel now, so it is a flag on the open inspection rather than a window-level
+  field, and `Cancel` puts the panel's words back to the entry's. **Ours:** while
+  other work runs the foot says what the words wait for instead of asking, where
+  `Inspector.dc.html` lets the question outrank the wait - a `Save` pressed then
+  could not start. It is asked again when the work is over.
 - **Not in the reply, only in the shell**: state `windowslocal` gives the action
   bar's note as `Update entries · asks for administrator rights` where the window
   says `Bitwig may stay open`. Taken as a change. *Drawn, `f34d654`.*
@@ -773,6 +779,12 @@ A footer where the Save question sits: info wash, a 6px dot in `--ink-2`,
 over, so the panel stays open until then.` The close control dimmed as in A3, with
 `Your changes are saved when <the work> finishes` on hover. The work is named: `the
 preparation`, `the registration`, `the download`.
+
+*Drawn, `fde26c0`.* `the download` while an install's fetch is out, `the preparation`
+for a preparation, and `the registration` for every other run, an install's second
+half included. **Ours:** no foot while the panel's own words are being written - they
+are not waiting for anything, and a foot for the moment an edit takes would flash on
+every one. The first picture of it is `inspector-waiting.png`.
 
 ### A7. A drop during a run - yes
 

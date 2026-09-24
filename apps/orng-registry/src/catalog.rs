@@ -489,9 +489,16 @@ impl Catalog {
     /// An install is only ever started from an index in hand, and nothing
     /// takes one away once it is held, so there is always one to hold it
     /// against.
+    ///
+    /// **Not against an index that no longer publishes the item.** A refresh
+    /// may replace the index while the fetch is out, and a refusal held against
+    /// the new one for an item it does not carry would keep the bar reading
+    /// `Install refused` with no row under it to explain it or to retry.
     pub fn refuse(&mut self, item: Uuid, why: Refused) {
         let held = self.held.as_mut().expect("an install was refused with no index in hand");
-        held.refused.insert(item, why);
+        if held.index.items.iter().any(|published| published.uuid == item) {
+            held.refused.insert(item, why);
+        }
     }
 
     /// Let an item be tried again: the press on it is a press on the row as it
@@ -1061,10 +1068,16 @@ mod tests {
 
         let mut emptied = published();
         emptied.items.clear();
-        let mut changed = holding(emptied).answering(Ok(published()));
+        let mut changed = holding(published()).answering(Ok(emptied));
         changed.poll();
         assert_eq!(changed.refusal(item), None, "a different index kept the old one's refusals");
         assert!(!changed.any_refused());
+
+        // And an install that answers after that refresh is not held against
+        // the new index, which no longer has a row for it: the bar would read
+        // `Install refused` with nothing under it to retry.
+        changed.refuse(item, refused());
+        assert!(!changed.any_refused(), "a refusal was held against an index without its item");
 
         let mut failed = holding(published()).answering(Err("no route to host".to_owned()));
         failed.poll();

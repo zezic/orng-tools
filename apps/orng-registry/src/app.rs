@@ -373,8 +373,10 @@ impl Pending {
         //
         // Cloned rather than taken. The rows stay in the list until the write
         // succeeds, so a failure leaves the same pending work rather than
-        // asking the user to find the files again; a document is tens of
-        // kilobytes and the copy is not worth avoiding at that price.
+        // asking the user to find the files again. A document is usually tens
+        // of kilobytes and can reach megabytes (`glue comp.bwdevice` in the
+        // samples is 1.6 MB), so this is a real copy per press - still cheaper
+        // than asking for the drop back.
         for staged in &self.staged {
             if let crate::staging::State::Ready { registration, document } = &staged.state {
                 job.add(registration.clone(), document);

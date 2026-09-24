@@ -692,8 +692,12 @@ pub fn run(
 /// cannot see, a line it cannot read - says why and closes its end, and what
 /// was still being sent then has nowhere to go. That failed write is the pipe
 /// saying the child stopped listening, not why it did, and the why is already
-/// waiting to be read. So a send that fails is followed by a read all the
-/// same, and the child's own word is the answer wherever it gave one.
+/// waiting to be read. So a send that fails that way is followed by a read all
+/// the same, and the child's own word is the answer wherever it gave one.
+///
+/// **Only that way.** A send that failed for any other reason may have left a
+/// child that is still waiting for the rest, and a read then waits with it -
+/// for good, since a read on the pipe waits on nothing else.
 #[cfg(any(windows, test))]
 fn converse(
     outgoing: &Outgoing<'_>,
@@ -701,10 +705,14 @@ fn converse(
     say: &impl Fn(Report),
 ) -> Result<Manifest, String> {
     let told = outgoing.send(&mut channel);
-    match (told, hear(channel, say)) {
-        (Ok(()), heard) => heard.and_then(ended),
-        (Err(_), Ok(Some(ending))) => ended(Some(ending)),
-        (Err(e), _) => Err(format!("the elevated run could not be told: {e}")),
+    let untold = |e| format!("the elevated run could not be told: {e}");
+    match told {
+        Ok(()) => hear(channel, say).and_then(ended),
+        Err(e) if e.kind() == std::io::ErrorKind::BrokenPipe => match hear(channel, say) {
+            Ok(Some(ending)) => ended(Some(ending)),
+            _ => Err(untold(e)),
+        },
+        Err(e) => Err(untold(e)),
     }
 }
 
@@ -1852,6 +1860,35 @@ mod tests {
 
         let why = converse(&outgoing, HungUp(b""), &|_| {})
             .expect_err("a child that heard nothing was read as a success");
+        assert!(why.contains("could not be told"), "blamed on something else: {why}");
+    }
+
+    /// A send that failed with the pipe still open is reported at once, and
+    /// the channel is not read: the child may still be waiting for the rest,
+    /// and a read would wait with it for good.
+    #[test]
+    fn a_send_that_failed_on_an_open_pipe_is_not_waited_past() {
+        struct Stuck;
+
+        impl Read for Stuck {
+            fn read(&mut self, _: &mut [u8]) -> std::io::Result<usize> {
+                panic!("read a pipe whose child may still be waiting to be told")
+            }
+        }
+
+        impl Write for Stuck {
+            fn write(&mut self, _: &[u8]) -> std::io::Result<usize> {
+                Err(std::io::Error::other("the transfer was cancelled"))
+            }
+
+            fn flush(&mut self) -> std::io::Result<()> {
+                Ok(())
+            }
+        }
+
+        let task = Task::Apply(a_job());
+        let outgoing = task.outgoing().expect("a job that sends");
+        let why = converse(&outgoing, Stuck, &|_| {}).expect_err("a send that failed succeeded");
         assert!(why.contains("could not be told"), "blamed on something else: {why}");
     }
 

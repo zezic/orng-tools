@@ -885,15 +885,16 @@ act on. `Replacement available` therefore belongs to an item that is installed; 
 nobody has, a replacement existing changes nothing, because the offer is to whoever already
 owns the old one.
 
-**`Update available` states the fact and offers no press, and that is deliberate.** The
-design confirms an update through a modal that names the item and both versions, because
-Bitwig resolves a device by identity and replacing the file changes every project that
-already uses it. Nothing in the bundle draws that modal. A press that overwrote a device
-under every open project rather than asking is not a smaller version of the design, so the
-row wears the word in the accent and stops there - the same shape the progress dialog's
-missing `Cancel` takes. The guarantee is kept by the types rather than by intent: the only
-press that writes a document is offered by `Available`, which means the identity is not
-registered here.
+**`Update available` offers `Update`, which asks first.** Bitwig resolves a device by
+identity, so replacing the file changes every project that already uses it, and the design
+puts a question in front of that press: both versions, what an update does to saved
+projects, and a strip when Bitwig is open. Only the question's own press fetches. The row
+and the detail panel open the same question, and a retry of a failed update asks again. An
+install is never asked, and cannot reach a registered identity: it is offered only by
+`Available`. The write is an install's, taken by whether the identity is registered when
+the bytes land. It keeps the entry's description, keywords and file, and takes the new
+document, its name, and the version and review the index states. `design-review.md`
+round 4, A1, has the reasons.
 
 **The catalog's own toolbar**, which is the Local one's shape with the box at its right
 end exchanged. `Add files...` and the design's factory toggle are about documents on this
@@ -1034,7 +1035,6 @@ Not built yet:
   of its own and the installation's section key - and a toggle that stalled the window,
   or one that did nothing, is worse than no toggle. The entry list is nine states rather
   than the design's ten because of it - see `design-review.md` round 3 item 3.
-- The update modal.
 - `Licences` on the About screen. The plural is the point: what it would open is the
   licences of everything linked into the binary, and nothing generates or bundles them.
   `Copy diagnostics` is drawn alone rather than beside a control that opens nothing - see

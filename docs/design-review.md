@@ -247,8 +247,8 @@ next reader will see `\u{b7}` and wonder.
   The entry row's own actions were the other half of this item and are also
   drawn, `EntryRow.dc.html:44-60`, all five of them. What is still missing from
   that group is below.
-- **The update modal, and so `Update` on a catalog row.** *Drawn in revision 8 and
-  not built - round 4, A1, which also corrects this item.* The README is explicit
+- **The update modal, and so `Update` on a catalog row.** *Drawn in revision 8, and
+  built in `2055b89` - round 4, A1, which also corrects this item.* The README is explicit
   that updating confirms where installing does not, and says what the modal has
   to carry: the item and the target version in its title, `installed 2.0.3 ->
   catalog 2.1.0` in mono beneath the lead, and the one sentence that matters -
@@ -671,8 +671,37 @@ Windows without rights. The detail panel's `Update...` opens the same modal.
 full-window mockup drew the modal. The mockup did: revision 7's shell carried it
 inline, state `catalogupdateconfirm`. Only the component was missing.
 
-Not built. `Offer` has no `Update` variant, and an update replaces a registered
-document by UUID, which no press does yet.
+*Drawn, `2055b89`*, measured against the component's probed boxes: within two pixels
+everywhere, the difference being egui rounding each line box up. The row's `Update` and
+the panel's `Update...` open it; only its own press fetches. Decided on the way, none
+of it the designer's:
+
+- **The entry keeps its words.** The description and keywords can be edited in the
+  inspector, on a catalog-sourced entry too, so the update keeps the entry's rather
+  than taking the new version's - the user's choice, 2026-09-24. The cost is that a
+  better description in a new version never arrives.
+- **The file stays where it is.** The catalog lets an item be renamed between versions.
+  Following the new file name would leave the old document behind under the same
+  identity, two files Bitwig takes for one device. The name is the new document's,
+  because the description bundle is keyed by it. A new version of another kind is
+  refused, since the kept path's extension would name it wrongly.
+- **An edited document is said to be lost.** Where the file on disk was changed since
+  it was installed - the Local row's `Changed` - the catalog row still reads `Update
+  available` and still offers it, and the question adds a warn strip in the shape of
+  the design's neutral one: `The file on disk was changed after it was installed.
+  Updating replaces it, and that change is lost.` The user chose saying so over
+  refusing the update or saying nothing.
+- **A retry of a failed update asks again**, since it replaces the same document.
+- **The words after it are ours.** `<name> is updated to <version>. Restart Bitwig
+  Studio to load it.`, over `Its description and search keywords are the ones you
+  had, and the file is where it was. Projects that already use it will open with the
+  new version.` A failed write says `The item was not updated.` and, because the
+  document is placed before the list is written, promises only that the list still
+  names the old version. A refused one says `<name> was not updated, and nothing was
+  written.`
+
+The catalog now also refuses a document whose identity is not the one its index row
+states, since an update picks the entry it replaces by the row's.
 
 ### A2. The row's overflow menu - change
 
@@ -709,7 +738,8 @@ The rest:
   `Update` and `Retry` (`gap:6px` inside the 24-tall control), the modal's `Update`,
   the inspector's `Save`, `Rename` for a registered entry, and `Restore this backup`,
   which drops its clock for it. *Drawn on `Install`, `Retry` and the Restore press,
-  `73ccdb5`*; the other three come with A1, A3's footer and A4. **Open:** the
+  `73ccdb5`; on the row's `Update` and the modal's, `2055b89`*; `Save` came with A3's
+  footer and `Rename` comes with A4. **Open:** the
   catalog detail panel's `Install` elevates the same way and is not in the list,
   and `CatalogDetail.dc.html` takes no `elevate` - so it wears none yet.
 - **Glyph-only controls do not wear it.** `Locate` keeps its glyph and its tooltip

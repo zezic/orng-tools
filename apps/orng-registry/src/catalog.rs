@@ -27,6 +27,7 @@ use std::time::{Duration, SystemTime};
 
 use orng_catalog::{Digest, Index, IndexEntry, PublicKey, Revision, Signature};
 use orng_tools::{Document, Kind, OrngHome};
+use ureq::http::Uri;
 
 /// The catalog itself, which is a repository: this is where the review of an
 /// item happened and where a link to the change that published it goes.
@@ -36,8 +37,6 @@ const REPOSITORY: &str = "https://github.com/zezic/orng-catalog";
 /// an index tied to one reviewed commit.
 const INDEX_URL: &str =
     "https://github.com/zezic/orng-catalog/releases/latest/download/index.json";
-const SIGNATURE_URL: &str =
-    "https://github.com/zezic/orng-catalog/releases/latest/download/index.json.sig";
 /// The asset's own name, which is how the signature is found beside whichever
 /// release `latest` turned out to be - see [`beside`].
 const INDEX_ASSET: &str = "index.json";
@@ -146,24 +145,34 @@ fn fetch() -> Result<Fetched, String> {
     // that verifies against nothing and is reported as a bad signature, which
     // points at the key rather than at the race. So the index's own answer says
     // which release this is, and the signature is then asked for by name.
-    let (bytes, from) = got(INDEX_URL, INDEX_LIMIT)?;
-    let signature = get(&beside(&from), INDEX_LIMIT)?;
+    let (bytes, hops) = got(INDEX_URL, INDEX_LIMIT)?;
+    let signature = get(&beside(&hops), INDEX_LIMIT)?;
     let index = verified(&bytes, &signature)?;
     Ok(Fetched { index, bytes, signature })
 }
 
-/// The signature published beside an index, given where that index really came
-/// from.
+/// The signature published beside an index, given the addresses the request for
+/// that index passed through.
 ///
-/// The released assets are one name apart, so this is that name and not a
-/// second `latest` URL. A resolved URL that somehow does not end in the index's
-/// own name is left alone rather than guessed at, and the pair then fails to
-/// verify as it always would.
-fn beside(index: &str) -> String {
-    match index.strip_suffix(INDEX_ASSET) {
-        Some(release) => format!("{release}{INDEX_ASSET}.sig"),
-        None => SIGNATURE_URL.to_owned(),
-    }
+/// **Not the address the bytes finally came from.** GitHub answers a release
+/// asset out of its storage host, under an opaque identifier and a signed
+/// query, so that address names neither the release nor the asset. The hop
+/// before it does: `latest` redirects to `/releases/download/<tag>/index.json`,
+/// the last address in the chain still named for the asset, and the signature
+/// is one name beside it. With no redirect at all that is the request itself,
+/// and the signature is asked for from `latest` exactly as the index was.
+fn beside(hops: &[Uri]) -> String {
+    let release = hops
+        .iter()
+        .rev()
+        .find(|hop| hop.path().strip_suffix(INDEX_ASSET).is_some_and(|dir| dir.ends_with('/')))
+        .expect("the index is asked for by its own name, and the request is the first hop");
+    format!(
+        "{}://{}{}.sig",
+        release.scheme_str().expect("a request ureq made has a scheme"),
+        release.authority().expect("a request ureq made has a host"),
+        release.path()
+    )
 }
 
 /// The check itself, over bytes and nothing else.
@@ -195,6 +204,8 @@ fn agent() -> &'static ureq::Agent {
             .timeout_connect(Some(CONNECT))
             .timeout_global(Some(TOTAL))
             .user_agent(concat!("orng-registry/", env!("CARGO_PKG_VERSION")))
+            // What `beside` reads the release off.
+            .save_redirect_history(true)
             .build()
             .new_agent()
     })
@@ -204,23 +215,26 @@ fn get(url: &str, limit: u64) -> Result<Vec<u8>, String> {
     got(url, limit).map(|(bytes, _)| bytes)
 }
 
-/// The same, and where the bytes actually came from.
+/// The same, and every address the request passed through on the way.
 ///
 /// The second half is what [`fetch`] needs and no other caller does: these URLs
 /// redirect, and which release a redirect landed on is the only way to ask for
 /// the asset beside it rather than for `latest` a second time.
-fn got(url: &str, limit: u64) -> Result<(Vec<u8>, String), String> {
+fn got(url: &str, limit: u64) -> Result<(Vec<u8>, Vec<Uri>), String> {
     use ureq::ResponseExt;
 
     let mut response = agent().get(url).call().map_err(|e| format!("{url}: {e}"))?;
-    let from = response.get_uri().to_string();
+    let hops = response
+        .get_redirect_history()
+        .expect("the agent is built to keep the redirect history")
+        .to_vec();
     let bytes = response
         .body_mut()
         .with_config()
         .limit(limit)
         .read_to_vec()
         .map_err(|e| format!("{url}: {e}"))?;
-    Ok((bytes, from))
+    Ok((bytes, hops))
 }
 
 /// A fetch running on another thread.
@@ -735,20 +749,53 @@ mod tests {
         );
     }
 
-    /// Both assets come from one release, so they must name one place. A URL
-    /// edited in one and not the other would fetch an index and last week's
-    /// signature, which verifies against nothing.
+    /// Both assets come from one release, so they must name one place: the
+    /// signature is always the index's own address with `.sig` on the end, so
+    /// no edit to one can leave the other behind.
     #[test]
     fn both_assets_come_from_the_same_release() {
-        let (index, _) = INDEX_URL.rsplit_once('/').expect("a path");
-        let (signature, _) = SIGNATURE_URL.rsplit_once('/').expect("a path");
-        assert_eq!(index, signature);
+        assert!(INDEX_URL.ends_with(&format!("/{INDEX_ASSET}")), "{INDEX_URL} is not the index");
+        let request: Uri = INDEX_URL.parse().expect("the index URL is a URL");
+        assert_eq!(beside(&[request]), format!("{INDEX_URL}.sig"));
         assert!(INDEX_URL.starts_with("https://"), "the index is fetched over plain HTTP");
-        assert!(SIGNATURE_URL.starts_with("https://"));
         // And from the repository the links in the detail panel lead into. A
         // link to a commit in some other repository is a link to a review that
         // did not happen.
         assert!(INDEX_URL.starts_with(REPOSITORY), "{INDEX_URL} is not published by {REPOSITORY}");
+    }
+
+    /// The signature is asked for from the release `latest` named, which is the
+    /// hop before the storage host and not the address the bytes came from.
+    ///
+    /// The chain is the one GitHub really answers with, the storage query cut
+    /// short. Taking the last hop instead finds no asset name in it at all.
+    #[test]
+    fn the_signature_is_asked_for_beside_the_release_the_index_came_from() {
+        let hops: Vec<Uri> = [
+            INDEX_URL,
+            "https://github.com/zezic/orng-catalog/releases/download/index-bd1f837/index.json",
+            "https://release-assets.githubusercontent.com/github-production-release-asset/\
+             1373401772/7aeadc60-49a2-4c2c-8a63-23336161b189?sp=r&sv=2018-11-09&sr=b",
+        ]
+        .iter()
+        .map(|hop| hop.parse().expect("a URL"))
+        .collect();
+
+        assert_eq!(
+            beside(&hops),
+            "https://github.com/zezic/orng-catalog/releases/download/index-bd1f837/index.json.sig"
+        );
+    }
+
+    /// And against the real thing, which is the only place the shape of that
+    /// chain is decided.
+    #[test]
+    #[ignore = "needs the network"]
+    fn the_published_signature_is_found_beside_its_release() {
+        let (_, hops) = got(INDEX_URL, INDEX_LIMIT).expect("the published index did not arrive");
+        let signature = beside(&hops);
+        assert!(signature.contains("/releases/download/"), "not a release's own: {signature}");
+        assert!(!signature.contains("/latest/"), "asked of latest a second time: {signature}");
     }
 
     /// The real published index, which is what a document URL is built out of.

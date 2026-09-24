@@ -644,7 +644,35 @@ pub fn run(
     }
 }
 
-/// Read the reports a child sends, up to and including how it ended.
+/// Tell the child its task, and hear how it went.
+///
+/// A child that refuses before it has read everything - an installation it
+/// cannot see, a line it cannot read - says why and closes its end, and what
+/// was still being sent then has nowhere to go. That failed write is the pipe
+/// saying the child stopped listening, not why it did, and the why is already
+/// waiting to be read. So a send that fails is followed by a read all the
+/// same, and the child's own word is the answer wherever it gave one.
+#[cfg(any(windows, test))]
+fn converse(
+    outgoing: &Outgoing<'_>,
+    mut channel: impl Read + Write,
+    say: &impl Fn(Report),
+) -> Result<Manifest, String> {
+    let told = outgoing.send(&mut channel);
+    match (told, hear(channel, say)) {
+        (Ok(()), heard) => heard.and_then(ended),
+        (Err(_), Ok(Some(ending))) => ended(Some(ending)),
+        (Err(e), _) => Err(format!("the elevated run could not be told: {e}")),
+    }
+}
+
+/// Read the reports a child sends, each told to `say`, up to and including how
+/// it ended.
+///
+/// `None` when the channel closed with nothing said about the ending, which
+/// only the caller can weigh: after a send that failed the child's silence
+/// explains nothing, and after one that went through it is a failure of its
+/// own.
 ///
 /// Shared by every transport, because the conversation is the same one whether
 /// it crossed a pipe or a pair of streams in a test.
@@ -654,12 +682,9 @@ pub fn run(
 /// `cfg` rather than silenced with an `allow`, so that a platform that gains a
 /// way to ask has to say so here.
 #[cfg(any(windows, test))]
-fn listen(
-    from: impl Read,
-    say: &impl Fn(Report),
-) -> Result<Manifest, String> {
+fn hear(from: impl Read, say: &impl Fn(Report)) -> Result<Option<Result<String, String>>, String> {
     let mut from = BufReader::new(from);
-    let mut ended = None;
+    let mut ending = None;
     while let Some(line) = read_line(&mut from)
         .map_err(|e| format!("the elevated run stopped being readable: {e}"))?
     {
@@ -669,12 +694,17 @@ fn listen(
         let report: Report = serde_json::from_str(&line)
             .map_err(|e| format!("the elevated run said something unreadable: {e}"))?;
         match report {
-            Report::Finished(outcome) => ended = Some(outcome),
+            Report::Finished(outcome) => ending = Some(outcome),
             progress => say(progress),
         }
     }
+    Ok(ending)
+}
 
-    match ended {
+/// What a run came to, given how the child said it ended.
+#[cfg(any(windows, test))]
+fn ended(ending: Option<Result<String, String>>) -> Result<Manifest, String> {
+    match ending {
         Some(Ok(entries)) => {
             Manifest::parse(&entries).map_err(|e| format!("the list it wrote does not read: {e}"))
         }
@@ -921,7 +951,7 @@ mod windows {
     };
     use windows_sys::Win32::UI::WindowsAndMessaging::SW_HIDE;
 
-    use super::{Report, Task, command_line, listen};
+    use super::{Report, Task, command_line, converse};
 
     /// How much the pipe holds before a writer has to wait for a reader.
     ///
@@ -992,11 +1022,7 @@ mod windows {
         connecting.finish(&pipe)?;
         pipe.admits(child.id())?;
 
-        let mut channel = pipe.stream()?;
-        outgoing
-            .send(&mut channel)
-            .map_err(|e| format!("the elevated run could not be told: {e}"))?;
-        listen(channel, say)
+        converse(&outgoing, pipe.stream()?, say)
     }
 
     /// A name no other process is using, and that none could have prepared.
@@ -1378,6 +1404,37 @@ mod windows {
             assert!(why.contains("told nothing"), "refused for something else: {why}");
         }
 
+        /// What a child wrote before it closed its end is still read off the
+        /// real pipe, after the window's own write to it has failed.
+        ///
+        /// Which is the property the window's hearing a refusal out depends on,
+        /// and it is the pipe's to answer rather than the code's: a broken pipe
+        /// that dropped what was waiting in it would leave only the failed write
+        /// to report.
+        #[test]
+        fn what_a_child_said_before_it_hung_up_is_still_read() {
+            let name = pipe_name();
+            let pipe = Pipe::create(&name).expect("a pipe");
+            let connecting = pipe.arm_connect().expect("a connect");
+            let mut child = std::fs::OpenOptions::new()
+                .read(true)
+                .write(true)
+                .open(&name)
+                .expect("the pipe did not open");
+            connecting.finish(&pipe).expect("the connect did not land");
+            crate::elevate::send(&mut child, &Report::Finished(Err("refused".to_owned())))
+                .expect("the child could not say anything");
+            drop(child);
+
+            let outgoing = crate::elevate::Outgoing {
+                line: Task::Restore { from: std::path::PathBuf::from("a backup") },
+                documents: Vec::new(),
+            };
+            let stream = pipe.stream().expect("a stream");
+            let why = converse(&outgoing, stream, &|_| {}).expect_err("a refusal read as success");
+            assert_eq!(why, "refused", "what the child said before it closed was lost");
+        }
+
         /// A real run, end to end: this module's parent half against the real
         /// application as the child, elevated, over a real pipe, preparing a real
         /// installation and placing a real document in it - then a restore down
@@ -1641,6 +1698,11 @@ mod tests {
         assert!(why.contains("ran past"), "the window refused it for something else: {why}");
     }
 
+    /// The reports as the window reads them when everything was sent.
+    fn listen(from: &[u8], say: &impl Fn(Report)) -> Result<Manifest, String> {
+        hear(from, say).and_then(ended)
+    }
+
     /// A whole conversation, read as the window reads it.
     ///
     /// The order matters as much as the content: the progress the dialog draws
@@ -1688,6 +1750,56 @@ mod tests {
 
         assert_eq!(why, "the archive did not verify");
         assert!(said.into_inner().is_empty(), "the ending was reported as progress as well");
+    }
+
+    /// A child that refused before reading everything is heard out, and its
+    /// own reason is the answer rather than the broken pipe it left behind.
+    ///
+    /// The window used to stop at the failed write. For a job longer than the
+    /// pipe holds, a child that could not see the installation said so and
+    /// closed, and the user read that the run "could not be told".
+    #[test]
+    fn a_child_that_stopped_reading_is_heard_rather_than_the_send() {
+        let refused = r"D:\Bitwig Studio is not a Bitwig Studio installation";
+        let said = transcript(&[Report::Finished(Err(refused.into()))]);
+        let task = Task::Apply(a_job());
+        let outgoing = task.outgoing().expect("a job that sends");
+
+        let why = converse(&outgoing, HungUp(said.as_bytes()), &|_| {})
+            .expect_err("a child that refused was read as a success");
+        assert_eq!(why, refused, "the child's own reason was not the answer");
+    }
+
+    /// And where it said nothing, the send is what is reported: there is no
+    /// better reason to give.
+    #[test]
+    fn a_send_that_failed_with_nothing_said_is_reported_as_the_send() {
+        let task = Task::Apply(a_job());
+        let outgoing = task.outgoing().expect("a job that sends");
+
+        let why = converse(&outgoing, HungUp(b""), &|_| {})
+            .expect_err("a child that heard nothing was read as a success");
+        assert!(why.contains("could not be told"), "blamed on something else: {why}");
+    }
+
+    /// A child's end of the pipe after it has said its piece and closed: what
+    /// it wrote can still be read, and nothing more can be written to it.
+    struct HungUp<'a>(&'a [u8]);
+
+    impl Read for HungUp<'_> {
+        fn read(&mut self, buffer: &mut [u8]) -> std::io::Result<usize> {
+            self.0.read(buffer)
+        }
+    }
+
+    impl Write for HungUp<'_> {
+        fn write(&mut self, _: &[u8]) -> std::io::Result<usize> {
+            Err(std::io::ErrorKind::BrokenPipe.into())
+        }
+
+        fn flush(&mut self) -> std::io::Result<()> {
+            Err(std::io::ErrorKind::BrokenPipe.into())
+        }
     }
 
     /// A child that stopped without saying how it went is a failure.

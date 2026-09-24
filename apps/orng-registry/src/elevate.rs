@@ -384,33 +384,59 @@ struct Outgoing<'a> {
 #[cfg(any(windows, test))]
 impl Task {
     fn outgoing(&self) -> Result<Outgoing<'_>, String> {
-        let job = match self {
-            Task::Apply(job) => job,
-            Task::Restore { from } => {
-                let line = Task::Restore { from: from.clone() };
-                return Ok(Outgoing { line, documents: Vec::new() });
+        let line = self.carrying(|placing| {
+            let length = placing.bytes.len() as u64;
+            within_limit(placing.uuid, length)?;
+            Ok(Attached(length))
+        })?;
+        let documents = match self {
+            Task::Apply(job) => {
+                job.documents.iter().map(|placing| placing.bytes.as_slice()).collect()
             }
+            Task::Restore { .. } => Vec::new(),
         };
-        let attached = job
+        Ok(Outgoing { line, documents })
+    }
+}
+
+impl<D> Task<D> {
+    /// The same task with each document made into something else, in order:
+    /// its bytes into the length the line states, and back again.
+    fn carrying<E>(
+        &self,
+        document: impl FnMut(&Placing<D>) -> Result<E, String>,
+    ) -> Result<Task<E>, String> {
+        match self {
+            Task::Apply(job) => job.carrying(document).map(Task::Apply),
+            Task::Restore { from } => Ok(Task::Restore { from: from.clone() }),
+        }
+    }
+}
+
+impl<D> Job<D> {
+    /// The same job around other documents - the one place a job is rebuilt,
+    /// so every other field crosses exactly as it stood.
+    fn carrying<E>(
+        &self,
+        mut document: impl FnMut(&Placing<D>) -> Result<E, String>,
+    ) -> Result<Job<E>, String> {
+        let documents = self
             .documents
             .iter()
             .map(|placing| {
-                let length = placing.bytes.len() as u64;
-                within_limit(placing.uuid, length)?;
-                Ok(Placing { uuid: placing.uuid, kind: placing.kind, bytes: Attached(length) })
+                let bytes = document(placing)?;
+                Ok(Placing { uuid: placing.uuid, kind: placing.kind, bytes })
             })
             .collect::<Result<_, String>>()?;
-        let line = Task::Apply(Job {
-            work: job.work,
-            library: job.library.clone(),
-            placement: job.placement,
-            base: job.base.clone(),
-            written: job.written.clone(),
-            documents: attached,
-            removed: job.removed.clone(),
-        });
-        let documents = job.documents.iter().map(|placing| placing.bytes.as_slice()).collect();
-        Ok(Outgoing { line, documents })
+        Ok(Job {
+            work: self.work,
+            library: self.library.clone(),
+            placement: self.placement,
+            base: self.base.clone(),
+            written: self.written.clone(),
+            documents,
+            removed: self.removed.clone(),
+        })
     }
 }
 
@@ -429,32 +455,15 @@ impl Outgoing<'_> {
 impl Task<Attached> {
     /// The task the line describes, each document read off what follows it.
     fn attach(self, rest: &mut impl Read) -> Result<Task, String> {
-        let job = match self {
-            Task::Apply(job) => job,
-            Task::Restore { from } => return Ok(Task::Restore { from }),
-        };
-        let documents = job
-            .documents
-            .into_iter()
-            .map(|placing| {
-                let Attached(length) = placing.bytes;
-                within_limit(placing.uuid, length)?;
-                let mut bytes = vec![0; length as usize];
-                rest.read_exact(&mut bytes).map_err(|e| {
-                    format!("the document for {} did not arrive whole: {e}", placing.uuid)
-                })?;
-                Ok(Placing { uuid: placing.uuid, kind: placing.kind, bytes })
-            })
-            .collect::<Result<_, String>>()?;
-        Ok(Task::Apply(Job {
-            work: job.work,
-            library: job.library,
-            placement: job.placement,
-            base: job.base,
-            written: job.written,
-            documents,
-            removed: job.removed,
-        }))
+        self.carrying(|placing| {
+            let Attached(length) = placing.bytes;
+            within_limit(placing.uuid, length)?;
+            let mut bytes = vec![0; length as usize];
+            rest.read_exact(&mut bytes).map_err(|e| {
+                format!("the document for {} did not arrive whole: {e}", placing.uuid)
+            })?;
+            Ok(bytes)
+        })
     }
 }
 

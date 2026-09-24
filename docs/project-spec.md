@@ -546,6 +546,10 @@ to. For something that installs into a DAW, that is the wrong trust model.
    identity, so a rename orphans no project - but it is written into the document, because
    that is the name Bitwig shows (4.4). A catalog item cannot be renamed: its next update
    would bring the catalog's name back.
+5. **A name must be able to be a file.** An installed document is placed as
+   `<name>.<extension>` (section 8), so a name some platform cannot hold as a file would
+   fail on the machine of whoever installed it. CI refuses it instead, by the same rule the
+   app places with - `Kind::file_name` in `bitwig-document`.
 
 ### 7.4 Governance
 

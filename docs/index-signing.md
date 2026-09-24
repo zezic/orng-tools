@@ -25,6 +25,13 @@ programs to agree about. Detached keeps the bytes signed, the bytes served and
 the bytes parsed identical, and leaves `index.json` unchanged for anything
 reading it that has not learned about signatures.
 
+**Both come out of one release.** `latest` is a redirect, and asking it twice
+can straddle a publication and pair one release's index with the next one's
+signature. So the application asks `latest` for the index only, reads the
+release it was redirected to - `/releases/download/<tag>/index.json`, the hop
+before GitHub's storage host, whose address names neither - and asks for the
+signature beside that.
+
 **The application keeps that pair and re-proves it.** A verified index is
 written to `~/.orng/catalog/` as the two files exactly as they arrived, and the
 next launch reads them back through the same `Index::verified` call the download

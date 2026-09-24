@@ -790,7 +790,10 @@ something unelevated. They follow the recipe's one line of JSON rather than sitt
 it, each as many bytes as the line says it is. So every read has a bound: a line is at most
 16 MiB, the size of a very long entry list, in both directions, and a document at most
 64 MiB, refused on its stated length before a byte of it is read - and by the window before
-the child is started, so a document too large to cross never costs a consent dialog.
+the child is started, so a document too large to cross never costs a consent dialog. Every
+document belongs to a row the recipe writes, one each, and the line is held to that before
+any document is read, so what a child reads is bounded by the rows it will write rather than
+by however many lengths a line states.
 
 **The installation root travels on the command line and never in the recipe.** Preparation
 runs the installation's own bundled JVM to verify its patch, so a child that took its root
@@ -806,8 +809,10 @@ actually see rather than restoring what it was handed.
 The window waits on the connection and on the child's own handle together, so a child that
 dies before it calls back ends the run instead of hanging it, and a child that closes
 without saying how it went is a failure rather than a success - the rule the in-process
-worker already followed. Declining the dialog is neither: `ERROR_CANCELLED` is reported as
-rights declined and nothing changed.
+worker already followed. A child that refuses before it has read everything says why and
+closes its end, so the window's send can fail with the reason already in the pipe; the
+window reads it anyway, and the child's own word is what it reports. Declining the dialog is
+neither: `ERROR_CANCELLED` is reported as rights declined and nothing changed.
 
 Where the platform has no way to ask - macOS and Linux, where an installation is the user's
 own anyway - the press is refused before it starts, with a banner naming the directory that

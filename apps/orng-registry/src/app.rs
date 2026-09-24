@@ -1810,22 +1810,31 @@ impl App {
         if self.catalog.poll() {
             self.refused.clear();
         }
+        // The run first, because both of the others wait on it: taken after it,
+        // what was waiting is taken the frame the run reports rather than on
+        // whatever frame happens to be drawn next.
+        self.reported();
+        if self.applying.is_some() {
+            return;
+        }
         // Not while a run is in flight. A press builds its job out of the list
         // as it stands and clears that list when it reports, so a row folded in
         // between the two was never part of the run and would be counted as
         // registered and then thrown away. The reader holds it instead - the
-        // rows are still in its channel - and it is taken the frame after the
-        // run is over.
-        if self.applying.is_none()
-            && let Some(read) = self.reading.as_mut().and_then(Reading::take)
-        {
+        // rows are still in its channel.
+        if let Some(read) = self.reading.as_mut().and_then(Reading::take) {
             self.staged.extend(read);
             self.reading = None;
         }
-        // Before the write below, because a finished fetch is what *starts* one:
-        // the two halves of an install are one press, and waiting a frame
-        // between them would draw a row that had stopped downloading and had not
-        // begun registering.
+        // And a finished fetch waits the same way, because it is what *starts*
+        // a run: the second half of an install is an ordinary write, and one
+        // started on top of a run in flight took that run's place. The run went
+        // on writing and was never heard from, and the install's job was built
+        // from the list as it stood before that run wrote it.
+        //
+        // Before anything is drawn, because the two halves of an install are
+        // one press, and waiting a frame between them would draw a row that had
+        // stopped downloading and had not begun registering.
         let answered = self.installing.as_mut().is_some_and(|fetching| {
             fetching.poll();
             !fetching.is_running()
@@ -1834,6 +1843,10 @@ impl App {
             let finished = self.installing.take().expect("it answered a moment ago");
             self.installed(finished, ctx);
         }
+    }
+
+    /// Take what the run in flight has reported, if it has.
+    fn reported(&mut self) {
         let Some(applying) = &mut self.applying else { return };
         applying.poll();
         let Some(result) = &applying.outcome else { return };
@@ -3388,6 +3401,7 @@ impl App {
     /// row the digest was checked against rather than from whatever the catalog
     /// says now.
     fn installed(&mut self, finished: Install, ctx: &egui::Context) {
+        assert!(self.applying.is_none(), "an install was written on top of a run in flight");
         let outcome = finished.outcome.expect("only a finished install is taken");
         let item = finished.item;
         let document = match outcome {

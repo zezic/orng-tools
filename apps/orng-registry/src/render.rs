@@ -2292,6 +2292,50 @@ fn installing_registers_the_item_at_the_version_and_review_the_index_names() {
     );
 }
 
+/// A fetch that answers while a run is in flight waits for the run, and is
+/// written the frame the run reports.
+///
+/// The second half of an install is a run of its own, and one started over a run
+/// already going took that run's place: the run went on writing and was never
+/// heard from, and the install's list was the one from before that run wrote.
+/// The run here is one started from the Local list while the fetch was out.
+#[test]
+fn a_fetch_that_answers_during_a_run_waits_for_it() {
+    let mut harness = catalog_listing("installing-mid-run", superseded_entries());
+    let replacement: orng_tools::Uuid = BREATH_FOLLOWER_II.parse().expect("a sample identity");
+    let item = superseded()
+        .items
+        .into_iter()
+        .find(|item| item.uuid == replacement)
+        .expect("the sample index carries it");
+    let document =
+        orng_tools::testing::document(item.kind.into(), item.uuid, "BREATH FOLLOWER II");
+    let fetching = |harness: &Harness<'_, App>| {
+        harness.query_all_by_label_contains("Fetching BREATH FOLLOWER II").next().is_some()
+    };
+
+    harness.state_mut().set_applying(Applying::frozen(None, Stage::Registering, None));
+    harness.state_mut().set_installing(Install::finished(item, Ok(document)));
+    // Nothing to see of the fetch while it waits: the bar says what the run is
+    // doing. What shows it waited is that nothing was written.
+    harness.run();
+    let entries = harness.state().registered().expect("an installation");
+    assert!(entries.get(replacement).is_none(), "the fetch was written over the run in flight");
+
+    // The run reports the list it was handed, which is all a run that wrote
+    // nothing would have to say.
+    let written = harness.state().registered().expect("an installation").clone();
+    let finished = Applying::frozen(None, Stage::Registering, Some(Ok(written)));
+    harness.state_mut().set_applying(finished);
+    // One frame, and not `run`: the claim is about which frame.
+    harness.step();
+    assert!(!fetching(&harness), "the fetch was left waiting past the frame the run reported");
+
+    settle(&mut harness);
+    let entries = harness.state().registered().expect("an installation");
+    assert!(entries.get(replacement).is_some(), "the fetch that waited was never written");
+}
+
 /// The two ways an install can fail, in one view.
 ///
 /// A picture because what is being claimed is a colour and a pair of controls:

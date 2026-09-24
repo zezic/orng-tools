@@ -788,8 +788,8 @@ Dropped from `EmptyState.dc.html`.
 - 13.5px is `-0.015em` everywhere - yes, round 3 item 4 settled.
 - The install bar is 42 on `noinstall` too - yes, round 3 item 1 settled.
 - `--shadow` is `.85` - yes.
-- **The light shadows are stated, and not by ratio.** `--shadow-menu` is `0 12px 28px
-  rgba(0,0,0,.16)` in light, `--shadow-panel` `-14px 0 32px rgba(0,0,0,.12)`. The
+- ~~**The light shadows are stated, and not by ratio.**~~ *Drawn, `833ffa3`.*
+  `--shadow-menu` is `0 12px 28px rgba(0,0,0,.16)` in light, `--shadow-panel` `-14px 0 32px rgba(0,0,0,.12)`. The
   window derived `.18` and `.13` and kept the dark geometry; the geometry moves too.
   `CatalogDetail.dc.html:21` still writes the dark panel shadow as a literal; the
   token is taken as the intent.

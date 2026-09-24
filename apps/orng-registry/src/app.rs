@@ -314,11 +314,10 @@ pub struct App {
     /// Which surface is showing. The two views are what this changes the middle
     /// of; a screen replaces all of it.
     screen: Screen,
-    palette: Palette,
     /// Which of the two palettes is in force, as against which was asked for:
     /// [`Appearance::System`] is a question rather than a palette, and the desktop
     /// can answer it differently while the window is open.
-    dark: bool,
+    palette: Palette,
     filter: Filter,
     /// Documents dropped and not yet written. The pending work.
     staged: Vec<Staged>,
@@ -472,7 +471,6 @@ impl App {
             view: View::Local,
             screen: Screen::Browsing,
             palette,
-            dark: true,
             filter: Filter::default(),
             staged: Vec::new(),
             removing: BTreeSet::new(),
@@ -662,20 +660,20 @@ impl App {
     /// The applying is guarded on the answer having changed, because
     /// [`theme::apply`] rebuilds every style egui keeps.
     fn settle_palette(&mut self, ctx: &egui::Context) {
-        let dark = match self.preferences.chosen().appearance {
-            Appearance::Light => false,
-            Appearance::Dark => true,
+        let palette = match self.preferences.chosen().appearance {
+            Appearance::Light => Palette::LIGHT,
+            Appearance::Dark => Palette::DARK,
             // A platform that does not say is dark. That is what this
             // application opens in and what every mockup in the bundle is drawn
             // in, so it is the answer least likely to surprise.
-            Appearance::System => {
-                ctx.system_theme().is_none_or(|theme| theme == egui::Theme::Dark)
-            }
+            Appearance::System => match ctx.system_theme() {
+                Some(egui::Theme::Light) => Palette::LIGHT,
+                Some(egui::Theme::Dark) | None => Palette::DARK,
+            },
         };
-        if self.dark != dark {
-            self.dark = dark;
-            self.palette = if dark { Palette::DARK } else { Palette::LIGHT };
-            theme::apply(ctx, self.palette);
+        if self.palette != palette {
+            self.palette = palette;
+            theme::apply(ctx, palette);
         }
     }
 

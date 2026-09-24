@@ -43,7 +43,7 @@ const fn hexa(rgb: u32, alpha: u8) -> Color32 {
 /// invented here, and a palette with holes in it is one that gets filled in by
 /// whoever next needs a colour, somewhere other than this file.
 #[allow(dead_code, reason = "a full transcription of the design's tokens")]
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Palette {
     pub page: Color32,
     pub bg: Color32,

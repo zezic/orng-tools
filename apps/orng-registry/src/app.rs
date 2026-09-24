@@ -425,19 +425,6 @@ pub struct App {
     filter: Filter,
     /// What one press of the primary action would write.
     pending: Pending,
-    /// Entries written into a live installation since the list was last read
-    /// off the machine - the design's `Pending restart`.
-    ///
-    /// Bitwig reads the entry list when it launches, so a row written while it
-    /// is open is a row it is not showing. Nothing here watches for Bitwig
-    /// being restarted, and nothing should: the window reads the machine rather
-    /// than polling it, so this is emptied when the list is read again and by
-    /// the preparation, which is the apply that starts from the archive.
-    ///
-    /// Identities rather than rows, and never filtered: [`App::status_of`] is
-    /// the only reader and it asks about registered entries, so a removal
-    /// leaving one behind here is a word nobody draws.
-    awaiting_restart: BTreeSet<Uuid>,
     /// A drop being read, off the interface thread.
     reading: Option<Reading>,
     /// Set while work is in flight, and only while it is in flight: the moment
@@ -556,7 +543,6 @@ impl App {
             palette,
             filter: Filter::default(),
             pending: Pending::default(),
-            awaiting_restart: BTreeSet::new(),
             reading: None,
             applying: None,
             confirming: None,
@@ -1436,9 +1422,6 @@ impl App {
         // a document to register wherever this application is pointed, and a
         // removal is an instruction about one particular list.
         self.pending.removing.clear();
-        // And so does what was waiting on a restart: it was a statement about
-        // rows in the list that has just been replaced.
-        self.awaiting_restart.clear();
         // With it goes a description waiting to be saved. It revises one row of
         // the list that has just been replaced, and the panel it was typed in
         // is about to be settled against the new one.
@@ -1966,9 +1949,8 @@ impl App {
             // window reading its own fields back.
             Ok(entries) if errand == Errand::Edit => {
                 if let Session::Found(found) = &mut self.session {
-                    found.relist(entries);
+                    found.relist(entries, wrote);
                 }
-                self.awaiting_restart.extend(wrote);
             }
             // Announced, unlike an edit: the user pressed a control on a row
             // and nothing else on screen would show that the file is back.
@@ -1976,10 +1958,9 @@ impl App {
             // the things the primary action does.
             Ok(entries) if errand == Errand::Locate => {
                 if let Session::Found(found) = &mut self.session {
-                    found.relist(entries);
+                    found.relist(entries, wrote);
                 }
                 self.outcome = Some(Outcome::Located);
-                self.awaiting_restart.extend(wrote);
             }
             // Announced, and it names the item: the press was about one row of
             // a list the user is looking at, and "1 entry registered" would be
@@ -1993,10 +1974,9 @@ impl App {
                 };
                 let name = entries.get(uuid).expect("the row this run just wrote").name.clone();
                 if let Session::Found(found) = &mut self.session {
-                    found.relist(entries);
+                    found.relist(entries, wrote);
                 }
                 self.outcome = Some(Outcome::Installed { name });
-                self.awaiting_restart.extend(wrote);
             }
             Ok(entries) => {
                 // What was written is no longer pending.
@@ -2006,10 +1986,10 @@ impl App {
                     // A preparation changes what is true of the installation:
                     // the archive, the guard, the links. Nothing short of
                     // reading it again answers that.
+                    // Nothing is waiting on a restart after this, which the new
+                    // `Found` says by starting with nothing: Bitwig had to be
+                    // closed for it, and the banner says to start it.
                     self.session = Session::read(self.preferences.chosen());
-                    // Nothing is waiting on a restart after this: Bitwig had to
-                    // be closed for it, and the banner says to start it.
-                    self.awaiting_restart.clear();
                     self.outcome = Some(Outcome::Prepared { entries: in_effect, removed });
                 } else {
                     if let Session::Found(found) = &mut self.session {
@@ -2017,9 +1997,8 @@ impl App {
                         // answered with what it wrote. Reading the machine
                         // again would cost seconds to arrive at the value
                         // already in hand.
-                        found.relist(entries);
+                        found.relist(entries, wrote);
                     }
-                    self.awaiting_restart.extend(wrote);
                     self.outcome = Some(Outcome::Registered { written, removed });
                 }
             }
@@ -3235,7 +3214,7 @@ impl App {
         // Last of the four, because the design's colours put it last: an update
         // is a decision waiting and this is only work in flight with nothing to
         // decide. A row that is both has the decision to state.
-        if self.awaiting_restart.contains(&entry.uuid) {
+        if found.awaits_restart(entry.uuid) {
             return Status::PendingRestart;
         }
         Status::Registered

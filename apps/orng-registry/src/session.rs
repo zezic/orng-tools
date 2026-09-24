@@ -11,17 +11,19 @@
 //! What the user *chose* is the other thing, and it does persist - see
 //! [`Settings`]. The two meet in one place, here, and only in one direction:
 //! the preferences say where to look and which strategy is in force, and
-//! everything that follows is read off the machine. A preference is never
-//! evidence about what is there. A stored installation root that has stopped
-//! resolving falls back to discovery rather than to a stale answer, which is
-//! [`Settings::installation`]'s job and not this module's.
+//! everything that follows is read off the machine - bar one set, what this run
+//! has written since, which lives and dies with the list it is about: see
+//! [`Found::relist`]. A preference is never evidence about what is there. A
+//! stored installation root that has stopped resolving falls back to discovery
+//! rather than to a stale answer, which is [`Settings::installation`]'s job and
+//! not this module's.
 //!
 //! The shape is deliberate. Everything that only exists when an installation was
 //! found lives inside [`Session::Found`], so no screen can ask for an entry list
 //! or a build number while there is no installation to have one - the case the
 //! interface has an empty state for.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use orng_tools::{
     Condition, Destination, GuardState, Helper, InstallError, Installation, Manifest, Rights,
@@ -76,6 +78,27 @@ pub struct Found {
     /// scale. So it is resolved with the list and replaced with the list, and
     /// [`Found::relist`] is the only way to do either.
     standing: BTreeMap<Uuid, Standing>,
+    /// Entries this run wrote into the installation since it was read - the
+    /// design's `Pending restart`.
+    ///
+    /// Bitwig reads the entry list when it launches, so a row written while it
+    /// is open is a row it is not showing. Nothing here watches for Bitwig
+    /// being restarted, and nothing should: the window reads the machine rather
+    /// than polling it.
+    ///
+    /// **The one thing here that is not read off the disk**, and here all the
+    /// same, because its lifetime is exactly this list's: a statement about
+    /// rows of the list as this run has written it. Reading the installation
+    /// again - a new installation chosen, a preparation, `Check again` - starts
+    /// a new `Found` with nothing waiting, which is what it has to be: a
+    /// preparation needed Bitwig closed, and a list read afresh is one Bitwig
+    /// may already be showing. Held in the window beside the session, it had to
+    /// be cleared by hand at each of those.
+    ///
+    /// Identities rather than rows, and never filtered: the rows that ask are
+    /// registered ones, so a removal leaving one behind here is a word nobody
+    /// draws.
+    awaiting_restart: BTreeSet<Uuid>,
 }
 
 impl Found {
@@ -101,6 +124,7 @@ impl Found {
             condition,
             running,
             entries,
+            awaiting_restart: BTreeSet::new(),
         }
     }
 
@@ -109,15 +133,25 @@ impl Found {
         &self.entries
     }
 
-    /// Take a new list, and answer the disk about it again.
+    /// Take the list a run wrote, and answer the disk about it again.
     ///
     /// The one way to replace the list, because a list and what the disk says
     /// about it are one answer: a registration places documents and a removal
     /// can delete them, so a caller that set the entries alone would leave
     /// every row describing the file that used to be there.
-    pub fn relist(&mut self, entries: Manifest) {
+    ///
+    /// `wrote` is the rows the run wrote, which an open Bitwig is not showing
+    /// until it is started again - see [`Found::awaits_restart`].
+    pub fn relist(&mut self, entries: Manifest, wrote: impl IntoIterator<Item = Uuid>) {
         self.standing = standing_of(&self.to.install, &entries);
         self.entries = entries;
+        self.awaiting_restart.extend(wrote);
+    }
+
+    /// Whether this entry was written by this run since the installation was
+    /// read, and so is not yet in an open Bitwig's browser.
+    pub fn awaits_restart(&self, uuid: Uuid) -> bool {
+        self.awaiting_restart.contains(&uuid)
     }
 
     /// What was found where this entry says its document is.

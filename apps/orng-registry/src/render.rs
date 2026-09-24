@@ -782,6 +782,29 @@ fn files_held_over_the_window_that_cannot_be_registered() {
     shot_dragging("dragging-refused", &["notes.txt", "mix.wav"]);
 }
 
+/// And there is no overlay while a run is going, because a drop then is
+/// refused: one saying `Drop to stage 1 document` invited a drop the window
+/// went on to ignore without a word.
+#[test]
+fn the_drop_overlay_is_not_drawn_while_a_run_is_going() {
+    let root = fixture("dragging-mid-run");
+    let session = found(&root, Helper::Present, GuardState::Disarmed);
+    let lone = root.join("BREATH.bwmodulator");
+    std::fs::write(&lone, b"the drag does not read it").expect("could not write");
+
+    let mut harness = local_window(session);
+    let invites = |harness: &mut Harness<'_, App>| {
+        harness.input_mut().hovered_files =
+            vec![egui::HoveredFile { path: Some(lone.clone()), ..Default::default() }];
+        harness.run_steps(SETTLING_PASSES);
+        harness.query_all_by_label("Drop to stage 1 document").next().is_some()
+    };
+
+    assert!(invites(&mut harness), "the drag this test relies on drew no overlay");
+    harness.state_mut().set_applying(Applying::frozen(None, Stage::Registering, None));
+    assert!(!invites(&mut harness), "the overlay invited a drop a run in flight refuses");
+}
+
 /// The overlay says what is over the window now, not what was over it first.
 ///
 /// What it says is kept for as long as the same paths are held there, because

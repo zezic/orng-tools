@@ -3485,11 +3485,16 @@ impl App {
     }
 
     /// The drop target, while something is over the window.
+    ///
+    /// **Not while a run is in flight**, when [`App::read`] refuses the drop.
+    /// A target that listed the documents and said `Drop to stage` would be
+    /// inviting a drop the window then says nothing about, and no target at
+    /// all is the ordinary way a window says it takes nothing just now.
     fn hovering(&mut self, ui: &mut egui::Ui) {
         let paths: Vec<PathBuf> = ui.ctx().input(|input| {
             input.raw.hovered_files.iter().filter_map(|file| file.path.clone()).collect()
         });
-        if paths.is_empty() {
+        if paths.is_empty() || self.applying.is_some() {
             self.hovered = None;
             return;
         }

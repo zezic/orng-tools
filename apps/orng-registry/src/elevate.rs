@@ -414,6 +414,27 @@ impl<D> Task<D> {
 }
 
 impl<D> Job<D> {
+    /// Refuse a document that no row of this job is written for, or a second
+    /// one for the same row.
+    ///
+    /// [`Job::add`] makes neither, and [`Job::update`] would pass over the
+    /// first and keep one of the second without a word. Held on the line,
+    /// before a byte of any document is read, so every document a child takes
+    /// is one it places - and what it reads is bounded by the rows the line
+    /// carries rather than by however many lengths the line cares to state.
+    fn placeable(&self) -> Result<(), String> {
+        let mut seen = std::collections::BTreeSet::new();
+        for placing in &self.documents {
+            if self.written.get(placing.uuid).is_none() {
+                return Err(format!("the document for {} has no row to go with it", placing.uuid));
+            }
+            if !seen.insert(placing.uuid) {
+                return Err(format!("{} was sent two documents", placing.uuid));
+            }
+        }
+        Ok(())
+    }
+
     /// The same job around other documents - the one place a job is rebuilt,
     /// so every other field crosses exactly as it stood.
     fn carrying<E>(
@@ -454,7 +475,13 @@ impl Outgoing<'_> {
 
 impl Task<Attached> {
     /// The task the line describes, each document read off what follows it.
+    ///
+    /// Only once the line has been held to its own rows: see
+    /// [`Job::placeable`].
     fn attach(self, rest: &mut impl Read) -> Result<Task, String> {
+        if let Task::Apply(job) = &self {
+            job.placeable()?;
+        }
         self.carrying(|placing| {
             let Attached(length) = placing.bytes;
             within_limit(placing.uuid, length)?;
@@ -1687,6 +1714,32 @@ mod tests {
 
         let refused = Task::Apply(job).outgoing().map(|_| ());
         assert!(matches!(&refused, Err(why) if why.contains("at most")), "{refused:?}");
+    }
+
+    /// A document with no row to go with it is refused before it is read, and
+    /// so is a second document for one row.
+    ///
+    /// Either was read in full and then passed over by `Job::update`, so a line
+    /// could have the child read and hold as many documents as it cared to
+    /// state lengths for. The wire carries the line alone here: an answer about
+    /// bytes that did not arrive would mean the documents were waited for.
+    #[test]
+    fn a_document_that_is_not_placed_is_refused_before_it_is_read() {
+        let task = Task::Apply(a_job());
+        let outgoing = task.outgoing().expect("a job that sends");
+        let Task::Apply(line) = &outgoing.line else { panic!("a job left as another task") };
+        let first = line.documents[0].clone();
+
+        let mut orphan = line.clone();
+        orphan.documents[0].uuid = Uuid::new_v4();
+        let mut twice = line.clone();
+        twice.documents.push(first);
+        for (job, refused) in [(orphan, "no row"), (twice, "two documents")] {
+            let mut wire = Vec::new();
+            send(&mut wire, &Task::Apply(job)).expect("the line did not send");
+            let why = off_the_wire(&wire).expect_err("a document that is not placed was taken");
+            assert!(why.contains(refused), "refused for something other than {refused}: {why}");
+        }
     }
 
     /// A document cut short is refused rather than placed as what arrived.

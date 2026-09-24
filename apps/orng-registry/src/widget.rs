@@ -2690,13 +2690,14 @@ pub fn path_row(
         ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
             controls(ui);
             ui.with_layout(Layout::left_to_right(Align::Center), |ui| {
-                path_field(ui, palette, path.unwrap_or(NO_PATH));
+                path_field(ui, palette, path);
             });
         });
     });
 }
 
-/// What a path row says where there is nothing to say.
+/// What a path row says where there is nothing to say, in the quietest ink:
+/// `SettingsScreen.dc.html`'s `installInk`.
 const NO_PATH: &str = "-";
 
 /// A path, in a box, as a value to read rather than a box to type in.
@@ -2704,14 +2705,17 @@ const NO_PATH: &str = "-";
 /// Not [`one_line_field`]: that one is the inspector's, 27 tall and set in the
 /// proportional face because a display name is words. A path is monospaced and
 /// the design draws its box four pixels shorter.
-fn path_field(ui: &mut Ui, palette: Palette, path: &str) {
+fn path_field(ui: &mut Ui, palette: Palette, path: Option<&str>) {
+    let (path, ink) = match path {
+        Some(path) => (path, palette.ink),
+        None => (NO_PATH, palette.ink_3),
+    };
     field_frame(palette, Margin::symmetric(metric::PATH_FIELD_PAD_X as i8, 0)).show(ui, |ui| {
         ui.set_width(ui.available_width());
         ui.set_height(metric::PATH_FIELD);
         ui.horizontal_centered(|ui| {
             ui.add(
-                egui::Label::new(font::run(path, font::mono(font::MONO)).color(palette.ink))
-                    .truncate(),
+                egui::Label::new(font::run(path, font::mono(font::MONO)).color(ink)).truncate(),
             )
             .on_hover_text(path);
         });

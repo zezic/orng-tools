@@ -27,7 +27,7 @@ use std::path::Path;
 use orng_tools::{Backup, GuardState, Kind};
 
 use crate::session::{Found, Session};
-use crate::widget::{SEPARATOR, drawn_path};
+use crate::widget::{SEPARATOR, UNREAD, drawn_path};
 
 /// What Settings says about this machine, resolved when it opened.
 ///
@@ -76,10 +76,19 @@ impl Diagnostics {
                 backups: None,
                 backup: false,
             },
+            // The report keeps the lines an installation would fill, so its
+            // shape does not change with what went wrong - the designer's
+            // `settingsnoinstall`. The entry list and the placement are left
+            // out: neither depends on an installation, and this session holds
+            // neither the home nor the preferences to state them from.
             Session::NoInstallation { searched } => Diagnostics {
                 report: report(&[
-                    ("install", "none selected".to_owned()),
-                    ("searched", searched.clone()),
+                    ("install", format!("not found  {SEPARATOR}  searched {searched}")),
+                    ("version", UNREAD.to_owned()),
+                    ("archive", UNREAD.to_owned()),
+                    ("anchors", UNREAD.to_owned()),
+                    ("guard", UNREAD.to_owned()),
+                    ("backup", UNREAD.to_owned()),
                 ]),
                 install: None,
                 library: None,
@@ -353,6 +362,27 @@ mod tests {
             .map(|line| line.len() - line.trim_start_matches(char::is_alphabetic).trim_start().len())
             .collect();
         assert_eq!(at, ["placement".len() + BESIDE_A_LABEL.len(); 3]);
+    }
+
+    /// With no installation the report keeps the lines one would fill, each
+    /// saying there is nothing, and the first says where it looked -
+    /// `SettingsScreen.dc.html`'s `installed: false`.
+    #[test]
+    fn with_no_installation_the_report_keeps_its_shape() {
+        let searched = "/Applications, ~/Applications".to_owned();
+        let report = Diagnostics::of(&Session::NoInstallation { searched }).report;
+        let lines: Vec<&str> = report.lines().collect();
+        assert_eq!(
+            lines,
+            [
+                "install  not found  \u{b7}  searched /Applications, ~/Applications",
+                "version  -",
+                "archive  -",
+                "anchors  -",
+                "guard    -",
+                "backup   -",
+            ]
+        );
     }
 
     /// The gap is the design's two past the widest label, and not two past each.

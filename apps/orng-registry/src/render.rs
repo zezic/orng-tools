@@ -434,6 +434,16 @@ fn nothing_installed() {
     );
 }
 
+/// Settings on a machine with no installation, the state somebody is most
+/// likely in when they open it: every path row kept at its height with a dash
+/// in the quietest ink, and the report saying where it looked.
+#[test]
+fn settings_with_no_installation() {
+    let session = Session::NoInstallation { searched: "/Applications, ~/Applications".to_owned() };
+    let mut harness = window(session, |app, _| app.show_settings());
+    look(&mut harness, "settings-no-installation");
+}
+
 /// The note under the steps promises that nothing has changed only for as long
 /// as that is true: from Activate on, undoing it is a restore.
 #[test]

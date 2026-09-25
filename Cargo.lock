@@ -528,7 +528,7 @@ checksum = "3ded4057c258ba199e2d26386d3af3780957ecaee6c4ef4041c6b4b8b97c0b06"
 
 [[package]]
 name = "bitwig-classfile"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "krakatau2",
  "thiserror 2.0.20",
@@ -537,7 +537,7 @@ dependencies = [
 
 [[package]]
 name = "bitwig-document"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "bitwig-install",
  "thiserror 2.0.20",
@@ -546,7 +546,7 @@ dependencies = [
 
 [[package]]
 name = "bitwig-install"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "sysinfo",
  "tempfile",
@@ -555,7 +555,7 @@ dependencies = [
 
 [[package]]
 name = "bitwig-registry"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "bitwig-classfile",
  "bitwig-document",
@@ -2976,7 +2976,7 @@ dependencies = [
 
 [[package]]
 name = "orng-catalog"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "bitwig-document",
  "ed25519-dalek",
@@ -2991,7 +2991,7 @@ dependencies = [
 
 [[package]]
 name = "orng-catalog-lint"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "clap 4.6.7",
  "orng-catalog",
@@ -2999,7 +2999,7 @@ dependencies = [
 
 [[package]]
 name = "orng-registry"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "eframe",
  "egui-phosphor",
@@ -3028,7 +3028,7 @@ dependencies = [
 
 [[package]]
 name = "orng-tools"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "bitwig-classfile",
  "bitwig-document",

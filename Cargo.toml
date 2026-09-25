@@ -12,17 +12,17 @@ members = [
 ]
 
 [workspace.package]
-version = "0.1.0"
+version = "0.1.1"
 edition = "2024"
 repository = "https://github.com/zezic/orng-tools"
 
 [workspace.dependencies]
-bitwig-install = { path = "crates/bitwig-install", version = "0.1.0" }
-bitwig-document = { path = "crates/bitwig-document", version = "0.1.0" }
-bitwig-classfile = { path = "crates/bitwig-classfile", version = "0.1.0" }
-bitwig-registry = { path = "crates/bitwig-registry", version = "0.1.0" }
-orng-catalog = { path = "crates/orng-catalog", version = "0.1.0" }
-orng-tools = { path = "crates/orng-tools", version = "0.1.0" }
+bitwig-install = { path = "crates/bitwig-install", version = "0.1.1" }
+bitwig-document = { path = "crates/bitwig-document", version = "0.1.1" }
+bitwig-classfile = { path = "crates/bitwig-classfile", version = "0.1.1" }
+bitwig-registry = { path = "crates/bitwig-registry", version = "0.1.1" }
+orng-catalog = { path = "crates/orng-catalog", version = "0.1.1" }
+orng-tools = { path = "crates/orng-tools", version = "0.1.1" }
 
 krakatau2 = { git = "https://github.com/zezic/Krakatau.git", rev = "dc7840619881edd7979eb952c7752e78fd7f1f26" }
 thiserror = "2"

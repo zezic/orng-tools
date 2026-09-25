@@ -18,7 +18,7 @@ Not produced by or affiliated with Bitwig GmbH.
 
 ## Status
 
-Early: 0.1.0 is the first release. Registering, preparing an installation and restoring
+Early: 0.1.1 is the latest release. Registering, preparing an installation and restoring
 it, renaming, and installing and updating from the catalog are all built. The libraries
 and the preparation are tested against real Bitwig Studio 6.1 installations on macOS and
 Windows, and every state of the window has a test that draws it.

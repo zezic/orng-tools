@@ -1012,11 +1012,26 @@ prepared beside one that was reads as reset, and asks for the same press. *Built
 The bundle's footnote, drawn whatever the item's state. Once installed it reads
 `Edit them in Local.` *Built.*
 
+### 6. The detail panel's `Remove` asks, then removes
+
+Reproduced in the harness: the press queued a Local removal, the Catalog row went on
+reading `Installed`, the panel was unchanged, and the bar's primary turned into
+`Apply 1 change` with nothing in the view to say why. `Install` and `Update` act on
+the press; `Remove` waited for a press in the other view.
+
+**Decided: it asks, then removes**, over queueing it visibly and over removing with no
+question. The question is ours, in the update's shape (`remove-question.png`):
+`Remove <name>?`, `Projects that use this <kind> will open without it.`, the file's
+path, why - Bitwig finds it by identity, and installing it again brings it back - and
+whether the file is kept or deleted, which Settings decides. Strips for Bitwig open and
+for a file changed since it was installed, when Settings deletes it. The removal is its
+own run: Local's staged rows and queued removals stay where they were. The banner is
+`<name> is removed. Bitwig Studio drops it the next time it starts.` - just
+`<name> is removed.` where nothing was prepared - with whether the file was kept.
+*Built.*
+
 ### Still open
 
 - The bundle's `Needs re-apply` banner, `A Bitwig update reset this installation.` with
   `What changed?`, is still not drawn; the badge and the bar carry the state alone.
-- The detail panel's `Remove` queues a removal that only Local's `Apply` carries out,
-  and the Catalog view says nothing about it while it waits. Read in the code, not yet
-  reproduced on screen.
 - `Located` still says to restart Bitwig on an installation that is not prepared.

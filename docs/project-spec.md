@@ -967,7 +967,9 @@ installation an install asks nothing, as before. Whether a press prepares is dec
 it is made and carried with the fetch, so bytes that arrive later cannot turn into a
 preparation nobody confirmed. An update still writes only the entry, and on an
 installation that is not prepared its banner says the new version loads once it is.
-`design-review.md` round 5.
+The detail panel's `Remove` asks the same way an update does - projects that use the item
+open without it, and Settings decides whether its file goes - and then removes that one
+entry at once, rather than queueing it for Local's `Apply`. `design-review.md` round 5.
 
 **The catalog's own toolbar**, which is the Local one's shape with the box at its right
 end exchanged. `Add files...` and the design's factory toggle are about documents on this

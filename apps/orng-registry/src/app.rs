@@ -446,7 +446,7 @@ pub struct App {
     /// The question a press asks before it runs, while it is up: from the
     /// press until the dialog's own press or its `Cancel`. One field for both,
     /// because both hold the window still behind a scrim and only one can.
-    confirming: Option<Confirming>,
+    dialog: Option<Dialog>,
     /// What the last press came to. Stated as a banner until the user puts it
     /// away, because nothing else will stop being true and take it off screen.
     outcome: Option<Outcome>,
@@ -535,7 +535,7 @@ impl App {
             pending: Pending::default(),
             reading: None,
             applying: None,
-            confirming: None,
+            dialog: None,
             outcome: None,
             inspecting: None,
             detailing: None,
@@ -631,8 +631,8 @@ impl App {
 
     /// Whether a question is up - the plan, or an update's. Tests only.
     #[cfg(test)]
-    pub fn is_confirming(&self) -> bool {
-        self.confirming.is_some()
+    pub fn has_dialog(&self) -> bool {
+        self.dialog.is_some()
     }
 
     /// The list as this window has it, so a test can hand it back to a run that
@@ -774,7 +774,7 @@ impl App {
         // showing, because the presses that open one are on the list's bar and
         // the catalog's rows, and its scrim is what keeps every other press
         // from being made.
-        if self.confirming.is_some() {
+        if self.dialog.is_some() {
             self.confirm(ui);
         }
 
@@ -1654,7 +1654,7 @@ impl App {
             // Asked, then done - as the panel's `Update...` is. Queued like a
             // Local row's, it waited for Local's `Apply` with nothing in this
             // view saying so; the user's call on 2026-09-25.
-            widget::Detailing::Removed => self.confirming = Some(Confirming::Removal(uuid)),
+            widget::Detailing::Removed => self.dialog = Some(Dialog::Removal(uuid)),
             widget::Detailing::Nothing => {}
         }
         Some(panel)
@@ -2018,10 +2018,8 @@ impl App {
                 // leave the list under an open question: everything else that
                 // takes one is a press, and the scrim is over every press.
                 self.pending.written();
-                if let Some(Confirming::Rename(Renaming { on: Acting::Pending(_), .. })) =
-                    self.confirming
-                {
-                    self.confirming = None;
+                if let Some(Dialog::Rename(Renaming { on: Acting::Pending(_), .. })) = self.dialog {
+                    self.dialog = None;
                 }
                 let in_effect = entries.entries().len();
                 if errand.prepares() {
@@ -3597,7 +3595,7 @@ impl App {
                 let name = self.pending.staged[at].label.clone();
                 let (entries, to) = (found.entries(), &found.to);
                 let refusal = staging::refusal(&self.pending.staged, at, &name, entries, to);
-                self.confirming = Some(Confirming::Rename(Renaming { on, name, refusal }));
+                self.dialog = Some(Dialog::Rename(Renaming { on, name, refusal }));
             }
             // From the inspector or the row's menu. Opened on the name the
             // entry has, which is free by definition, so the question starts
@@ -3605,7 +3603,7 @@ impl App {
             (Acting::Registered(uuid), Action::Rename) => {
                 let entry = found.entries().get(uuid).expect("the entry a rename was offered on");
                 let name = entry.name.clone();
-                self.confirming = Some(Confirming::Rename(Renaming { on, name, refusal: None }));
+                self.dialog = Some(Dialog::Rename(Renaming { on, name, refusal: None }));
             }
             // Queued, not done. The design keeps the entry registered and
             // struck through until the apply that removes it, which is what
@@ -3684,8 +3682,8 @@ impl App {
             // yes. A retry of an update that failed is an update too: the item
             // is registered here, so trying it again replaces a document some
             // project may be loading, exactly as the first press would have.
-            Offer::Update => self.confirming = Some(Confirming::Update(on)),
-            Offer::Retry if self.updatable(on) => self.confirming = Some(Confirming::Update(on)),
+            Offer::Update => self.dialog = Some(Dialog::Update(on)),
+            Offer::Retry if self.updatable(on) => self.dialog = Some(Dialog::Update(on)),
             // A press on a row that failed is a press on the row as it will be
             // once it is tried again, so the failure goes before the attempt
             // starts. Leaving it would draw `Download failed` over a download
@@ -3698,7 +3696,7 @@ impl App {
                 match &self.session {
                     Session::Found(found) if !found.condition.is_prepared() => {
                         let facts = PlanFacts::read(found);
-                        self.confirming = Some(Confirming::Preparation(facts, Preparing::Item(on)));
+                        self.dialog = Some(Dialog::Preparation(facts, Preparing::Item(on)));
                     }
                     _ => self.install(on, Work::Entries, ctx),
                 }
@@ -4279,8 +4277,8 @@ impl App {
                 // worked out as it is drawn; what the disk has to be asked is
                 // asked now, once.
                 Work::PrepareThenEntries => {
-                    self.confirming =
-                        Some(Confirming::Preparation(PlanFacts::read(found), Preparing::Pending));
+                    self.dialog =
+                        Some(Dialog::Preparation(PlanFacts::read(found), Preparing::Pending));
                 }
                 Work::Entries => self.start(work, ui.ctx()),
             }
@@ -4289,11 +4287,11 @@ impl App {
 
     /// Whichever question is up, over the window, until it is answered.
     fn confirm(&mut self, ui: &mut egui::Ui) {
-        match self.confirming {
-            Some(Confirming::Preparation(..)) => self.confirm_preparation(ui),
-            Some(Confirming::Update(uuid)) => self.confirm_update(ui, uuid),
-            Some(Confirming::Removal(uuid)) => self.confirm_removal(ui, uuid),
-            Some(Confirming::Rename(_)) => self.confirm_rename(ui),
+        match self.dialog {
+            Some(Dialog::Preparation(..)) => self.confirm_preparation(ui),
+            Some(Dialog::Update(uuid)) => self.confirm_update(ui, uuid),
+            Some(Dialog::Removal(uuid)) => self.confirm_removal(ui, uuid),
+            Some(Dialog::Rename(_)) => self.confirm_rename(ui),
             None => {}
         }
     }
@@ -4306,8 +4304,8 @@ impl App {
     /// device or a modulator by the file's name.
     fn confirm_rename(&mut self, ui: &mut egui::Ui) {
         let working = self.is_working();
-        let (Session::Found(found), Some(Confirming::Rename(renaming))) =
-            (&self.session, &mut self.confirming)
+        let (Session::Found(found), Some(Dialog::Rename(renaming))) =
+            (&self.session, &mut self.dialog)
         else {
             return;
         };
@@ -4324,7 +4322,7 @@ impl App {
             Acting::Registered(uuid) => {
                 // The inspector closes when its entry goes, and so does this.
                 let Some(entry) = found.entries().get(uuid) else {
-                    self.confirming = None;
+                    self.dialog = None;
                     return;
                 };
                 let mut note = "Written when you press Rename. An open Bitwig shows the new name \
@@ -4389,7 +4387,7 @@ impl App {
         }
         match answer {
             Some(widget::Answer::Proceed) => {
-                let Some(Confirming::Rename(Renaming { on, name, .. })) = self.confirming.take()
+                let Some(Dialog::Rename(Renaming { on, name, .. })) = self.dialog.take()
                 else {
                     unreachable!("the rename was being asked a moment ago");
                 };
@@ -4401,7 +4399,7 @@ impl App {
                     Acting::Registered(uuid) => self.rename(uuid, &name, ui.ctx()),
                 }
             }
-            Some(widget::Answer::Cancel) => self.confirming = None,
+            Some(widget::Answer::Cancel) => self.dialog = None,
             None => {}
         }
     }
@@ -4444,8 +4442,8 @@ impl App {
 
     /// The plan, over the window, until it is answered.
     fn confirm_preparation(&mut self, ui: &mut egui::Ui) {
-        let (Session::Found(found), Some(Confirming::Preparation(facts, preparing))) =
-            (&self.session, &self.confirming)
+        let (Session::Found(found), Some(Dialog::Preparation(facts, preparing))) =
+            (&self.session, &self.dialog)
         else {
             return;
         };
@@ -4493,7 +4491,7 @@ impl App {
         );
         match answer {
             Some(widget::Answer::Proceed) => {
-                self.confirming = None;
+                self.dialog = None;
                 match preparing {
                     Preparing::Pending => self.start(Work::PrepareThenEntries, ui.ctx()),
                     Preparing::Item(uuid) => {
@@ -4501,7 +4499,7 @@ impl App {
                     }
                 }
             }
-            Some(widget::Answer::Cancel) => self.confirming = None,
+            Some(widget::Answer::Cancel) => self.dialog = None,
             None => {}
         }
     }
@@ -4520,15 +4518,15 @@ impl App {
     /// `design-review.md` round 4, A1.
     fn confirm_update(&mut self, ui: &mut egui::Ui, uuid: Uuid) {
         let Session::Found(found) = &self.session else {
-            self.confirming = None;
+            self.dialog = None;
             return;
         };
         let Some(entry) = found.entries().get(uuid) else {
-            self.confirming = None;
+            self.dialog = None;
             return;
         };
         let Some((item, installed)) = self.newer(entry) else {
-            self.confirming = None;
+            self.dialog = None;
             return;
         };
         let kind = widget::kind_tag(entry.kind());
@@ -4584,11 +4582,11 @@ impl App {
             // The press on a row that failed before is a press on the row as it
             // will be once it is tried again, as `offer` says of a retry.
             Some(widget::Answer::Proceed) => {
-                self.confirming = None;
+                self.dialog = None;
                 self.catalog.retry(uuid);
                 self.install(uuid, Work::Entries, ui.ctx());
             }
-            Some(widget::Answer::Cancel) => self.confirming = None,
+            Some(widget::Answer::Cancel) => self.dialog = None,
             None => {}
         }
     }
@@ -4601,11 +4599,11 @@ impl App {
     /// file, which Settings decides and nothing else on screen shows.
     fn confirm_removal(&mut self, ui: &mut egui::Ui, uuid: Uuid) {
         let Session::Found(found) = &self.session else {
-            self.confirming = None;
+            self.dialog = None;
             return;
         };
         let Some(entry) = found.entries().get(uuid) else {
-            self.confirming = None;
+            self.dialog = None;
             return;
         };
         let name = &entry.name;
@@ -4661,10 +4659,10 @@ impl App {
         );
         match answer {
             Some(widget::Answer::Proceed) => {
-                self.confirming = None;
+                self.dialog = None;
                 self.remove(uuid, ui.ctx());
             }
-            Some(widget::Answer::Cancel) => self.confirming = None,
+            Some(widget::Answer::Cancel) => self.dialog = None,
             None => {}
         }
     }
@@ -4864,7 +4862,7 @@ impl App {
 }
 
 /// The questions the window asks over itself, before a press runs.
-enum Confirming {
+enum Dialog {
     /// The plan, from `Prepare installation` on the bar: the one press that
     /// modifies Bitwig Studio itself - README, section 6.
     ///

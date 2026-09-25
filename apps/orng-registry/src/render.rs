@@ -1719,7 +1719,7 @@ fn the_prepare_press_confirms_with_the_plan_before_it_runs() {
 
     the_primary_action(&harness).click();
     harness.run();
-    assert!(harness.state().is_confirming(), "the press did not open the plan");
+    assert!(harness.state().has_dialog(), "the press did not open the plan");
     assert!(!harness.state().is_working(), "the press ran without confirming");
     look(&mut harness, "confirming");
 
@@ -1825,7 +1825,7 @@ fn the_prepare_press_confirms_with_the_plan_before_it_runs() {
 
     in_the_dialog(&harness, "Cancel").click();
     harness.run();
-    assert!(!harness.state().is_confirming(), "Cancel did not put the plan away");
+    assert!(!harness.state().has_dialog(), "Cancel did not put the plan away");
     assert!(!harness.state().is_working(), "Cancel started the work");
     assert!(!anywhere(&harness, "Prepare this installation"), "the plan is still drawn");
 
@@ -1833,7 +1833,7 @@ fn the_prepare_press_confirms_with_the_plan_before_it_runs() {
     harness.run();
     in_the_dialog(&harness, "Prepare installation").click();
     harness.run();
-    assert!(!harness.state().is_confirming(), "the plan stayed up after its press");
+    assert!(!harness.state().has_dialog(), "the plan stayed up after its press");
     settle(&mut harness);
     assert!(
         anywhere(&harness, "The preparation stopped, and your installation was not changed."),
@@ -2331,7 +2331,7 @@ fn bitwig_open() -> RunState {
 #[test]
 fn an_update_asks_before_it_fetches_anything() {
     let mut harness = asked_to_update("update-question", bitwig_open(), Content::AsPlaced);
-    assert!(harness.state().is_confirming(), "the row's Update did not ask");
+    assert!(harness.state().has_dialog(), "the row's Update did not ask");
     assert!(!harness.state().is_working(), "the row's Update fetched before it asked");
     for said in [
         "Update BREATH FOLLOWER to 1.2.0?",
@@ -2393,7 +2393,7 @@ fn an_update_asks_before_it_fetches_anything() {
 
     in_the_dialog(&harness, "Cancel").click();
     harness.run();
-    assert!(!harness.state().is_confirming(), "Cancel did not put the question away");
+    assert!(!harness.state().has_dialog(), "Cancel did not put the question away");
     assert!(!harness.state().is_working(), "Cancel started the update");
     assert!(anywhere(&harness, "Update available"), "Cancel changed the row");
 }
@@ -2409,7 +2409,7 @@ fn an_update_is_not_asked_while_another_fetch_is_out() {
     harness.run();
     harness.get_by_label("Update").click();
     harness.run();
-    assert!(!harness.state().is_confirming(), "an update was asked about over a fetch");
+    assert!(!harness.state().has_dialog(), "an update was asked about over a fetch");
 }
 
 /// The detail panel's `Update...` asks the same question the row does.
@@ -2418,7 +2418,7 @@ fn the_panels_update_asks_the_same_question() {
     let mut harness = detail_on("update-from-the-panel", outdated_entries(), BREATH_FOLLOWER);
     harness.get_by_label("Update...").click();
     harness.run();
-    assert!(harness.state().is_confirming(), "the panel's Update... did not ask");
+    assert!(harness.state().has_dialog(), "the panel's Update... did not ask");
     assert!(anywhere(&harness, "Update BREATH FOLLOWER to 1.2.0?"));
 }
 
@@ -2461,13 +2461,13 @@ fn the_questions_update_fetches_and_its_retry_asks_again() {
 
     the_update_press(&harness).click();
     harness.run();
-    assert!(!harness.state().is_confirming(), "the question stayed up after its press");
+    assert!(!harness.state().has_dialog(), "the question stayed up after its press");
     settle(&mut harness);
     assert!(anywhere(&harness, "Download failed"), "the question's press fetched nothing");
 
     harness.get_by_label("Retry").click();
     harness.run();
-    assert!(harness.state().is_confirming(), "retrying an update did not ask again");
+    assert!(harness.state().has_dialog(), "retrying an update did not ask again");
     assert!(!harness.state().is_working(), "retrying an update fetched before it asked");
 }
 
@@ -2795,7 +2795,7 @@ fn installing_onto_an_unprepared_installation_asks_the_plan_first() {
 
     harness.get_by_label("Install").click();
     harness.run();
-    assert!(harness.state().is_confirming(), "the install did not ask");
+    assert!(harness.state().has_dialog(), "the install did not ask");
     assert!(!harness.state().is_working(), "the install fetched before it was answered");
     for line in [
         "BREATH FOLLOWER II can only load once this installation is prepared. This is the one \
@@ -2811,7 +2811,7 @@ fn installing_onto_an_unprepared_installation_asks_the_plan_first() {
     // Declined, nothing happened: not fetched, not failed, still on offer.
     in_the_dialog(&harness, "Cancel").click();
     harness.run();
-    assert!(!harness.state().is_confirming(), "Cancel left the plan up");
+    assert!(!harness.state().has_dialog(), "Cancel left the plan up");
     assert!(!harness.state().is_working(), "Cancel started the install");
     assert!(harness.query_by_label("Download failed").is_none(), "Cancel tried the fetch");
     assert!(harness.query_by_label("Available").is_some(), "the item stopped being on offer");
@@ -2910,7 +2910,7 @@ fn removing_from_the_catalog_panel_asks_and_then_removes() {
 
     harness.get_all_by_label("Remove").last().expect("the panel offers Remove").click();
     harness.run();
-    assert!(harness.state().is_confirming(), "the removal did not ask");
+    assert!(harness.state().has_dialog(), "the removal did not ask");
     assert!(!harness.state().is_working(), "the removal ran before it was answered");
     look(&mut harness, "remove-question");
     for line in [
@@ -2923,7 +2923,7 @@ fn removing_from_the_catalog_panel_asks_and_then_removes() {
 
     in_the_dialog(&harness, "Cancel").click();
     harness.run();
-    assert!(!harness.state().is_confirming(), "Cancel left the question up");
+    assert!(!harness.state().has_dialog(), "Cancel left the question up");
     assert!(!harness.state().is_working(), "Cancel removed it");
 
     harness.get_all_by_label("Remove").last().expect("the panel offers Remove").click();
@@ -3258,7 +3258,7 @@ fn a_rows_menu_is_the_one_its_state_and_its_origin_give_it() {
         harness.run();
         assert!(harness.query_by_label(why).is_some(), "{line} does not say why it is refused");
     }
-    assert!(!harness.state().is_confirming(), "a refused line was pressed");
+    assert!(!harness.state().has_dialog(), "a refused line was pressed");
 
     // A queued removal keeps its identity and has no name to change.
     harness.get_by_label("SHAPER").hover();
@@ -3738,7 +3738,7 @@ fn a_taken_name_is_renamed_from_its_row_and_its_file_follows() {
     the_rename_press(&harness).click();
     harness.run();
 
-    assert!(!harness.state().is_confirming(), "the question outlived its answer");
+    assert!(!harness.state().has_dialog(), "the question outlived its answer");
     let row = &harness.state().staged()[0];
     let registration = row.registration().expect("the renamed row is not ready to write");
     assert_eq!(registration.name, "DISPERSER MK2");
@@ -3790,13 +3790,13 @@ fn a_rename_is_cancelled_untouched_and_pressed_with_enter() {
                     .expect("the question has no way out")
                     .click();
                 harness.run();
-                assert!(!harness.state().is_confirming());
+                assert!(!harness.state().has_dialog());
                 assert!(harness.query_by_label(NAME_TAKEN).is_some(), "Cancel renamed the row");
             }
             _ => {
                 harness.key_press(egui::Key::Enter);
                 harness.run();
-                assert!(!harness.state().is_confirming(), "Enter did not answer the question");
+                assert!(!harness.state().has_dialog(), "Enter did not answer the question");
                 assert_eq!(harness.state().staged()[0].label, "DIFFUSER");
             }
         }
@@ -3816,14 +3816,14 @@ fn a_rename_goes_with_the_row_a_run_wrote() {
     harness.run();
     harness.get_by_label("Rename...").click();
     harness.run();
-    assert!(harness.state().is_confirming());
+    assert!(harness.state().has_dialog());
 
     harness
         .state_mut()
         .set_applying(Applying::frozen(None, Stage::Registering, Some(Ok(entries()))));
     harness.run();
     assert!(harness.state().staged().is_empty(), "the report left the rows it wrote");
-    assert!(!harness.state().is_confirming(), "the question outlived its row");
+    assert!(!harness.state().has_dialog(), "the question outlived its row");
 }
 
 /// A conflict of identities keeps the fingerprint, and offers no pencil: a new
@@ -4398,7 +4398,7 @@ fn a_press_that_asks_for_rights_wears_the_shield() {
         }
         the_primary_action(&harness).click();
         harness.run();
-        assert!(harness.state().is_confirming(), "the press did not open the plan");
+        assert!(harness.state().has_dialog(), "the press did not open the plan");
         let open = shields(&harness);
         assert!(open.len() > 1, "the plan has no press of its own");
         assert!(

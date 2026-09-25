@@ -1975,27 +1975,26 @@ impl App {
                     Provenance::Catalog { version, .. } => Some(*version),
                     Provenance::Local => None,
                 };
-                let loads = if errand.prepares() {
+                self.outcome = Some(if errand.prepares() {
                     self.session = Session::read(self.preferences.chosen());
-                    Loads::OnStart
+                    Outcome::PreparedFor { name }
                 } else {
-                    match &mut self.session {
+                    let loads = match &mut self.session {
                         Session::Found(found) => {
                             found.relist(entries, wrote);
-                            match found.condition.is_prepared() {
-                                true => Loads::NextStart,
-                                false => Loads::OncePrepared,
-                            }
+                            Loads::from(&found.condition)
                         }
                         // Read again while the run was out, and found nothing
                         // this time. The write happened; what the installation
                         // will make of it is not something there is one to ask.
                         _ => Loads::NextStart,
+                    };
+                    match (errand, version) {
+                        (Errand::Update, Some(version)) => {
+                            Outcome::Updated { name, version, loads }
+                        }
+                        _ => Outcome::Installed { name, loads },
                     }
-                };
-                self.outcome = Some(match (errand, version) {
-                    (Errand::Update, Some(version)) => Outcome::Updated { name, version, loads },
-                    _ => Outcome::Installed { name, loads },
                 });
             }
             // Announced and named, as an install is. Nothing pending is
@@ -2013,10 +2012,7 @@ impl App {
                     let [name] = &gone[..] else {
                         panic!("a removal takes out one row, and this one took {}", gone.len())
                     };
-                    let loads = match found.condition.is_prepared() {
-                        true => Loads::NextStart,
-                        false => Loads::OncePrepared,
-                    };
+                    let loads = Loads::from(&found.condition);
                     self.outcome = Some(Outcome::Removed { name: name.clone(), loads, deleted });
                     found.relist(entries, wrote);
                 }
@@ -2411,6 +2407,11 @@ enum Outcome {
     /// A published item was installed. Named, because the press was about one
     /// item and a count of one is the window declining to say which.
     Installed { name: String, loads: Loads },
+    /// A published item was installed by the press that prepared the
+    /// installation for it. Its own variant rather than an install that loads
+    /// some third way: Bitwig had to be closed for the preparation, so what is
+    /// left to say is to start it, and nothing but an install gets here.
+    PreparedFor { name: String },
     /// A newer version of an installed item was put in place of the old one.
     /// Named for the reason an install is, and with the version it is now.
     Updated { name: String, version: orng_tools::ItemVersion, loads: Loads },
@@ -2464,29 +2465,35 @@ enum Outcome {
     Declined,
 }
 
-/// When Bitwig Studio will load what a catalog press wrote.
+/// When Bitwig Studio will load what a press wrote into an installation it did
+/// not prepare.
 ///
-/// Said because it differs, and a banner that promised the same thing in all
-/// three was wrong in two of them: an entry is only read by a prepared
-/// installation, and only when Bitwig starts.
+/// Said because it differs, and a banner that promised the same thing in both
+/// was wrong in one of them: an entry is only read by a prepared installation,
+/// and only when Bitwig starts.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Loads {
-    /// The press prepared the installation, which needed Bitwig closed, so
-    /// starting it is all that is left.
-    OnStart,
     /// The installation was prepared already. Bitwig reads the list when it
     /// starts, so an open one goes on without the change until it restarts.
     NextStart,
     /// The installation is not prepared, so nothing reads the entry at all
-    /// until it is - only an update gets here, since an install prepares first.
+    /// until it is. An install never gets here, since it prepares first.
     OncePrepared,
+}
+
+impl From<&orng_tools::Condition> for Loads {
+    fn from(condition: &orng_tools::Condition) -> Loads {
+        match condition.is_prepared() {
+            true => Loads::NextStart,
+            false => Loads::OncePrepared,
+        }
+    }
 }
 
 impl Loads {
     /// The sentence that says it, after the item's name.
     fn when(self) -> &'static str {
         match self {
-            Loads::OnStart => "Start Bitwig Studio to use it.",
             Loads::NextStart => "Bitwig Studio loads it the next time it starts.",
             Loads::OncePrepared => "Bitwig Studio loads it once this installation is prepared.",
         }
@@ -2508,6 +2515,7 @@ impl Outcome {
             | Outcome::Registered { .. }
             | Outcome::Located
             | Outcome::Installed { .. }
+            | Outcome::PreparedFor { .. }
             | Outcome::Updated { .. }
             | Outcome::Removed { .. }
             | Outcome::Restored
@@ -2596,7 +2604,7 @@ impl Outcome {
             // Ours, all three. The title is when it loads, because that is the
             // thing somebody looking for it in the browser needs; the body is
             // how to find it, and never how it was stored.
-            Outcome::Installed { name, loads: Loads::OnStart } => (
+            Outcome::PreparedFor { name } => (
                 Tone::Ok,
                 format!("Start Bitwig Studio. {name} is in the browser."),
                 "The installation is prepared now, so what you install next is ready the next \
@@ -2627,7 +2635,7 @@ impl Outcome {
                 Tone::Ok,
                 match loads {
                     Loads::OncePrepared => format!("{name} is removed."),
-                    Loads::NextStart | Loads::OnStart => format!(
+                    Loads::NextStart => format!(
                         "{name} is removed. Bitwig Studio drops it the next time it starts."
                     ),
                 },

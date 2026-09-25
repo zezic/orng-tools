@@ -1625,6 +1625,7 @@ impl App {
             },
             status: &status,
             document,
+            elevates: asks_for_rights(found),
         };
 
         let (panel, pressed) =

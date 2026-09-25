@@ -4532,6 +4532,9 @@ fn the_bar_says_when_applying_asks_for_rights() {
 /// catalog row's `Install` and `Update` wear the shield before their word, the Restore press
 /// wears it in place of its clock, and `Locate`, a glyph with no room for a
 /// second one, says it on hover. A press that only opens something does not.
+///
+/// The detail panel's `Install`, `Update...` and `Remove` wear it as the row's
+/// do - ours, since the designer's list left the panel out.
 #[test]
 fn the_small_presses_that_ask_for_rights_say_so() {
     use egui::accesskit::Role;
@@ -4551,19 +4554,34 @@ fn the_small_presses_that_ask_for_rights_say_so() {
         let name = |what: &str| format!("{what}-{}", if withheld { "withheld" } else { "held" });
 
         let session = rights(copying(&fixture(&name("shield-catalog")), superseded_entries()));
-        let catalog = window(session, |app, _| {
+        let mut catalog = window(session, |app, _| {
             app.set_catalog(Catalog::just_fetched(superseded()));
             app.show_view(View::Catalog);
         });
         let presses: Vec<String> = catalog.get_all_by_role(Role::Button).map(label).collect();
         let install: Vec<&String> = presses.iter().filter(|l| l.ends_with("Install")).collect();
         assert!(!install.is_empty(), "the sample offers nothing to install");
+        let rows = install.len();
         for press in install {
             assert_eq!(press.contains(crate::widget::icon::ELEVATES), asks, "{press:?}");
         }
         let replacement = presses.iter().find(|l| l.ends_with("See replacement"));
         let replacement = replacement.expect("the sample offers no replacement");
         assert!(!replacement.contains(crate::widget::icon::ELEVATES), "{replacement:?}");
+
+        catalog.state_mut().set_detailing(BREATH_FOLLOWER_II.parse().expect("a sample identity"));
+        catalog.run();
+        let presses: Vec<String> = catalog.get_all_by_role(Role::Button).map(label).collect();
+        let install: Vec<&String> = presses.iter().filter(|l| l.ends_with("Install")).collect();
+        assert!(install.len() > rows, "the panel offers no Install");
+        for press in install {
+            assert_eq!(press.contains(crate::widget::icon::ELEVATES), asks, "{press:?}");
+        }
+        catalog.state_mut().set_detailing(BREATH_FOLLOWER.parse().expect("a sample identity"));
+        catalog.run();
+        let mut presses = catalog.get_all_by_role(Role::Button).map(label);
+        let remove = presses.find(|l| l.ends_with("Remove")).expect("the panel offers no Remove");
+        assert_eq!(remove.contains(crate::widget::icon::ELEVATES), asks, "{remove:?}");
 
         // The row's `Update` wears it though it only asks, as the bar's
         // `Prepare installation` does one step before its plan - and so does
@@ -4573,6 +4591,12 @@ fn the_small_presses_that_ask_for_rights_say_so() {
         let row = updating.get_all_by_role(Role::Button).map(label).find(|l| l.ends_with("Update"));
         let row = row.expect("the sample offers no update");
         assert_eq!(row.contains(crate::widget::icon::ELEVATES), asks, "{row:?}");
+        updating.state_mut().set_detailing(BREATH_FOLLOWER.parse().expect("a sample identity"));
+        updating.run();
+        let panel =
+            updating.get_all_by_role(Role::Button).map(label).find(|l| l.ends_with("Update..."));
+        let panel = panel.expect("the panel offers no Update...");
+        assert_eq!(panel.contains(crate::widget::icon::ELEVATES), asks, "{panel:?}");
         updating.get_by_label(&row).click();
         updating.run();
         let asked = format!("Update{}", crate::widget::icon::PREPARE);

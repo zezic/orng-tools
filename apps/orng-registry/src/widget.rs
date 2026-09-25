@@ -1993,35 +1993,65 @@ fn panel_foot<T>(ui: &mut Ui, palette: Palette, contents: impl FnOnce(&mut Ui) -
 /// --err-text)` and no fill of its own. A button carries its colour in the text
 /// it was built from, so it is settled before anything can be asked about the
 /// pointer; the design's own order is the other way round.
-fn panel_remove(ui: &mut Ui, palette: Palette, consequence: &str) -> Response {
-    let font = font::plain(font::CONTROL);
-    let words = ui.painter().layout_no_wrap("Remove".to_owned(), font, palette.ink_2);
+///
+/// The shield before the word where the removal will raise Windows' consent
+/// dialog, as the small presses wear it - though the press only asks first, as
+/// the action bar's `Prepare installation` wears it one step before its plan.
+fn panel_remove(ui: &mut Ui, palette: Palette, consequence: &str, elevates: bool) -> Response {
+    // Laid out twice, measured in the resting ink and drawn in whichever the
+    // pointer asks for, so what the closure reads is taken out of `ui` first.
+    let painter = ui.painter().clone();
+    let words = |ink: Color32| {
+        let mut text = egui::text::LayoutJob::default();
+        if elevates {
+            let glyph = font::format(font::icon(painter.ctx(), font::ICON));
+            let glyph = egui::TextFormat { color: ink, valign: Align::Center, ..glyph };
+            text.append(icon::ELEVATES, 0.0, glyph);
+        }
+        let leading = if text.is_empty() { 0.0 } else { metric::SHIELD_GAP };
+        let word = font::format(font::plain(font::CONTROL));
+        let word = egui::TextFormat { color: ink, valign: Align::Center, ..word };
+        text.append("Remove", leading, word);
+        painter.layout_job(text)
+    };
+    let measured = words(palette.ink_2);
     let (rect, response) = ui.allocate_exact_size(
-        vec2(words.size().x + 2.0 * metric::PANEL_REMOVE_PAD_X, metric::PANEL_REMOVE),
+        vec2(measured.size().x + 2.0 * metric::PANEL_REMOVE_PAD_X, metric::PANEL_REMOVE),
         Sense::click(),
     );
     response.widget_info(|| {
-        egui::WidgetInfo::labeled(egui::WidgetType::Button, ui.is_enabled(), "Remove")
+        egui::WidgetInfo::labeled(egui::WidgetType::Button, ui.is_enabled(), measured.text())
     });
 
     ui.painter().rect_filled(rect, CornerRadius::same(metric::RADIUS), palette.btn);
     let ink = if response.hovered() { palette.err_text } else { palette.ink_2 };
-    ui.painter().galley(
-        rect.center() - words.size() / 2.0,
-        ui.painter().layout_no_wrap("Remove".to_owned(), font::plain(font::CONTROL), ink),
-        ink,
-    );
+    painter.galley(rect.center() - measured.size() / 2.0, words(ink), ink);
     response.on_hover_cursor(egui::CursorIcon::PointingHand).on_hover_text(consequence)
 }
 
 /// The primary at the right end of it, which is the one accent fill either panel
 /// draws.
-fn panel_primary(ui: &mut Ui, palette: Palette, label: &str) -> Response {
-    let button =
-        egui::Button::new(font::run(label, font::emphasis(ui.ctx(), font::ACTION)).color(palette.accent_ink))
-            .stroke(Stroke::NONE)
-            .corner_radius(CornerRadius::same(metric::RADIUS))
-            .min_size(vec2(0.0, metric::PANEL_PRIMARY));
+///
+/// The shield before the words where the press will raise Windows' consent
+/// dialog, as the action bar's primary wears it, and at its distance: the two
+/// are the same size of press.
+fn panel_primary(ui: &mut Ui, palette: Palette, label: &str, elevates: bool) -> Response {
+    let mut text = egui::text::LayoutJob::default();
+    if elevates {
+        let glyph = font::format(font::icon(ui.ctx(), font::ICON));
+        let glyph = egui::TextFormat { color: palette.accent_ink, valign: Align::Center, ..glyph };
+        text.append(icon::ELEVATES, 0.0, glyph);
+    }
+    let words = font::format(font::emphasis(ui.ctx(), font::ACTION));
+    text.append(
+        label,
+        if elevates { metric::TOOL_GAP } else { 0.0 },
+        egui::TextFormat { color: palette.accent_ink, valign: Align::Center, ..words },
+    );
+    let button = egui::Button::new(text)
+        .stroke(Stroke::NONE)
+        .corner_radius(CornerRadius::same(metric::RADIUS))
+        .min_size(vec2(0.0, metric::PANEL_PRIMARY));
     ui.scope(|ui| {
         ui.spacing_mut().button_padding = vec2(metric::PANEL_PRIMARY_PAD_X, 0.0);
         filled_button(ui, palette.accent, palette.accent, button)
@@ -2490,6 +2520,10 @@ pub struct Detailed<'a> {
     /// the words the row's own control uses. Only read where the item is
     /// installed, which is the only state that offers the control.
     pub document: TheDocument,
+    /// Whether a press that writes into the installation raises Windows'
+    /// consent dialog, and so wears the shield: `Remove`, and the primary where
+    /// what it offers writes.
+    pub elevates: bool,
 }
 
 /// What was pressed in the detail panel, if anything was.
@@ -2533,15 +2567,16 @@ pub fn detail(ui: &mut Ui, palette: Palette, item: &Detailed<'_>) -> Detailing {
     let primary = item.status.primary();
     if item.status.installed() || primary.is_some() {
         panel_foot(ui, palette, |ui| {
+            let consequence = crate::status::removal_consequence(item.document);
             if item.status.installed()
-                && panel_remove(ui, palette, crate::status::removal_consequence(item.document))
-                    .clicked()
+                && panel_remove(ui, palette, consequence, item.elevates).clicked()
             {
                 pressed = Detailing::Removed;
             }
             if let Some(offer) = primary {
+                let elevates = item.elevates && offer.writes();
                 ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                    if panel_primary(ui, palette, offer.in_the_panel()).clicked() {
+                    if panel_primary(ui, palette, offer.in_the_panel(), elevates).clicked() {
                         pressed = Detailing::Acted(offer);
                     }
                 });

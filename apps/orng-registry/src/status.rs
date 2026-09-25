@@ -468,9 +468,9 @@ impl Published {
     /// states that mean it is registered on this machine -
     /// `CatalogDetail.dc.html:134`.
     ///
-    /// The same queued removal a Local row offers, and not a second kind: an
-    /// installed catalog item *is* a registered entry, so removing it from here
-    /// has to be the press the other list already has.
+    /// Not the queued removal a Local row offers: the queue is carried by
+    /// Local's `Apply`, and nothing in the Catalog view says it is waiting. So
+    /// the panel asks and removes at once, as its `Update...` asks and updates.
     pub fn installed(&self) -> bool {
         matches!(self, Published::Installed | Published::UpdateAvailable | Published::Superseded)
     }

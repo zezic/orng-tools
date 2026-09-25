@@ -1651,13 +1651,10 @@ impl App {
             // reason the inspector routes its action list into `act`: what the
             // panel offers is the row's control with room for a word.
             widget::Detailing::Acted(offer) => self.offer(uuid, offer, ui.ctx()),
-            // And this is the *Local* row's removal, not a second kind of one.
-            // An installed item is a registered entry, so it is queued and
-            // struck through until the apply that takes it away - which is what
-            // queueing does wherever it is pressed from.
-            widget::Detailing::Removed => {
-                self.act(Acting::Registered(uuid), Action::Remove, ui.ctx());
-            }
+            // Asked, then done - as the panel's `Update...` is. Queued like a
+            // Local row's, it waited for Local's `Apply` with nothing in this
+            // view saying so; the user's call on 2026-09-25.
+            widget::Detailing::Removed => self.confirming = Some(Confirming::Removal(uuid)),
             widget::Detailing::Nothing => {}
         }
         Some(panel)
@@ -1991,6 +1988,29 @@ impl App {
                     (Errand::Update, Some(version)) => Outcome::Updated { name, version, loads },
                     _ => Outcome::Installed { name, loads },
                 });
+            }
+            // Announced and named, as an install is. Nothing pending is
+            // cleared: the queue is Local's and this run did not carry it.
+            Ok(entries) if errand == Errand::Removal => {
+                let deleted = self.deleting();
+                if let Session::Found(found) = &mut self.session {
+                    let gone: Vec<String> = found
+                        .entries()
+                        .entries()
+                        .iter()
+                        .filter(|entry| entries.get(entry.uuid).is_none())
+                        .map(|entry| entry.name.clone())
+                        .collect();
+                    let [name] = &gone[..] else {
+                        panic!("a removal takes out one row, and this one took {}", gone.len())
+                    };
+                    let loads = match found.condition.is_prepared() {
+                        true => Loads::NextStart,
+                        false => Loads::OncePrepared,
+                    };
+                    self.outcome = Some(Outcome::Removed { name: name.clone(), loads, deleted });
+                    found.relist(entries, wrote);
+                }
             }
             Ok(entries) => {
                 // What was written is no longer pending, and a rename asked
@@ -2326,6 +2346,9 @@ enum Outcome {
     /// A newer version of an installed item was put in place of the old one.
     /// Named for the reason an install is, and with the version it is now.
     Updated { name: String, version: orng_tools::ItemVersion, loads: Loads },
+    /// An installed item was removed from the catalog's detail panel. Named,
+    /// and with what became of its file, which Settings decided.
+    Removed { name: String, loads: Loads, deleted: TheDocument },
     /// An item's bytes were not the ones the catalog states, so nothing was
     /// installed or updated.
     ///
@@ -2418,6 +2441,7 @@ impl Outcome {
             | Outcome::Located
             | Outcome::Installed { .. }
             | Outcome::Updated { .. }
+            | Outcome::Removed { .. }
             | Outcome::Restored
             | Outcome::Declined => None,
         }
@@ -2529,6 +2553,23 @@ impl Outcome {
                     .to_owned(),
                 None,
             ),
+            // Ours. An installation nothing prepared never loaded it, so there
+            // is nothing for Bitwig to let go of.
+            Outcome::Removed { name, loads, deleted } => (
+                Tone::Ok,
+                match loads {
+                    Loads::OncePrepared => format!("{name} is removed."),
+                    Loads::NextStart | Loads::OnStart => format!(
+                        "{name} is removed. Bitwig Studio drops it the next time it starts."
+                    ),
+                },
+                match deleted {
+                    TheDocument::Kept => "Its file is kept where it was.",
+                    TheDocument::Deleted => "Its file is deleted too.",
+                }
+                .to_owned(),
+                None,
+            ),
             // Deliberately not worded as a network problem, and deliberately
             // offering no way to try again. What is being said is that the
             // catalog's review did not reach this machine intact, and the one
@@ -2580,6 +2621,16 @@ impl Outcome {
                 "It was fetched and checked against the digest the catalog states, and the \
                  write is what stopped. The entry list is written last, so it still names the \
                  version you had, and updating again finishes the job."
+                    .to_owned(),
+                Some("Copy details"),
+            ),
+            // The list is written before the file is deleted, so a stop leaves
+            // one of two things, and which is on the Local list to see.
+            Outcome::Failed { what: Errand::Removal, .. } => (
+                Tone::Err,
+                "Removing the item did not finish.".to_owned(),
+                "If it is still installed, removing it again finishes the job. If it is not, \
+                 only deleting its file was left undone."
                     .to_owned(),
                 Some("Copy details"),
             ),
@@ -4241,6 +4292,7 @@ impl App {
         match self.confirming {
             Some(Confirming::Preparation(..)) => self.confirm_preparation(ui),
             Some(Confirming::Update(uuid)) => self.confirm_update(ui, uuid),
+            Some(Confirming::Removal(uuid)) => self.confirm_removal(ui, uuid),
             Some(Confirming::Rename(_)) => self.confirm_rename(ui),
             None => {}
         }
@@ -4499,13 +4551,13 @@ impl App {
                 ),
             });
         }
-        let answer = widget::update_dialog(
+        let answer = widget::question_dialog(
             ui,
             self.palette,
-            &widget::UpdateQuestion {
+            &widget::Question {
                 title: &format!("Update {} to {version}?", item.name),
                 lead: &format!("Projects that already use this {kind} will use the new version."),
-                versions: &format!("installed {installed}  \u{2192}  catalog {version}"),
+                mono: &format!("installed {installed}  \u{2192}  catalog {version}"),
                 reasons: &[
                     format!(
                         "Bitwig finds a {kind} by identity, not by content, so an update reaches \
@@ -4539,6 +4591,104 @@ impl App {
             Some(widget::Answer::Cancel) => self.confirming = None,
             None => {}
         }
+    }
+
+    /// The removal's question, over the window, until it is answered.
+    ///
+    /// Ours, in the update's shape: the bundle draws `Remove` in the panel and
+    /// no question for it. What a removal reaches is what an update reaches -
+    /// projects already saved - so it says so, and says what happens to the
+    /// file, which Settings decides and nothing else on screen shows.
+    fn confirm_removal(&mut self, ui: &mut egui::Ui, uuid: Uuid) {
+        let Session::Found(found) = &self.session else {
+            self.confirming = None;
+            return;
+        };
+        let Some(entry) = found.entries().get(uuid) else {
+            self.confirming = None;
+            return;
+        };
+        let name = &entry.name;
+        let kind = widget::kind_tag(entry.kind());
+        let deleting = self.deleting();
+        let file = diagnostics::under_home(found, &placement::target(&found.to, entry));
+
+        let mut caveats = Vec::new();
+        if deleting == TheDocument::Deleted && found.standing(uuid).content() == Content::Rewritten
+        {
+            caveats.push(widget::Caveat {
+                tone: Tone::Warn,
+                text: "The file on disk was changed after it was installed. Deleting it loses \
+                       that change."
+                    .to_owned(),
+            });
+        }
+        if matches!(found.running, RunState::Running(_)) {
+            caveats.push(widget::Caveat {
+                tone: Tone::Neutral,
+                text: format!("Bitwig Studio is open, so it keeps {name} until you restart it."),
+            });
+        }
+        let answer = widget::question_dialog(
+            ui,
+            self.palette,
+            &widget::Question {
+                title: &format!("Remove {name}?"),
+                lead: &format!("Projects that use this {kind} will open without it."),
+                mono: &file,
+                reasons: &[
+                    format!(
+                        "Bitwig finds a {kind} by identity, so a project saved with it goes on \
+                         looking for this one. Installing it again from the catalog brings it \
+                         back under the same identity, and those projects find it again."
+                    ),
+                    match deleting {
+                        TheDocument::Kept => "The file is kept where it is.",
+                        TheDocument::Deleted => "The file is deleted too.",
+                    }
+                    .to_owned()
+                        + " Settings decides which.",
+                ],
+                caveats: &caveats,
+                answers: widget::Answers {
+                    refused: None,
+                    cancel: "Cancel",
+                    primary: "Remove",
+                    icon: icon::REMOVE,
+                    elevates: asks_for_rights(found),
+                },
+            },
+        );
+        match answer {
+            Some(widget::Answer::Proceed) => {
+                self.confirming = None;
+                self.remove(uuid, ui.ctx());
+            }
+            Some(widget::Answer::Cancel) => self.confirming = None,
+            None => {}
+        }
+    }
+
+    /// Take one entry out, now: the run the removal's question starts.
+    ///
+    /// Not through [`Pending`]: that queue is Local's, and `Apply` carries all
+    /// of it, so a removal put there would take whatever else was waiting with
+    /// it. Nothing starts on top of something already running.
+    fn remove(&mut self, uuid: Uuid, ctx: &egui::Context) {
+        if self.is_working() {
+            return;
+        }
+        let Session::Found(found) = &self.session else { return };
+        let mut job = Job::against(Work::Entries, &found.to, found.entries());
+        job.remove(uuid, self.deleting());
+        self.outcome = None;
+        self.applying = Some(Applying::start(
+            Errand::Removal,
+            found.to.clone(),
+            job,
+            found.rights.clone(),
+            ctx.clone(),
+        ));
     }
 
     /// The plan, line by line, as the design numbers it -
@@ -4737,6 +4887,10 @@ enum Confirming {
     /// versions and the caveats are read as the question is drawn, so a
     /// catalog refreshed under the scrim is asked about as it now is.
     Update(Uuid),
+    /// A removal, from an installed item's `Remove` in the catalog's detail
+    /// panel. Held as the identity for the reason an update is: what is said
+    /// is read as the question is drawn.
+    Removal(Uuid),
     /// A new name, for a dropped document from the pencil on a row whose name
     /// is taken, or for a registered entry from the inspector's `Rename...`:
     /// `RenameDialog.dc.html`.

@@ -4384,17 +4384,19 @@ pub struct Confirmation<'a> {
     pub answers: Answers<'a>,
 }
 
-/// What an update asks before it runs: `UpdateModal.dc.html`.
+/// What a catalog press asks before it runs: `UpdateModal.dc.html`, which is
+/// the update's, and the same shape for a removal from the detail panel.
 ///
 /// The other dialog that asks, and not a [`Confirmation`] with its plan left
 /// empty: it has no tag and no numbered list, and it says why in paragraphs and
 /// then in strips about this machine. Every word is the caller's, as there.
-pub struct UpdateQuestion<'a> {
+pub struct Question<'a> {
     pub title: &'a str,
     /// The one sentence that matters, before anything else.
     pub lead: &'a str,
-    /// Both versions in the monospaced face, the installed one first.
-    pub versions: &'a str,
+    /// One line in the monospaced face: for an update both versions, the
+    /// installed one first.
+    pub mono: &'a str,
     /// Why the lead is true, a paragraph each.
     pub reasons: &'a [String],
     /// What is true of this machine that the press will meet, a strip each.
@@ -4873,18 +4875,14 @@ pub fn rename_dialog(
     })
 }
 
-/// The update's question, over the window, and what it was answered with.
+/// A catalog press's question, over the window, and what it was answered with.
 ///
 /// `UpdateModal.dc.html`, mounted by the shell over its scrim as the plan is.
 /// The heading is the title alone; the body is the lead in the primary ink,
-/// both versions under it, the reasons in the tertiary ink, and a strip for
+/// the mono line under it, the reasons in the tertiary ink, and a strip for
 /// each caveat; the foot is the plan's own.
-pub fn update_dialog(
-    ui: &mut Ui,
-    palette: Palette,
-    question: &UpdateQuestion<'_>,
-) -> Option<Answer> {
-    dialog(ui, palette, "update-dialog", UPDATE_WIDTH, |ui| {
+pub fn question_dialog(ui: &mut Ui, palette: Palette, question: &Question<'_>) -> Option<Answer> {
+    dialog(ui, palette, "question-dialog", UPDATE_WIDTH, |ui| {
         dialog_band(ui, palette, Edge::Top, heading_margin(), |ui| {
             ui.add(
                 egui::Label::new(
@@ -4909,7 +4907,7 @@ pub fn update_dialog(
                         .color(palette.ink),
                 );
                 ui.add_space(BETWEEN_UPDATE_BLOCKS);
-                ui.label(font::run(question.versions, font::mono(font::MONO)).color(palette.ink_3));
+                ui.label(font::run(question.mono, font::mono(font::MONO)).color(palette.ink_3));
                 for reason in question.reasons {
                     ui.add_space(BETWEEN_UPDATE_BLOCKS);
                     ui.label(

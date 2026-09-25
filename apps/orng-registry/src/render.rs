@@ -2867,6 +2867,110 @@ fn an_install_the_plan_confirmed_prepares_before_it_registers() {
     assert!(entries.get(uuid).is_none(), "a failed preparation registered the item anyway");
 }
 
+/// The published sample index over the sample list, in the Catalog view with
+/// VOLSHAPER - installed here - open in the panel. The copy strategy, so the
+/// documents are where a removal looks for them.
+fn volshaper_open(name: &str, settings: Settings) -> (Harness<'static, App>, Destination) {
+    let index = orng_catalog::Index::parse(include_str!("../tests/published-index.json"))
+        .expect("the sample index does not parse");
+    let root = fixture(name);
+    let session = copying(&root, entries());
+    let open = VOLSHAPER.parse().expect("a sample identity");
+    let harness = window(session, |app, _| {
+        app.set_settings(settings);
+        app.set_catalog(Catalog::just_fetched(index));
+        app.show_view(View::Catalog);
+        app.set_detailing(open);
+    });
+    (harness, Destination { placement: Strategy::Copy, ..destination(&root) })
+}
+
+/// The question's own `Remove`, which carries its glyph - not the panel's,
+/// under the scrim, which the words alone would find as well - and the drawn
+/// one of the two the dialog's sizing pass leaves, as `the_update_press` takes.
+fn the_removal_press<'t>(harness: &'t Harness<'static, App>) -> egui_kittest::Node<'t> {
+    use egui_kittest::kittest::NodeT as _;
+    let press = format!("Remove{}", crate::widget::icon::REMOVE);
+    harness
+        .get_all_by_label_contains("Remove")
+        .filter(|node| node.accesskit_node().label().as_deref() == Some(press.as_str()))
+        .max_by(|a, b| a.rect().top().total_cmp(&b.rect().top()))
+        .expect("the question offers no press")
+}
+
+/// The panel's `Remove` asks, and then removes - it does not queue a removal
+/// for Local's `Apply`, which is what it did in 0.1.0, with nothing in the
+/// Catalog view saying so. Whatever is pending in Local stays pending.
+#[test]
+fn removing_from_the_catalog_panel_asks_and_then_removes() {
+    let (mut harness, to) = volshaper_open("catalog-remove", Settings::default());
+    let staged = dropped(&fixture("catalog-remove-drops"), &to, &entries());
+    harness.state_mut().set_staged(staged);
+    let volshaper: orng_tools::Uuid = VOLSHAPER.parse().expect("a sample identity");
+
+    harness.get_all_by_label("Remove").last().expect("the panel offers Remove").click();
+    harness.run();
+    assert!(harness.state().is_confirming(), "the removal did not ask");
+    assert!(!harness.state().is_working(), "the removal ran before it was answered");
+    look(&mut harness, "remove-question");
+    for line in [
+        "Remove VOLSHAPER?",
+        "Projects that use this device will open without it.",
+        "The file is kept where it is. Settings decides which.",
+    ] {
+        assert!(anywhere(&harness, line), "the question does not say: {line}");
+    }
+
+    in_the_dialog(&harness, "Cancel").click();
+    harness.run();
+    assert!(!harness.state().is_confirming(), "Cancel left the question up");
+    assert!(!harness.state().is_working(), "Cancel removed it");
+
+    harness.get_all_by_label("Remove").last().expect("the panel offers Remove").click();
+    harness.run();
+    the_removal_press(&harness).click();
+    settle(&mut harness);
+
+    assert!(
+        anywhere(&harness, "VOLSHAPER is removed. Bitwig Studio drops it the next time it starts."),
+        "the removal said nothing"
+    );
+    assert!(anywhere(&harness, "Its file is kept where it was."), "the file's fate is not said");
+    let entries = harness.state().registered().expect("the fixture is an installation");
+    assert!(entries.get(volshaper).is_none(), "the entry is still registered");
+    assert!(harness.query_by_label("Available").is_some(), "the row does not offer it again");
+
+    // The document stayed, as Settings said, and Local's own pending work was
+    // not carried off by a press in another view.
+    let entry = Manifest::parse(ROWS).expect("the sample list").get(volshaper).cloned();
+    let file = orng_tools::placement::target(&to, &entry.expect("the sample carries it"));
+    assert!(file.is_file(), "the document was deleted though Settings keeps it");
+    harness.state_mut().show_view(View::Local);
+    harness.run();
+    assert!(anywhere(&harness, "WAVESHAPER ALPHA"), "the removal took Local's staged rows");
+}
+
+/// With Settings deleting a removed entry's file, the question says so and the
+/// file goes.
+#[test]
+fn a_removal_from_the_catalog_deletes_the_file_when_settings_say_so() {
+    let settings = Settings { delete_file: true, ..Settings::default() };
+    let (mut harness, to) = volshaper_open("catalog-remove-delete", settings);
+    let volshaper: orng_tools::Uuid = VOLSHAPER.parse().expect("a sample identity");
+    let entry = harness.state().registered().and_then(|list| list.get(volshaper)).cloned();
+    let file = orng_tools::placement::target(&to, &entry.expect("the sample carries it"));
+    assert!(file.is_file(), "the fixture has no document to delete");
+
+    harness.get_all_by_label("Remove").last().expect("the panel offers Remove").click();
+    harness.run();
+    assert!(anywhere(&harness, "The file is deleted too. Settings decides which."));
+    the_removal_press(&harness).click();
+    settle(&mut harness);
+
+    assert!(anywhere(&harness, "Its file is deleted too."), "the banner kept the file");
+    assert!(!file.exists(), "the document is still there");
+}
+
 /// An update is asked by its own question and writes entries only, whatever
 /// the installation is - so on one that is not prepared, the banner says the
 /// new version loads once it is, rather than on the next start.

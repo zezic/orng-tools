@@ -108,6 +108,11 @@ pub enum Errand {
     /// leaves behind - an entry still naming the old version, rather than no
     /// entry at all.
     Update,
+    /// An installed catalog item was removed from its detail panel, after
+    /// the question there. Entries only, and one row: the queue a Local row
+    /// feeds belongs to Local's `Apply`, and a removal pressed here would
+    /// otherwise wait there with nothing in this view saying so.
+    Removal,
 }
 
 impl Errand {
@@ -120,7 +125,8 @@ impl Errand {
             | Errand::Edit
             | Errand::Rename
             | Errand::Locate
-            | Errand::Update => Work::Entries,
+            | Errand::Update
+            | Errand::Removal => Work::Entries,
         }
     }
 

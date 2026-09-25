@@ -1060,6 +1060,10 @@ it opens the removal's question first, as `Prepare installation` does before its
 *Built*, and checked on the Windows VM, where it has to be present; macOS, where
 nothing can ask, only checks that it is absent.
 
-### Still open
+### 9. `Located` says when the document loads
 
-- `Located` still says to restart Bitwig on an installation that is not prepared.
+Its body ended `Restart Bitwig Studio to load the document again.` whatever the
+installation was, and on one nobody prepared a restart loads nothing. It now ends in the
+sentence item 2 gives an install: `Bitwig Studio loads it the next time it starts.`, or
+`Bitwig Studio loads it once this installation is prepared.` The bundle has no words for
+this banner; the title and the rest of the body are ours, unchanged. *Built.*

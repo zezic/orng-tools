@@ -794,7 +794,8 @@ the item. The menu closes when the pointer leaves both the row and the menu.
 `Locate file` points a registered entry back at a document and keeps the *recorded*
 registration: the entry still exists and its words may have been edited since, so deriving
 them again from the file found would quietly undo that. It is not a re-drop. A file
-carrying another identity is refused by name.
+carrying another identity is refused by name. Its banner says when Bitwig loads the
+document as an install's does - at the next start, or once the installation is prepared.
 
 **The bar's note answers the filter once the filter has emptied the list.** The line under
 the summary normally says what the press would cost - which mode it runs in, and whether a

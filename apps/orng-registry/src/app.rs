@@ -1948,10 +1948,15 @@ impl App {
             // Nothing pending is cleared, because locating a file is not one of
             // the things the primary action does.
             Ok(entries) if errand == Errand::Locate => {
-                if let Session::Found(found) = &mut self.session {
-                    found.relist(entries, wrote);
-                }
-                self.outcome = Some(Outcome::Located);
+                let loads = match &mut self.session {
+                    Session::Found(found) => {
+                        found.relist(entries, wrote);
+                        Loads::from(&found.condition)
+                    }
+                    // What an install says to the same, and for its reason.
+                    _ => Loads::NextStart,
+                };
+                self.outcome = Some(Outcome::Located { loads });
             }
             // Announced, and it names the item: the press was about one row of
             // a list the user is looking at, and "1 entry registered" would be
@@ -2403,7 +2408,7 @@ enum Outcome {
     /// Its own variant rather than a registration of one: nothing was
     /// registered, the entry was already there, and the only thing that changed
     /// is that the file it names exists again.
-    Located,
+    Located { loads: Loads },
     /// A published item was installed. Named, because the press was about one
     /// item and a count of one is the window declining to say which.
     Installed { name: String, loads: Loads },
@@ -2513,7 +2518,7 @@ impl Outcome {
             | Outcome::Refused { why, .. } => Some(why),
             Outcome::Prepared { .. }
             | Outcome::Registered { .. }
-            | Outcome::Located
+            | Outcome::Located { .. }
             | Outcome::Installed { .. }
             | Outcome::PreparedFor { .. }
             | Outcome::Updated { .. }
@@ -2548,12 +2553,16 @@ impl Outcome {
                 ),
                 None,
             ),
-            Outcome::Located => (
+            // When it loads is the install's sentence: an entry nothing prepared
+            // is read by nothing, and restarting Bitwig would not change that.
+            Outcome::Located { loads } => (
                 Tone::Ok,
                 "The document is back where the entry says it is.".to_owned(),
-                "The entry itself was never touched, so its description and search keywords \
-                 are the ones you had. Restart Bitwig Studio to load the document again."
-                    .to_owned(),
+                format!(
+                    "The entry itself was never touched, so its description and search keywords \
+                     are the ones you had. {}",
+                    loads.when()
+                ),
                 None,
             ),
             // What failed is the headline and the promise is the line under it,
@@ -3933,8 +3942,17 @@ impl App {
         else {
             return;
         };
+        self.relocate_to(uuid, &chosen, ctx);
+    }
 
-        let document = match this_entrys_document(entry, &chosen) {
+    /// What [`App::relocate`] does with the file once one is chosen.
+    ///
+    /// Apart from the choosing so that a test can hand it a file: the picker is
+    /// the operating system's, and no harness reaches it.
+    pub fn relocate_to(&mut self, uuid: Uuid, chosen: &Path, ctx: &egui::Context) {
+        let Session::Found(found) = &self.session else { return };
+        let entry = found.entries().get(uuid).expect("the entry a file was chosen for");
+        let document = match this_entrys_document(entry, chosen) {
             Ok(document) => document,
             // The same banner a failed run gets, because what the user is
             // entitled to know is the same either way: nothing was changed, and

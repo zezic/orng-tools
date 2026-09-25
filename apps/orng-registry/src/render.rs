@@ -1490,6 +1490,61 @@ fn the_inspector_on_a_missing_file_offers_to_locate_it_and_not_to_reveal_it() {
     assert!(harness.query_by_label(&remove).is_some(), "a broken entry could not be removed");
 }
 
+/// The sample list's modulator, which [`damaged`] deletes.
+const SHAPER: &str = "1f2e3d4c-5b6a-4798-8899-aabbccddeeff";
+
+/// A located file is said with when Bitwig loads it, as an install is: the
+/// banner said to restart Bitwig on an installation nothing prepared, where
+/// the entry is read by nothing and a restart changes nothing.
+///
+/// Through a real run on a chosen file, because the banner is the end of one.
+/// Only the operating system's picker is stepped over.
+#[test]
+fn a_located_file_says_when_bitwig_loads_it() {
+    let shaper: orng_tools::Uuid = SHAPER.parse().expect("a sample identity");
+    for (name, helper, guard, when) in [
+        (
+            "located-prepared",
+            Helper::Present,
+            GuardState::Disarmed,
+            "Bitwig Studio loads it the next time it starts.",
+        ),
+        (
+            "located-unprepared",
+            Helper::Absent,
+            GuardState::Armed,
+            "Bitwig Studio loads it once this installation is prepared.",
+        ),
+    ] {
+        let root = fixture(name);
+        let to = Destination { placement: Strategy::Copy, ..destination(&root) };
+        let entries = placed(&to, entries());
+        let entry = entries.get(shaper).expect("the sample list carries it");
+        // Moved rather than deleted, which is the usual way a file goes
+        // missing, and leaves the picker something to have found.
+        let chosen = root.join("SHAPER.bwmodulator");
+        std::fs::rename(entry.library_path.resolve(&to.install), &chosen)
+            .expect("the fixture's modulator could not be moved");
+        let condition = Condition { build: build(), helper, guard };
+        let session = Session::Found(Box::new(Found::new(to, condition, RunState::Clear, entries)));
+        let mut harness = local_window(session);
+        let missing = |harness: &Harness<'_, App>| harness.query_by_label("Missing file").is_some();
+        assert!(missing(&harness), "{name}: the fixture lost nothing");
+
+        let ctx = harness.ctx.clone();
+        harness.state_mut().relocate_to(shaper, &chosen, &ctx);
+        settle(&mut harness);
+
+        assert!(!missing(&harness), "{name}: the file is still missing");
+        assert!(anywhere(&harness, "The document is back where the entry says it is."), "{name}");
+        let body = format!(
+            "The entry itself was never touched, so its description and search keywords are the \
+             ones you had. {when}"
+        );
+        assert!(anywhere(&harness, &body), "{name}: the banner does not say: {when}");
+    }
+}
+
 /// An entry the catalog has moved on from says so, and one it has not does not.
 ///
 /// Both halves matter. A window that has never fetched the catalog knows

@@ -14,6 +14,11 @@
 
 //! ORNG Registry: register your own content with Bitwig Studio.
 
+// A window, not a console program: without this Windows opens a console beside
+// it when started from Explorer. Debug builds keep theirs, which is where
+// `eprintln!` is read, and so do tests, whose output is the point.
+#![cfg_attr(not(any(debug_assertions, test)), windows_subsystem = "windows")]
+
 pub mod about;
 pub mod app;
 pub mod catalog;

@@ -23,7 +23,7 @@ use crate::settings::{Appearance, Settings};
 use crate::catalog::{Catalog, Install};
 use crate::staging::{self, Staged};
 use crate::theme::metric;
-use crate::work::{Applying, Stage, State};
+use crate::work::{Applying, Stage, State, Work};
 
 /// The window's own size, so what is rendered is what would be seen - and the
 /// size the design is drawn at, so a picture can be held against the bundle.
@@ -1967,19 +1967,17 @@ fn bar_says(harness: &Harness<'static, App>, what: &str) -> bool {
 fn the_action_bar_counts_the_catalog_and_not_the_local_pending_work() {
     use egui::accesskit::Role;
 
-    let separator = crate::widget::SEPARATOR;
     let mut harness = catalog_listing("catalog-summary", superseded_entries());
 
-    // `:433`. Two items published, and the note is what the press costs - the
-    // Local bar's own note in the words the catalog states it in.
+    // `:433`. Two items published, and the note is when an install is there -
+    // the user's words for what the design said in the name of a mode.
     assert!(bar_says(&harness, "2 items"), "the catalog bar does not count the catalog");
     assert!(
         !anywhere(&harness, "Nothing pending"),
         "the catalog bar is still reporting the Local list's pending work"
     );
-    let cost = format!("Installing is Update entries work {separator} no backup, \
-                        Bitwig may stay open");
-    assert!(anywhere(&harness, &cost), "the bar does not say what a press would cost");
+    let loads = "Installed items load the next time Bitwig Studio starts";
+    assert!(anywhere(&harness, loads), "the bar does not say when an install is there");
 
     // The filter names what is being counted, so it names the word. One of the
     // two is registered here and neither has moved on.
@@ -2059,10 +2057,13 @@ fn a_catalog_that_did_not_arrive_and_an_install_that_was_refused_replace_the_cou
 
     let mut refused = catalog_listing("catalog-bar-refused", superseded_entries());
     let item = superseded_replacement();
-    refused.state_mut().set_installing(Install::finished(
-        item,
-        Err(crate::catalog::Refused::Download("the connection closed".to_owned())),
-    ));
+    refused.state_mut().set_installing(
+        Install::finished(
+            item,
+            Err(crate::catalog::Refused::Download("the connection closed".to_owned())),
+        ),
+        Work::Entries,
+    );
     settle(&mut refused);
     assert!(anywhere(&refused, "Install refused"));
     assert!(
@@ -2212,12 +2213,17 @@ fn installing_registers_the_item_at_the_version_and_review_the_index_names() {
         item.uuid,
         "BREATH FOLLOWER II",
     );
-    harness.state_mut().set_installing(Install::finished(item, Ok(document)));
+    harness.state_mut().set_installing(Install::finished(item, Ok(document)), Work::Entries);
     settle(&mut harness);
 
     // The banner names the item, because the press was about one row.
     assert!(
-        harness.query_all_by_label_contains("BREATH FOLLOWER II is registered").next().is_some(),
+        harness
+            .query_all_by_label_contains(
+                "BREATH FOLLOWER II is installed. Bitwig Studio loads it the next time it starts.",
+            )
+            .next()
+            .is_some(),
         "installing said nothing, or said it about the wrong item"
     );
     // And the row it was pressed on now reads as something this machine has.
@@ -2399,7 +2405,7 @@ fn an_update_is_not_asked_while_another_fetch_is_out() {
     let session = behind(&fixture("update-while-fetching"), RunState::Clear, Content::AsPlaced);
     let mut harness = catalog_over(session, superseded());
     let other = superseded().items.pop().expect("the sample index has a second item");
-    harness.state_mut().set_installing(Install::fetching(other));
+    harness.state_mut().set_installing(Install::fetching(other), Work::Entries);
     harness.run();
     harness.get_by_label("Update").click();
     harness.run();
@@ -2483,11 +2489,14 @@ fn an_update_replaces_the_document_and_keeps_the_entrys_words_and_place() {
     item.path = "content/mono-lab/breath-follower/BREATHER.bwmodulator".to_owned();
     let document = orng_tools::testing::document(item.kind.into(), item.uuid, "BREATHER");
     let bytes = document.bytes().to_vec();
-    harness.state_mut().set_installing(Install::finished(item, Ok(document)));
+    harness.state_mut().set_installing(Install::finished(item, Ok(document)), Work::Entries);
     settle(&mut harness);
 
     assert!(
-        anywhere(&harness, "BREATHER is updated to 1.2.0. Restart Bitwig Studio to load it."),
+        anywhere(
+            &harness,
+            "BREATHER is updated to 1.2.0. Bitwig Studio loads it the next time it starts."
+        ),
         "the update said nothing, or said it about the wrong version"
     );
     assert!(!anywhere(&harness, "Update available"), "the row still offers the update");
@@ -2534,7 +2543,7 @@ fn an_update_of_another_kind_is_refused() {
     item.path = "content/mono-lab/breath-follower/BREATH FOLLOWER.bwdevice".to_owned();
     let document =
         orng_tools::testing::document(orng_tools::Kind::Device, item.uuid, "BREATH FOLLOWER");
-    harness.state_mut().set_installing(Install::finished(item, Ok(document)));
+    harness.state_mut().set_installing(Install::finished(item, Ok(document)), Work::Entries);
     // One frame, which is the one that takes the fetch: refused there, no run
     // is started. Without the refusal a run is, and dies on the entry list's
     // own assertion that a row is the kind of its document - the same banner,
@@ -2575,7 +2584,7 @@ fn a_fetch_that_answers_during_a_run_waits_for_it() {
     };
 
     harness.state_mut().set_applying(Applying::frozen(None, Stage::Registering, None));
-    harness.state_mut().set_installing(Install::finished(item, Ok(document)));
+    harness.state_mut().set_installing(Install::finished(item, Ok(document)), Work::Entries);
     // Nothing to see of the fetch while it waits: the bar says what the run is
     // doing. What shows it waited is that nothing was written.
     harness.run();
@@ -2630,7 +2639,8 @@ fn both_ways_an_install_can_fail() {
     let mut harness = catalog_listing("catalog-failures", entries());
     let index = superseded();
     let refuse = |harness: &mut Harness<'static, App>, at: usize, why| {
-        harness.state_mut().set_installing(Install::finished(index.items[at].clone(), Err(why)));
+        let fetch = Install::finished(index.items[at].clone(), Err(why));
+        harness.state_mut().set_installing(fetch, Work::Entries);
         settle(harness);
     };
 
@@ -2675,10 +2685,13 @@ fn an_item_that_does_not_verify_is_refused_and_offers_no_way_to_try_again() {
     let item = superseded_replacement();
     let name = item.name.clone();
 
-    harness.state_mut().set_installing(Install::finished(
-        item,
-        Err(crate::catalog::Refused::Verification("what arrived is something else".to_owned())),
-    ));
+    harness.state_mut().set_installing(
+        Install::finished(
+            item,
+            Err(crate::catalog::Refused::Verification("what arrived is something else".to_owned())),
+        ),
+        Work::Entries,
+    );
     settle(&mut harness);
 
     assert!(harness.query_by_label("Verification failed").is_some(), "the row says nothing");
@@ -2737,6 +2750,151 @@ fn an_index_that_names_no_commit_has_nowhere_to_fetch_from_and_says_so() {
     assert!(
         harness.query_by_label("Verification failed").is_none(),
         "nothing was fetched and the row accused the catalog of serving the wrong bytes"
+    );
+}
+
+/// The catalog's list on an installation nothing has prepared, with the copy
+/// strategy so that what a run writes lands.
+///
+/// The index names no commit, so a press that reaches the fetch comes back as
+/// `Download failed` without a socket being opened - which is what lets a test
+/// tell a press that asked from one that fetched.
+fn unprepared_catalog(name: &str, running: RunState) -> Harness<'static, App> {
+    let root = fixture(name);
+    let to = Destination { placement: Strategy::Copy, ..destination(&root) };
+    let entries = placed(&to, superseded_entries());
+    let session = Session::Found(Box::new(Found::new(
+        to,
+        Condition { build: build(), helper: Helper::Absent, guard: GuardState::Armed },
+        running,
+        entries,
+    )));
+    window(session, |app, _| {
+        let mut index = superseded();
+        index.revision = None;
+        app.set_catalog(Catalog::just_fetched(index));
+        app.show_view(View::Catalog);
+    })
+}
+
+/// An entry is a row nothing reads until the installation is prepared, so an
+/// `Install` there is a preparation and is asked as one: the plan comes up
+/// naming the item and saying why, and nothing is fetched until it is
+/// answered.
+///
+/// This is the press that, before, registered the item into an installation
+/// that would never load it and said to restart Bitwig.
+#[test]
+fn installing_onto_an_unprepared_installation_asks_the_plan_first() {
+    let mut harness = unprepared_catalog("install-unprepared", RunState::Clear);
+    // The bar says so before anything is pressed, which is also why its
+    // primary is `Prepare installation` in a view about installing.
+    let separator = crate::widget::SEPARATOR;
+    let note = format!("Not prepared yet {separator} installing prepares it first");
+    assert!(anywhere(&harness, &note), "the bar does not say the installation is not prepared");
+
+    harness.get_by_label("Install").click();
+    harness.run();
+    assert!(harness.state().is_confirming(), "the install did not ask");
+    assert!(!harness.state().is_working(), "the install fetched before it was answered");
+    for line in [
+        "BREATH FOLLOWER II can only load once this installation is prepared. This is the one \
+         operation that modifies Bitwig Studio itself.",
+        "1 entry registered: BREATH FOLLOWER II.",
+        "5 entries already registered keep their UUIDs; their description bundles are \
+         written again.",
+        "Copied into the installation: 1 to modulators/My Modulators.",
+    ] {
+        assert!(anywhere(&harness, line), "the plan does not say: {line}");
+    }
+
+    // Declined, nothing happened: not fetched, not failed, still on offer.
+    in_the_dialog(&harness, "Cancel").click();
+    harness.run();
+    assert!(!harness.state().is_confirming(), "Cancel left the plan up");
+    assert!(!harness.state().is_working(), "Cancel started the install");
+    assert!(harness.query_by_label("Download failed").is_none(), "Cancel tried the fetch");
+    assert!(harness.query_by_label("Available").is_some(), "the item stopped being on offer");
+
+    // Answered, the fetch starts - and comes back at once, having nowhere to
+    // fetch from, which is the proof it was asked for.
+    harness.get_by_label("Install").click();
+    harness.run();
+    in_the_dialog(&harness, "Prepare installation").click();
+    settle(&mut harness);
+    assert!(
+        harness.query_by_label("Download failed").is_some(),
+        "the plan's press did not start the install"
+    );
+}
+
+/// A running Bitwig holds the preparation back, and a row's `Install` is too
+/// small to say so: the plan is where it is refused, in the words the bar uses.
+#[test]
+fn an_install_that_has_to_prepare_waits_for_bitwig_to_close() {
+    use egui_kittest::kittest::NodeT as _;
+    let running = RunState::Running(vec!["BitwigStudio".to_owned()]);
+    let mut harness = unprepared_catalog("install-unprepared-running", running);
+
+    harness.get_by_label("Install").click();
+    harness.run();
+    let press = in_the_dialog(&harness, "Prepare installation");
+    assert!(press.accesskit_node().is_disabled(), "the plan offered to prepare under Bitwig");
+    press.click();
+    harness.run();
+    assert!(!harness.state().is_working(), "a refused press started the install");
+}
+
+/// What the plan confirmed is what runs. The fixture's archive is not one a
+/// preparation can patch, so the run stops at the plan - and says so as a
+/// preparation, which an entries-only write of the same bytes would not: that
+/// one registers them, as the prepared fixture's install above shows.
+#[test]
+fn an_install_the_plan_confirmed_prepares_before_it_registers() {
+    let mut harness = unprepared_catalog("install-prepares", RunState::Clear);
+    let item = superseded_replacement();
+    let uuid = item.uuid;
+    let document = orng_tools::testing::document(item.kind.into(), uuid, "BREATH FOLLOWER II");
+    let fetch = Install::finished(item, Ok(document));
+    harness.state_mut().set_installing(fetch, Work::PrepareThenEntries);
+    settle(&mut harness);
+
+    assert!(
+        anywhere(&harness, "The preparation stopped, and your installation was not changed."),
+        "the install did not run as a preparation"
+    );
+    let entries = harness.state().registered().expect("the fixture is an installation");
+    assert!(entries.get(uuid).is_none(), "a failed preparation registered the item anyway");
+}
+
+/// An update is asked by its own question and writes entries only, whatever
+/// the installation is - so on one that is not prepared, the banner says the
+/// new version loads once it is, rather than on the next start.
+#[test]
+fn an_update_on_an_unprepared_installation_says_when_it_loads() {
+    let root = fixture("updating-unprepared");
+    let to = Destination { placement: Strategy::Copy, ..destination(&root) };
+    let entries = placed(&to, outdated_entries());
+    let session = Session::Found(Box::new(Found::new(
+        to,
+        Condition { build: build(), helper: Helper::Absent, guard: GuardState::Armed },
+        RunState::Clear,
+        entries,
+    )));
+    let mut harness = catalog_over(session, superseded());
+
+    let item = superseded().items.remove(0);
+    let document = orng_tools::testing::document(item.kind.into(), item.uuid, &item.name);
+    harness.state_mut().set_installing(Install::finished(item, Ok(document)), Work::Entries);
+    settle(&mut harness);
+
+    assert!(
+        anywhere(
+            &harness,
+            "BREATH FOLLOWER is updated to 1.2.0. Bitwig Studio loads it once this installation \
+             is prepared."
+        ),
+        "the update promised a restart would load it"
     );
 }
 
@@ -3941,7 +4099,7 @@ fn the_waiting_foot_names_the_work() {
     let item = superseded().items.into_iter().next().expect("the sample index has an item");
     let mut harness = window(session, |app, _| {
         app.set_inspecting(VOLSHAPER.parse().expect("an identity"));
-        app.set_installing(Install::fetching(item));
+        app.set_installing(Install::fetching(item), Work::Entries);
     });
     harness.run();
     add_a_keyword(&mut harness, "tremolo");
@@ -3966,7 +4124,7 @@ fn the_primary_action_waits_for_an_install_fetch() {
     let item = superseded().items.into_iter().next().expect("the sample index has an item");
     let harness = window(session, |app, _| {
         app.set_staged(staged);
-        app.set_installing(Install::fetching(item));
+        app.set_installing(Install::fetching(item), Work::Entries);
     });
 
     let press = harness
@@ -3989,7 +4147,7 @@ fn the_row_being_fetched_says_so() {
         .expect("the sample index carries it");
     assert!(harness.query_by_label("Install").is_some(), "the sample offers nothing to install");
 
-    harness.state_mut().set_installing(Install::fetching(item));
+    harness.state_mut().set_installing(Install::fetching(item), Work::Entries);
     harness.run();
     assert!(harness.query_by_label("Fetching...").is_some(), "the row did not say it is fetching");
     assert!(harness.query_by_label("Install").is_none(), "the row offered to install it again");
@@ -4784,8 +4942,7 @@ fn the_bar_says_cached_only_when_a_refresh_did_not_replace_what_is_on_screen() {
     // The note it displaces, which is what a window that had just checked would
     // be saying instead.
     assert!(
-        !anywhere(&offline, &format!("Installing is Update entries work {separator} no backup, \
-                                      Bitwig may stay open")),
+        !anywhere(&offline, "Installed items load the next time Bitwig Studio starts"),
         "the offline note did not displace the cost of a press"
     );
     // The rows are still there, and still press. A degraded state, not an
@@ -4815,10 +4972,13 @@ fn the_bar_says_cached_only_when_a_refresh_did_not_replace_what_is_on_screen() {
 fn a_refresh_that_changes_the_catalog_takes_the_refusals_with_it() {
     let mut harness = catalog_listing("catalog-refresh-clears", superseded_entries());
     let item = superseded_replacement();
-    harness.state_mut().set_installing(Install::finished(
-        item,
-        Err(crate::catalog::Refused::Download("the connection closed".to_owned())),
-    ));
+    harness.state_mut().set_installing(
+        Install::finished(
+            item,
+            Err(crate::catalog::Refused::Download("the connection closed".to_owned())),
+        ),
+        Work::Entries,
+    );
     settle(&mut harness);
     assert!(anywhere(&harness, "Install refused"), "the fixture reaches no refusal");
 

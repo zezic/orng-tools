@@ -91,11 +91,15 @@ pub enum Errand {
     /// A published item was fetched, proved against the digest the index states,
     /// and registered.
     ///
-    /// Entries only, and the design is explicit about why: an item is 20 to 30
-    /// kilobytes and a new identity cannot affect a project that already exists,
-    /// so installing writes files and asks nothing. Preparing the installation
-    /// is the other press, and the action bar goes on offering it.
-    Install,
+    /// On a prepared installation this is entries only, and the design is
+    /// explicit about why: an item is 20 to 30 kilobytes and a new identity
+    /// cannot affect a project that already exists, so installing writes files
+    /// and asks nothing. On one that is not prepared, an entry is a row nothing
+    /// reads, so the install prepares it first - after the plan has been
+    /// confirmed, as every preparation is. Which of the two is carried, because
+    /// it was decided when the press was made and confirmed, not when the
+    /// bytes arrived.
+    Install(Work),
     /// A newer version of a published item already registered here was fetched,
     /// proved, and put in place of the one registered.
     ///
@@ -111,11 +115,11 @@ impl Errand {
     pub fn work(self) -> Work {
         match self {
             Errand::Preparation => Work::PrepareThenEntries,
+            Errand::Install(work) => work,
             Errand::Registration
             | Errand::Edit
             | Errand::Rename
             | Errand::Locate
-            | Errand::Install
             | Errand::Update => Work::Entries,
         }
     }
@@ -123,7 +127,7 @@ impl Errand {
     /// Whether it touched the installation, which is what decides whether the
     /// machine has to be read again afterwards.
     pub fn prepares(self) -> bool {
-        self == Errand::Preparation
+        self.work() == Work::PrepareThenEntries
     }
 }
 

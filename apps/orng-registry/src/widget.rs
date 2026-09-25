@@ -2608,7 +2608,13 @@ pub fn detail(ui: &mut Ui, palette: Palette, item: &Detailed<'_>) -> Detailing {
             }
         });
         ui.add_space(metric::UNDER_A_FIELD_LABEL);
-        footnote(ui, palette, "Editable in Local once installed.");
+        // The design's words, for an item not yet here. Once it is, "once
+        // installed" describes a step already taken - ours, 2026-09-25.
+        let editable = match item.status.installed() {
+            true => "Edit them in Local.",
+            false => "Editable in Local once installed.",
+        };
+        footnote(ui, palette, editable);
 
         rule(ui, palette, metric::BETWEEN_DETAIL_GROUPS);
 

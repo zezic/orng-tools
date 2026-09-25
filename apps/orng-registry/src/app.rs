@@ -477,7 +477,7 @@ pub struct App {
     /// as it was, and the design says so by holding that failure on the row
     /// rather than stopping the window. The write that follows is an ordinary
     /// [`Applying`], the same one a drop goes through.
-    installing: Option<Install>,
+    installing: Option<Installing>,
     /// What the drop overlay says about the files over the window, while there
     /// are any.
     ///
@@ -661,8 +661,8 @@ impl App {
     /// Hand the window a fetch that has already answered, so that what it does
     /// with the answer can be driven without a network. Tests only.
     #[cfg(test)]
-    pub fn set_installing(&mut self, installing: Install) {
-        self.installing = Some(installing);
+    pub fn set_installing(&mut self, fetch: Install, work: Work) {
+        self.installing = Some(Installing { fetch, work });
     }
 
     /// Whether either worker is still out there.
@@ -1732,7 +1732,7 @@ impl App {
         if let Some(applying) = &self.applying {
             return match applying.errand {
                 Errand::Edit | Errand::Rename if applying.writing.contains(&open.uuid) => None,
-                Errand::Preparation => Some(Held::Waiting("the preparation")),
+                errand if errand.prepares() => Some(Held::Waiting("the preparation")),
                 _ => Some(Held::Waiting("the registration")),
             };
         }
@@ -1897,9 +1897,9 @@ impl App {
         // Before anything is drawn, because the two halves of an install are
         // one press, and waiting a frame between them would draw a row that had
         // stopped downloading and had not begun registering.
-        let answered = self.installing.as_mut().is_some_and(|fetching| {
-            fetching.poll();
-            !fetching.is_running()
+        let answered = self.installing.as_mut().is_some_and(|installing| {
+            installing.fetch.poll();
+            !installing.fetch.is_running()
         });
         if answered {
             let finished = self.installing.take().expect("it answered a moment ago");
@@ -1956,21 +1956,41 @@ impl App {
             //
             // An update the same, and it names the version it is now: the
             // question named both, and this is the one that is true.
-            Ok(entries) if matches!(errand, Errand::Install | Errand::Update) => {
+            //
+            // An install that prepared changed the installation, so it reads
+            // the machine again, as a preparation does.
+            Ok(entries) if matches!(errand, Errand::Install(_) | Errand::Update) => {
                 let [uuid] = wrote[..] else {
                     panic!("an install writes exactly one row, and this one wrote {}", wrote.len())
                 };
                 let row = entries.get(uuid).expect("the row this run just wrote");
-                let outcome = match (&row.provenance, errand) {
-                    (Provenance::Catalog { version, .. }, Errand::Update) => {
-                        Outcome::Updated { name: row.name.clone(), version: *version }
-                    }
-                    _ => Outcome::Installed { name: row.name.clone() },
+                let name = row.name.clone();
+                let version = match &row.provenance {
+                    Provenance::Catalog { version, .. } => Some(*version),
+                    Provenance::Local => None,
                 };
-                if let Session::Found(found) = &mut self.session {
-                    found.relist(entries, wrote);
-                }
-                self.outcome = Some(outcome);
+                let loads = if errand.prepares() {
+                    self.session = Session::read(self.preferences.chosen());
+                    Loads::OnStart
+                } else {
+                    match &mut self.session {
+                        Session::Found(found) => {
+                            found.relist(entries, wrote);
+                            match found.condition.is_prepared() {
+                                true => Loads::NextStart,
+                                false => Loads::OncePrepared,
+                            }
+                        }
+                        // Read again while the run was out, and found nothing
+                        // this time. The write happened; what the installation
+                        // will make of it is not something there is one to ask.
+                        _ => Loads::NextStart,
+                    }
+                };
+                self.outcome = Some(match (errand, version) {
+                    (Errand::Update, Some(version)) => Outcome::Updated { name, version, loads },
+                    _ => Outcome::Installed { name, loads },
+                });
             }
             Ok(entries) => {
                 // What was written is no longer pending, and a rename asked
@@ -2302,10 +2322,10 @@ enum Outcome {
     Located,
     /// A published item was installed. Named, because the press was about one
     /// item and a count of one is the window declining to say which.
-    Installed { name: String },
+    Installed { name: String, loads: Loads },
     /// A newer version of an installed item was put in place of the old one.
     /// Named for the reason an install is, and with the version it is now.
-    Updated { name: String, version: orng_tools::ItemVersion },
+    Updated { name: String, version: orng_tools::ItemVersion, loads: Loads },
     /// An item's bytes were not the ones the catalog states, so nothing was
     /// installed or updated.
     ///
@@ -2351,6 +2371,35 @@ enum Outcome {
     /// to say - the user was asked and said no, and has already been told what
     /// they did.
     Declined,
+}
+
+/// When Bitwig Studio will load what a catalog press wrote.
+///
+/// Said because it differs, and a banner that promised the same thing in all
+/// three was wrong in two of them: an entry is only read by a prepared
+/// installation, and only when Bitwig starts.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Loads {
+    /// The press prepared the installation, which needed Bitwig closed, so
+    /// starting it is all that is left.
+    OnStart,
+    /// The installation was prepared already. Bitwig reads the list when it
+    /// starts, so an open one goes on without the change until it restarts.
+    NextStart,
+    /// The installation is not prepared, so nothing reads the entry at all
+    /// until it is - only an update gets here, since an install prepares first.
+    OncePrepared,
+}
+
+impl Loads {
+    /// The sentence that says it, after the item's name.
+    fn when(self) -> &'static str {
+        match self {
+            Loads::OnStart => "Start Bitwig Studio to use it.",
+            Loads::NextStart => "Bitwig Studio loads it the next time it starts.",
+            Loads::OncePrepared => "Bitwig Studio loads it once this installation is prepared.",
+        }
+    }
 }
 
 impl Outcome {
@@ -2411,7 +2460,11 @@ impl Outcome {
             // which is the design's order. The worker's own words are behind
             // the control, because they are for a bug report and not for the
             // person reading this.
-            Outcome::Failed { what: Errand::Preparation, .. } => (
+            // An install that was preparing the installation stopped the same
+            // way, and promises the same: the preparation goes first.
+            Outcome::Failed {
+                what: Errand::Preparation | Errand::Install(Work::PrepareThenEntries), ..
+            } => (
                 Tone::Err,
                 "The preparation stopped, and your installation was not changed.".to_owned(),
                 "The patched archive is written beside the original and only moved into place \
@@ -2448,23 +2501,31 @@ impl Outcome {
                     .to_owned(),
                 Some("Copy details"),
             ),
-            Outcome::Installed { name } => (
+            // Ours, all three. The title is when it loads, because that is the
+            // thing somebody looking for it in the browser needs; the body is
+            // how to find it, and never how it was stored.
+            Outcome::Installed { name, loads: Loads::OnStart } => (
                 Tone::Ok,
-                format!("{name} is registered. Restart Bitwig Studio to load it."),
-                "Its description and search keywords were written too, so typing the name \
-                 finds it in the browser. Nothing in the installation was changed: an item is \
-                 a file and a row in the entry list."
+                format!("Start Bitwig Studio. {name} is in the browser."),
+                "The installation is prepared now, so what you install next is ready the next \
+                 time Bitwig starts, with no backup and no need to close it."
                     .to_owned(),
+                None,
+            ),
+            Outcome::Installed { name, loads } => (
+                Tone::Ok,
+                format!("{name} is installed. {}", loads.when()),
+                "Find it in the browser by its name or its keywords.".to_owned(),
                 None,
             ),
             // The words are the ones the user had, which is what they are owed
             // being told: the question said the version would change, and said
             // nothing about the description.
-            Outcome::Updated { name, version } => (
+            Outcome::Updated { name, version, loads } => (
                 Tone::Ok,
-                format!("{name} is updated to {version}. Restart Bitwig Studio to load it."),
-                "Its description and search keywords are the ones you had, and the file is \
-                 where it was. Projects that already use it will open with the new version."
+                format!("{name} is updated to {version}. {}", loads.when()),
+                "Projects that already use it open with the new version. Its description and \
+                 keywords are the ones you had."
                     .to_owned(),
                 None,
             ),
@@ -2500,7 +2561,7 @@ impl Outcome {
             // The bytes verified and the write is what stopped, so what can be
             // promised is what a registration promises: the entry list goes
             // last, and the item is not in it.
-            Outcome::Failed { what: Errand::Install, .. } => (
+            Outcome::Failed { what: Errand::Install(Work::Entries), .. } => (
                 Tone::Err,
                 "The item was not installed.".to_owned(),
                 "It was fetched and checked against the digest the catalog states, and the \
@@ -3365,7 +3426,8 @@ impl App {
     /// browser is telling them nothing they can act on.
     fn published_status(&self, found: &Found, item: &orng_catalog::IndexEntry) -> Published {
         // First, because it is what the user just did to this row.
-        if self.installing.as_ref().is_some_and(|install| install.item.uuid == item.uuid) {
+        let fetching = self.installing.as_ref().map(|installing| installing.fetch.item.uuid);
+        if fetching == Some(item.uuid) {
             return Published::Fetching;
         }
         if let Some(refused) = self.catalog.refusal(item.uuid) {
@@ -3577,9 +3639,18 @@ impl App {
             // once it is tried again, so the failure goes before the attempt
             // starts. Leaving it would draw `Download failed` over a download
             // that is running.
+            // On an installation that is not prepared, the press is asked as
+            // the preparation it has to be: the plan names the item, and its
+            // `Prepare installation` starts the fetch.
             Offer::Install | Offer::Retry => {
                 self.catalog.retry(on);
-                self.install(on, ctx);
+                match &self.session {
+                    Session::Found(found) if !found.condition.is_prepared() => {
+                        let facts = PlanFacts::read(found);
+                        self.confirming = Some(Confirming::Preparation(facts, Preparing::Item(on)));
+                    }
+                    _ => self.install(on, Work::Entries, ctx),
+                }
             }
             Offer::SeeReplacement => {
                 self.detailing = self.replacement_for(on).map(|(_, uuid)| uuid);
@@ -3601,13 +3672,15 @@ impl App {
     /// and updating need no new machinery on this side. The design's own
     /// sentence: on a prepared installation this is *Update entries* work, so
     /// there is no backup and no requirement that Bitwig be closed. An update
-    /// has been confirmed by the time it gets here; an install is never asked.
+    /// has been confirmed by the time it gets here. So has an install that
+    /// prepares - `work` says which it is, and only the plan's `Prepare
+    /// installation` passes [`Work::PrepareThenEntries`].
     ///
     /// **Nothing starts on top of something already running**, for the reason
     /// `write_words` gives. An install that is queued behind a preparation would
     /// be an install nobody asked for by the time it ran - and while this fetch
     /// is out, no other press starts a run either: see [`App::is_working`].
-    fn install(&mut self, uuid: Uuid, ctx: &egui::Context) {
+    fn install(&mut self, uuid: Uuid, work: Work, ctx: &egui::Context) {
         if self.is_working() {
             return;
         }
@@ -3617,8 +3690,8 @@ impl App {
         // live. Not the item's `merged_in`: that names the change that published
         // the item and is what the panel links to, and the tree at that commit
         // is not the tree this index was built from.
-        self.installing =
-            Some(Install::start(item.clone(), index.revision.clone(), ctx.clone()));
+        let fetch = Install::start(item.clone(), index.revision.clone(), ctx.clone());
+        self.installing = Some(Installing { fetch, work });
     }
 
     /// Take what the fetch came back with, and write it or hold the refusal.
@@ -3627,16 +3700,23 @@ impl App {
     /// of an install, and the registration it starts has to be built from the
     /// row the digest was checked against rather than from whatever the catalog
     /// says now.
-    fn installed(&mut self, finished: Install, ctx: &egui::Context) {
+    fn installed(&mut self, finished: Installing, ctx: &egui::Context) {
         assert!(self.applying.is_none(), "an install was written on top of a run in flight");
-        let outcome = finished.outcome.expect("only a finished install is taken");
-        let item = finished.item;
+        let Installing { fetch, work } = finished;
+        let outcome = fetch.outcome.expect("only a finished install is taken");
+        let item = fetch.item;
         // Which of the two this is, by whether the identity is registered now
         // rather than by which press started it: what the write does is what
         // the list in hand says, and so is what its failure left behind.
         let errand = match &self.session {
-            Session::Found(found) if found.entries().get(item.uuid).is_some() => Errand::Update,
-            _ => Errand::Install,
+            Session::Found(found) if found.entries().get(item.uuid).is_some() => {
+                // An update is asked by its own question, which says nothing
+                // about preparing, and nothing registers an identity while a
+                // fetch is out - so a press the plan confirmed is never one.
+                assert_eq!(work, Work::Entries, "an update was carried as a preparation");
+                Errand::Update
+            }
+            _ => Errand::Install(work),
         };
         let document = match outcome {
             Ok(document) => document,
@@ -3687,7 +3767,7 @@ impl App {
             }
         };
 
-        let mut job = Job::against(Work::Entries, &found.to, found.entries());
+        let mut job = Job::against(errand.work(), &found.to, found.entries());
         job.add(registration, &document);
         self.applying = Some(Applying::start(
             errand,
@@ -3954,8 +4034,8 @@ impl App {
         // drop gets, where preparing and registering take the warn. Not drawn in
         // the bundle, which has no state for a fetch in flight; without it the
         // window says nothing at all for the second or two after the press.
-        if let Some(fetching) = &self.installing {
-            let name = &fetching.item.name;
+        if let Some(installing) = &self.installing {
+            let name = &installing.fetch.item.name;
             return (format!("Fetching {name}"), Tone::Neutral, String::new());
         }
         // A refusal outranks the count, for the reason `published_status` puts
@@ -4022,12 +4102,17 @@ impl App {
                     // the filter that is looking for them: it reaches backwards
                     // into projects already saved, where an install does not.
                     "An update changes the device in projects that already use it".to_owned()
+                } else if matches!(&self.session, Session::Found(found)
+                    if !found.condition.is_prepared())
+                {
+                    // Why the bar's primary is `Prepare installation` in a view
+                    // about installing, and what an `Install` will ask first.
+                    format!("Not prepared yet {separator} installing prepares it first")
                 } else {
-                    // `:433`. Which mode a press runs in is the thing a user is
-                    // entitled to know before pressing, and it is the Local
-                    // bar's own note in catalog words.
-                    let cost = "no backup, Bitwig may stay open";
-                    format!("Installing is Update entries work {separator} {cost}")
+                    // `:433` says which mode a press runs in, in the mode's own
+                    // name. The user's call on 2026-09-25: say what it means
+                    // instead, which is when the item is there.
+                    "Installed items load the next time Bitwig Studio starts".to_owned()
                 };
                 // `:468` again, and it goes on the summary rather than only in
                 // the note because the count is what it qualifies: nine items
@@ -4143,7 +4228,8 @@ impl App {
                 // worked out as it is drawn; what the disk has to be asked is
                 // asked now, once.
                 Work::PrepareThenEntries => {
-                    self.confirming = Some(Confirming::Preparation(PlanFacts::read(found)));
+                    self.confirming =
+                        Some(Confirming::Preparation(PlanFacts::read(found), Preparing::Pending));
                 }
                 Work::Entries => self.start(work, ui.ctx()),
             }
@@ -4153,7 +4239,7 @@ impl App {
     /// Whichever question is up, over the window, until it is answered.
     fn confirm(&mut self, ui: &mut egui::Ui) {
         match self.confirming {
-            Some(Confirming::Preparation(_)) => self.confirm_preparation(ui),
+            Some(Confirming::Preparation(..)) => self.confirm_preparation(ui),
             Some(Confirming::Update(uuid)) => self.confirm_update(ui, uuid),
             Some(Confirming::Rename(_)) => self.confirm_rename(ui),
             None => {}
@@ -4306,24 +4392,46 @@ impl App {
 
     /// The plan, over the window, until it is answered.
     fn confirm_preparation(&mut self, ui: &mut egui::Ui) {
-        let (Session::Found(found), Some(Confirming::Preparation(facts))) =
+        let (Session::Found(found), Some(Confirming::Preparation(facts, preparing))) =
             (&self.session, &self.confirming)
         else {
             return;
         };
-        let plan = self.plan(found, facts);
+        let preparing = *preparing;
+        let plan = self.plan(found, facts, preparing);
+        // The bar's press is disabled while something stands in the way, so it
+        // never opens the plan then; a row's `Install` is a small control that
+        // says nothing about preparing, so the plan is where it is refused.
+        let refused = self.blocking().map(|blocked| blocked.title);
+        // From a row, the plan is not what was pressed, so it says why it is
+        // what came up. Ours; the bundle draws the plan from the bar only.
+        let lead = match preparing {
+            Preparing::Pending => {
+                "This is the one operation that modifies Bitwig Studio itself.".to_owned()
+            }
+            Preparing::Item(uuid) => {
+                let name = self
+                    .index()
+                    .and_then(|index| index.items.iter().find(|item| item.uuid == uuid))
+                    .map_or("It", |item| item.name.as_str());
+                format!(
+                    "{name} can only load once this installation is prepared. This is the one \
+                     operation that modifies Bitwig Studio itself."
+                )
+            }
+        };
         let answer = widget::confirmation_dialog(
             ui,
             self.palette,
             &widget::Confirmation {
                 title: "Prepare this installation",
                 tag: "Plan",
-                lead: "This is the one operation that modifies Bitwig Studio itself.",
+                lead: &lead,
                 plan: &plan,
                 note: "A Bitwig update resets the installation. Prepare it again afterwards. \
                        Your registered devices are kept.",
                 answers: widget::Answers {
-                    refused: None,
+                    refused,
                     cancel: "Cancel",
                     primary: PREPARE,
                     icon: icon::PREPARE,
@@ -4334,7 +4442,12 @@ impl App {
         match answer {
             Some(widget::Answer::Proceed) => {
                 self.confirming = None;
-                self.start(Work::PrepareThenEntries, ui.ctx());
+                match preparing {
+                    Preparing::Pending => self.start(Work::PrepareThenEntries, ui.ctx()),
+                    Preparing::Item(uuid) => {
+                        self.install(uuid, Work::PrepareThenEntries, ui.ctx());
+                    }
+                }
             }
             Some(widget::Answer::Cancel) => self.confirming = None,
             None => {}
@@ -4421,7 +4534,7 @@ impl App {
             Some(widget::Answer::Proceed) => {
                 self.confirming = None;
                 self.catalog.retry(uuid);
-                self.install(uuid, ui.ctx());
+                self.install(uuid, Work::Entries, ui.ctx());
             }
             Some(widget::Answer::Cancel) => self.confirming = None,
             None => {}
@@ -4442,9 +4555,35 @@ impl App {
     /// rather than written, a removal names whether the file goes with it in
     /// the words its own control used, and the links are counted rather than
     /// assumed to be one. `design-review.md` round 3 item 8.
-    fn plan(&self, found: &Found, confirming: &PlanFacts) -> Vec<widget::PlanLine> {
+    fn plan(
+        &self,
+        found: &Found,
+        confirming: &PlanFacts,
+        preparing: Preparing,
+    ) -> Vec<widget::PlanLine> {
         let plain = |text: String| widget::PlanLine { text, modifies_the_installation: false };
         let mut lines = Vec::new();
+
+        // What this press registers and removes: everything waiting in Local
+        // from the bar, one item from a catalog row.
+        let (registering, removing): (Vec<(&str, Kind, Uuid)>, Vec<Uuid>) = match preparing {
+            Preparing::Pending => (
+                self.pending
+                    .ready()
+                    .filter_map(Staged::registration)
+                    .map(|row| (row.name.as_str(), row.kind(), row.uuid))
+                    .collect(),
+                self.pending.removals(found.entries()).collect(),
+            ),
+            Preparing::Item(uuid) => (
+                self.index()
+                    .and_then(|index| index.items.iter().find(|item| item.uuid == uuid))
+                    .map(|item| (item.name.as_str(), Kind::from(item.kind), item.uuid))
+                    .into_iter()
+                    .collect(),
+                Vec::new(),
+            ),
+        };
 
         // Where the pristine copy is, or goes. A build that could not be named
         // has no directory of its own, and the press will refuse before it
@@ -4471,12 +4610,7 @@ impl App {
             modifies_the_installation: true,
         });
 
-        let registered: Vec<&str> = self
-            .pending
-            .ready()
-            .filter_map(Staged::registration)
-            .map(|row| row.name.as_str())
-            .collect();
+        let registered: Vec<&str> = registering.iter().map(|(name, ..)| *name).collect();
         match registered.len() {
             0 => {}
             1 => lines.push(plain(format!("1 entry registered: {}.", registered[0]))),
@@ -4494,12 +4628,8 @@ impl App {
             .entries()
             .iter()
             .filter(|entry| {
-                !self
-                    .pending
-                    .ready()
-                    .filter_map(Staged::registration)
-                    .any(|row| row.uuid == entry.uuid)
-                    && !self.pending.removals(found.entries()).any(|uuid| uuid == entry.uuid)
+                !registering.iter().any(|(.., uuid)| *uuid == entry.uuid)
+                    && !removing.contains(&entry.uuid)
             })
             .count();
         match kept {
@@ -4515,10 +4645,9 @@ impl App {
             ))),
         }
 
-        let removed: Vec<&str> = self
-            .pending
-            .removals(found.entries())
-            .filter_map(|uuid| found.entries().get(uuid))
+        let removed: Vec<&str> = removing
+            .iter()
+            .filter_map(|uuid| found.entries().get(*uuid))
             .map(|entry| entry.name.as_str())
             .collect();
         if !removed.is_empty() {
@@ -4534,12 +4663,7 @@ impl App {
         let folders: Vec<String> = Kind::ALL
             .into_iter()
             .filter_map(|kind| {
-                let count = self
-                    .pending
-                    .ready()
-                    .filter_map(Staged::registration)
-                    .filter(|row| row.kind() == kind)
-                    .count();
+                let count = registering.iter().filter(|(_, of, _)| *of == kind).count();
                 (count > 0).then(|| {
                     format!("{count} to {}/{}", kind.library_subdir(), kind.user_folder())
                 })
@@ -4597,8 +4721,13 @@ enum Confirming {
     /// What the plan says is worked out as it is drawn, from the same rows the
     /// press will write: a drop can still land under the scrim, and a plan
     /// copied out at the press would then describe a press that no longer
-    /// exists. What is held is only what the disk has to be asked about.
-    Preparation(PlanFacts),
+    /// exists. What is held is only what the disk has to be asked about, and
+    /// which press it was.
+    ///
+    /// Also from a catalog row's `Install` where the installation is not
+    /// prepared: an entry is a row nothing reads until it is, so installing
+    /// there is a preparation, and asked as one.
+    Preparation(PlanFacts, Preparing),
     /// An update, from a catalog row's `Update` or the detail panel's
     /// `Update...`: the one catalog press that confirms, because it reaches
     /// back into projects already saved - README, "Install, update,
@@ -4625,6 +4754,26 @@ struct Renaming {
     /// What is wrong with that, as it was when it was typed. Asked of the disk
     /// and of every other row, so once per edit and not once per frame.
     refusal: Option<staging::Collision>,
+}
+
+/// Which press a preparation is, which is what it registers besides itself.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Preparing {
+    /// The bar's `Prepare installation`: everything waiting in Local.
+    Pending,
+    /// A catalog row's `Install`: that item, and nothing staged in Local, which
+    /// stays staged as an install always leaves it.
+    Item(Uuid),
+}
+
+/// A catalog item on its way in: the fetch, and what the write after it does.
+struct Installing {
+    fetch: Install,
+    /// Decided when the press was made, because a press that prepares has been
+    /// confirmed by the plan and one that does not has not. Worked out again
+    /// when the bytes arrive, it could become a preparation nobody was asked
+    /// about.
+    work: Work,
 }
 
 /// What the plan says that the disk has to be asked about, read once when the

@@ -1057,7 +1057,8 @@ where this account may not write, and wore no shield: A3's list left the panel o
 user chose the shield. The primary wears it where what it offers writes, at the action
 bar's distance, being that size of press; `Remove` at the small presses' `6px`, though
 it opens the removal's question first, as `Prepare installation` does before its plan.
-*Built*; only the absence is checked on macOS, where nothing can ask.
+*Built*, and checked on the Windows VM, where it has to be present; macOS, where
+nothing can ask, only checks that it is absent.
 
 ### Still open
 

@@ -1067,3 +1067,11 @@ installation was, and on one nobody prepared a restart loads nothing. It now end
 sentence item 2 gives an install: `Bitwig Studio loads it the next time it starts.`, or
 `Bitwig Studio loads it once this installation is prepared.` The bundle has no words for
 this banner; the title and the rest of the body are ours, unchanged. *Built.*
+
+### 10. A banner's title is `--ink`, whatever its tone
+
+Our fault, not a decision: since `3d8990a` the window drew a banner's title in the
+tone's colour, so warnings and errors had orange and red headlines. The bundle draws the
+title `--ink` (`ORNG Registry.dc.html:172`, README section 5) and lets the dot, the press
+and the body's tint carry the tone. Fixed to match; an ok banner did not move, since
+`--ok` is `--ink` in both themes. *Built.*

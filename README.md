@@ -17,6 +17,28 @@ Early. The libraries work and are tested against a real installation; the applic
 not exist yet. See [`docs/project-spec.md`](docs/project-spec.md) for what this is and how
 it works, and the end of it for what is and is not built.
 
+## Installing ORNG Registry
+
+Each [release](https://github.com/zezic/orng-tools/releases) carries the application for
+all three platforms. None of them is signed by a publisher, so each platform warns once in
+its own way.
+
+**macOS** (Apple silicon and Intel), into `/Applications`:
+
+```bash
+curl -fsSL https://github.com/zezic/orng-tools/releases/latest/download/install-macos.sh | sh
+```
+
+The application is not notarized, and a copy downloaded through a browser is refused by
+Gatekeeper as if it were damaged. The script fetches it with `curl`, which does not mark it
+as downloaded, and checks it against the release's `SHA256SUMS`.
+
+**Windows**: download `orng-registry-windows-x86_64.exe` and run it. SmartScreen asks
+first; `More info`, then `Run anyway`.
+
+**Linux**: download `orng-registry-linux-x86_64.tar.gz`, unpack it, and run
+`orng-registry`.
+
 ## Layout
 
 ```

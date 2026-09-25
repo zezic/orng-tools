@@ -481,6 +481,24 @@ exists to distrust. The cost is that rotation needs an application release, whic
 right price: a scheme where the key can be replaced remotely is a scheme where it can be
 replaced by the wrong person.
 
+**6.15 Releases are unsigned, and the Mac installs through a script.** There is no Apple
+Developer ID and no Windows code-signing certificate. A version tag publishes one release
+built by `.github/workflows/release.yml`: a universal Mac bundle, a Windows executable and a
+Linux tarball, with a `SHA256SUMS` over them. Nothing is published unless all three build.
+
+The Mac bundle is signed ad hoc, which Apple silicon requires before it runs anything, and
+not notarized, which Gatekeeper requires of anything a browser downloaded. So the documented
+way in is `install-macos.sh`, published beside the archive: it fetches the archive with
+`curl`, which sets no quarantine attribute, checks it against the checksums and moves it into
+`/Applications`. It does not strip attributes or turn Gatekeeper off; it avoids the download
+Gatekeeper is there to question. The checksums come from the same release as the archive,
+so they catch a broken download, not a hostile release. Windows gets SmartScreen's warning
+and Linux nothing, and neither needs a script.
+
+The icon has one source, `apps/orng-registry/assets/icon.png`. `build.rs` scales the window's
+icon from it and, on Windows, puts an icon in the executable; `packaging/macos/bundle.sh`
+makes the bundle's `.icns`.
+
 ---
 
 ## 7. ORNG Catalog

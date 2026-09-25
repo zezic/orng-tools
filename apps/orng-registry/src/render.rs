@@ -422,6 +422,19 @@ fn an_unprepared_installation() {
     shot("unprepared", found(&root, Helper::Absent, GuardState::Armed), View::Local, true);
 }
 
+/// The same archive the morning after a Bitwig update: a backup in the home
+/// says it was prepared once, so the badge says it needs doing again and the
+/// entries are ones to restore - the design's `reapply` scenario.
+#[test]
+fn an_installation_a_bitwig_update_reset() {
+    let root = fixture("reapply");
+    let backup = root.join("home/.orng/backups/6.0-a1d34f07");
+    std::fs::create_dir_all(&backup).expect("a place to keep a backup");
+    std::fs::write(backup.join("bitwig.jar"), b"not an archive, and not read here")
+        .expect("could not write the copy");
+    shot("reapply", found(&root, Helper::Absent, GuardState::Armed), View::Local, true);
+}
+
 #[test]
 fn nothing_installed() {
     shot(

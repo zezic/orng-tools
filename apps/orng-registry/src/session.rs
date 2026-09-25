@@ -26,8 +26,8 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use orng_tools::{
-    Condition, Destination, GuardState, Helper, InstallError, Installation, Manifest, Rights,
-    RunState, Standing, UserLibrary, Uuid, prepare, running_state,
+    Backup, Condition, Destination, GuardState, Helper, InstallError, Installation, Manifest,
+    Rights, RunState, Standing, UserLibrary, Uuid, prepare, running_state,
 };
 
 use crate::settings::Settings;
@@ -99,6 +99,23 @@ pub struct Found {
     /// registered ones, so a removal leaving one behind here is a word nobody
     /// draws.
     awaiting_restart: BTreeSet<Uuid>,
+    /// Whether any installation was ever prepared from this home. What tells
+    /// an installation a Bitwig update reset apart from one nobody prepared,
+    /// which look the same from the archive.
+    history: History,
+}
+
+/// Whether this home has prepared an installation before, as its backups say:
+/// a preparation takes one before it writes anything, and nothing else does.
+///
+/// Of any installation, not this one, because a backup is named for the build
+/// it came from and a Bitwig update is a new build. So a second installation
+/// never prepared, beside one that was, reads as reset. The badge it decides
+/// asks for the same press either way.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum History {
+    Prepared,
+    Never,
 }
 
 impl Found {
@@ -120,6 +137,11 @@ impl Found {
             // it is derived from the installation and the disk, so a caller
             // who could supply one could supply the wrong one.
             rights: orng_tools::rights(&to.install),
+            // A home whose backups cannot be listed has none this can point to.
+            history: match Backup::list(&to.home) {
+                Ok(backups) if !backups.is_empty() => History::Prepared,
+                _ => History::Never,
+            },
             to,
             condition,
             running,
@@ -270,6 +292,10 @@ pub enum Badge {
     /// Entries on record, and a stock archive again. Normal after a Bitwig
     /// update, and not the user's fault.
     NeedsReapply,
+    /// Entries on record, and an archive nothing from this home has prepared.
+    /// Not `Needs re-apply`, which says it was applied once: the entries were
+    /// written without a preparation, or for another installation.
+    NotPrepared,
     /// The registry structure could not be located inside this archive.
     UnknownBuild,
     /// The archive was changed by something that is not this application.
@@ -282,6 +308,7 @@ impl Badge {
             Badge::Stock => "Stock".to_owned(),
             Badge::Registered(count) => format!("Registered ({count})"),
             Badge::NeedsReapply => "Needs re-apply".to_owned(),
+            Badge::NotPrepared => "Not prepared".to_owned(),
             Badge::UnknownBuild => "Unknown build".to_owned(),
             Badge::ModifiedElsewhere => "Modified elsewhere".to_owned(),
         }
@@ -289,7 +316,7 @@ impl Badge {
 }
 
 impl Found {
-    /// Which of the five states this installation is in.
+    /// Which of the six states this installation is in.
     ///
     /// The guard is asked first. A guard site this build cannot read is the one
     /// condition that makes every other answer a guess, because preparation
@@ -302,7 +329,10 @@ impl Found {
             (GuardState::Armed, Helper::Absent) if registered == 0 => Badge::Stock,
             // The entries are fine; the installation is what needs work. Said
             // once, here, rather than once per row.
-            (GuardState::Armed, Helper::Absent) => Badge::NeedsReapply,
+            (GuardState::Armed, Helper::Absent) => match self.history {
+                History::Prepared => Badge::NeedsReapply,
+                History::Never => Badge::NotPrepared,
+            },
             // Neither remaining pair is a state this application produces and
             // stops at: a disarmed guard with no helper is somebody else's edit,
             // and a helper behind an armed guard is a preparation that stopped
@@ -353,12 +383,18 @@ mod tests {
     }
 
     fn found(guard: GuardState, helper: Helper, entries: &str) -> Found {
-        let temp = std::path::Path::new("target/render-fixtures/badge");
+        found_in("badge", guard, helper, entries)
+    }
+
+    /// In a home of its own, for a test that writes into it: the others share
+    /// one and run beside each other.
+    fn found_in(name: &str, guard: GuardState, helper: Helper, entries: &str) -> Found {
+        let temp = std::path::Path::new("target/render-fixtures").join(name);
         Found::new(
             Destination {
                 install: orng_tools::testing::install(&temp.join("Bitwig Studio.app")),
                 library: orng_tools::UserLibrary::at(&temp.join("Library")),
-                home: orng_tools::OrngHome::at(temp),
+                home: orng_tools::OrngHome::at(&temp),
                 placement: Settings::default().placement,
             },
             condition(guard, helper),
@@ -372,11 +408,29 @@ mod tests {
         80c0dc4c-d142-53a7-85ee-b91427819b66\tDEVICE\tA\tdevices/My Devices/A.bwdevice\t\t\t\tlocal\n";
 
     /// The state a user reaches the morning after a Bitwig release, and the one
-    /// most likely to be seen by somebody not expecting it.
+    /// most likely to be seen by somebody not expecting it. The backup is what
+    /// says it was prepared before: the archive alone looks the same as one
+    /// nobody prepared.
     #[test]
     fn an_update_that_reset_the_installation_reads_as_needing_re_apply() {
-        let found = found(GuardState::Armed, Helper::Absent, ONE);
+        let backup = std::path::Path::new("target/render-fixtures/badge-reset/.orng/backups")
+            .join("6.0-a1d34f07");
+        std::fs::create_dir_all(&backup).expect("a place to keep a backup");
+        std::fs::write(backup.join("bitwig.jar"), b"not an archive, and not read here")
+            .expect("could not write the copy");
+        let found = found_in("badge-reset", GuardState::Armed, Helper::Absent, ONE);
         assert_eq!(found.badge(), Badge::NeedsReapply);
+        assert_eq!(found.badge().label(), "Needs re-apply");
+    }
+
+    /// Entries with no preparation behind them - installed before anything was
+    /// prepared, or kept for another installation - were never applied, so
+    /// they are not re-applied either.
+    #[test]
+    fn entries_nothing_ever_prepared_read_as_not_prepared() {
+        let found = found_in("badge-never", GuardState::Armed, Helper::Absent, ONE);
+        assert_eq!(found.badge(), Badge::NotPrepared);
+        assert_eq!(found.badge().label(), "Not prepared");
     }
 
     /// The same archive with nothing on record is not a problem at all, and must

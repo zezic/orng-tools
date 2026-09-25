@@ -2752,7 +2752,7 @@ impl App {
                 ui.add_space(metric::GAP);
                 path(ui, palette, root);
                 ui.add_space(metric::GAP);
-                badge(ui, palette, "Unknown build");
+                badge(ui, palette, Badge::UnknownBuild);
                 return;
             }
             Session::NoInstallation { .. } => {
@@ -2779,18 +2779,17 @@ impl App {
         // `Registered` is the ordinary state and the design does not label it.
         // The count is in the list's own heading, which is where somebody
         // counting would look.
-        let label = (state != Badge::Registered(found.entries().entries().len()))
-            .then(|| state.label());
-        let width = label.as_ref().map_or(0.0, |text| text.len() as f32 * BADGE_WIDTH_PER_CHAR);
+        let shown = (state != Badge::Registered(found.entries().entries().len())).then_some(state);
+        let width = shown.map_or(0.0, |state| state.label().len() as f32 * BADGE_WIDTH_PER_CHAR);
         let room = (ui.available_width() - width - metric::GAP).max(0.0);
         ui.allocate_ui_with_layout(
             vec2(room, ui.available_height()),
             Layout::left_to_right(Align::Center),
             |ui| path(ui, palette, &widget::drawn_path(found.to.install.root())),
         );
-        if let Some(label) = label {
+        if let Some(state) = shown {
             ui.add_space(metric::GAP);
-            badge(ui, palette, &label);
+            badge(ui, palette, state);
         }
     }
 
@@ -3905,17 +3904,21 @@ impl App {
         // is the second most common session there is, and saying "nothing
         // pending" beside an enabled button that does something would be wrong.
         let registered = found.entries().entries().len();
+        // `to restore` is the design's, for entries a Bitwig update took out of
+        // effect. Entries that never were in effect are not restored by it.
+        let waiting = match found.badge() {
+            Badge::NotPrepared => "waiting for preparation",
+            _ => "to restore",
+        };
         match (self.work(found), registered) {
             (Some(Work::PrepareThenEntries), 0) => (
                 "Nothing staged yet".to_owned(),
                 Tone::Neutral,
                 "Drop documents onto the window, or use Add files...".to_owned(),
             ),
-            (Some(Work::PrepareThenEntries), 1) => {
-                ("1 entry to restore".to_owned(), tone, note)
-            }
+            (Some(Work::PrepareThenEntries), 1) => (format!("1 entry {waiting}"), tone, note),
             (Some(Work::PrepareThenEntries), many) => {
-                (format!("{many} entries to restore"), tone, note)
+                (format!("{many} entries {waiting}"), tone, note)
             }
             _ => ("Nothing pending".to_owned(), Tone::Neutral, note),
         }
@@ -4732,11 +4735,10 @@ fn path(ui: &mut egui::Ui, palette: Palette, root: &str) {
 }
 
 /// What state the registry is in, coloured as the design colours it.
-fn badge(ui: &mut egui::Ui, palette: Palette, label: &str) {
-    ui.label(
-        font::run(label, font::plain(font::CHIP))
-            .color(widget::badge_colour(palette, label)),
-    );
+fn badge(ui: &mut egui::Ui, palette: Palette, state: Badge) {
+    let label = state.label();
+    let ink = widget::badge_colour(palette, state);
+    ui.label(font::run(&label, font::plain(font::CHIP)).color(ink));
 }
 
 /// The one press that modifies Bitwig Studio itself, named the same wherever it

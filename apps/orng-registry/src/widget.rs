@@ -23,6 +23,7 @@ use eframe::egui::{
 };
 use orng_tools::{Kind, Placement, TheDocument};
 
+use crate::session::Badge;
 use crate::status::{Action, Choice, Consequences, Line, Offer, Origin, Published, Status};
 use crate::theme::{Palette, font, metric};
 
@@ -1503,11 +1504,13 @@ pub fn supporting_ink(palette: Palette, selected: bool) -> Color32 {
 }
 
 /// What state the installation's registry is in, as the design colours it.
-pub fn badge_colour(palette: Palette, badge: &str) -> Color32 {
+/// `Not prepared` asks for the press `Needs re-apply` does, so it is coloured
+/// the same.
+pub fn badge_colour(palette: Palette, badge: Badge) -> Color32 {
     match badge {
-        "Needs re-apply" => palette.accent_text,
-        "Modified elsewhere" => palette.err_text,
-        _ => palette.ink_2,
+        Badge::NeedsReapply | Badge::NotPrepared => palette.accent_text,
+        Badge::ModifiedElsewhere => palette.err_text,
+        Badge::Stock | Badge::Registered(_) | Badge::UnknownBuild => palette.ink_2,
     }
 }
 

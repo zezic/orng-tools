@@ -1,0 +1,111 @@
+# Publishes ORNG Registry for the three platforms it targets, when a version tag
+# is pushed:
+#
+#     git tag v0.1.0 && git push origin v0.1.0
+#
+# The tag has to name the version the workspace says, or nothing is built: a
+# release whose About screen disagrees with its own title is worse than none.
+#
+# Built from the tag with no cache. A release is rare and should be reproducible
+# from the commit alone, not from whatever a previous run left in `target`.
+#
+# All three builds finish before anything is published, and the release is
+# created with every file in one call, so a failure on one platform leaves no
+# release at all rather than one missing a download.
+
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  version:
+    name: The tag names the workspace's version
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - run: |
+          version=$(cargo metadata --no-deps --format-version 1 \
+            | jq -r '.packages[] | select(.name == "orng-registry") | .version')
+          if [ "$GITHUB_REF_NAME" != "v$version" ]; then
+            echo "The tag is $GITHUB_REF_NAME but the workspace is at $version." >&2
+            exit 1
+          fi
+
+  macos:
+    name: macOS, universal
+    needs: version
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v7
+      - run: rustup target add aarch64-apple-darwin x86_64-apple-darwin
+      - run: packaging/macos/bundle.sh
+      - uses: actions/upload-artifact@v7
+        with:
+          name: macos
+          path: target/bundle/orng-registry-macos.tar.gz
+          if-no-files-found: error
+
+  windows:
+    name: Windows, x86_64
+    needs: version
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v7
+      # A single executable and nothing beside it: the fonts and the icon are
+      # inside it, and the elevated child it starts is another copy of itself.
+      - run: cargo build --release --locked -p orng-registry
+      - run: Copy-Item target/release/orng-registry.exe orng-registry-windows-x86_64.exe
+      - uses: actions/upload-artifact@v7
+        with:
+          name: windows
+          path: orng-registry-windows-x86_64.exe
+          if-no-files-found: error
+
+  linux:
+    name: Linux, x86_64
+    needs: version
+    # The oldest runner there is, because a binary runs on the glibc it was
+    # linked against and every one newer - never an older one.
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v7
+      - run: cargo build --release --locked -p orng-registry
+      # A tarball rather than the bare binary, which a browser would hand over
+      # without its executable bit.
+      - run: tar -C target/release -czf orng-registry-linux-x86_64.tar.gz orng-registry
+      - uses: actions/upload-artifact@v7
+        with:
+          name: linux
+          path: orng-registry-linux-x86_64.tar.gz
+          if-no-files-found: error
+
+  publish:
+    name: Publish
+    needs: [macos, windows, linux]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/download-artifact@v8
+        with:
+          path: dist
+          merge-multiple: true
+      # The installer is published beside the archive it fetches, so
+      # `releases/latest/download/install-macos.sh` is always the one that knows
+      # the latest archive's name.
+      - run: cp packaging/macos/install.sh dist/install-macos.sh
+      - run: cd dist && sha256sum * > SHA256SUMS
+      - env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" dist/* \
+            --verify-tag --title "ORNG Registry ${GITHUB_REF_NAME#v}" --generate-notes

@@ -3919,9 +3919,9 @@ impl Tone {
         }
     }
 
-    /// The supporting line under a toned headline, which the design tints with
-    /// it rather than leaving grey: a warm grey under the accent, a red-grey
-    /// under an error.
+    /// The supporting line under a headline on a toned wash, which the design
+    /// tints with the tone rather than leaving grey: a warm grey on the accent's
+    /// wash, a red-grey on an error's.
     fn supporting(self, palette: Palette) -> Color32 {
         match self {
             Tone::Neutral | Tone::Ok => palette.ink_2,
@@ -3939,10 +3939,9 @@ impl Tone {
         }
     }
 
-    /// The glyph's own colour, which is not the headline's. The design writes a
-    /// warning's icon in `--warn` and its headline in `--accent-text`: one is a
-    /// shape and reads at full strength, the other is a line of type and would
-    /// glare.
+    /// The glyph's own colour. The design writes a warning's icon in `--warn`,
+    /// at full strength because it is a shape, and the headline beside it in
+    /// `--ink`, because a line of type in that colour would glare.
     fn mark(self, palette: Palette) -> Color32 {
         match self {
             Tone::Neutral => palette.ink_3,
@@ -4044,9 +4043,12 @@ pub fn banner(ui: &mut Ui, palette: Palette, banner: &Banner<'_>) -> Answered {
                     }
                     ui.with_layout(Layout::top_down(Align::Min), |ui| {
                         ui.spacing_mut().item_spacing.y = BETWEEN_THE_LINES;
+                        // In ink whatever the tone, as a notice's is: the dot,
+                        // the wash and the press carry the tone, and a headline
+                        // in it would glare.
                         ui.label(
                             font::run(banner.title, font::emphasis(ui.ctx(), font::CONTROL))
-                                .color(banner.tone.colour(palette)),
+                                .color(palette.ink),
                         );
                         ui.label(
                             font::run(banner.body, font::plain(font::NOTE))

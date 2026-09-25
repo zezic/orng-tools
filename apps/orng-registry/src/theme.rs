@@ -66,8 +66,8 @@ pub struct Palette {
     /// Tertiary text: labels, units, anything supporting.
     pub ink_3: Color32,
     /// Secondary and tertiary text inside something toned. The design warms or
-    /// reddens the supporting text of a banner rather than leaving it grey
-    /// beside a coloured headline.
+    /// reddens the supporting text of a banner rather than leaving it grey on a
+    /// coloured wash.
     pub ink_2_warm: Color32,
     pub ink_3_warm: Color32,
     pub ink_2_err: Color32,

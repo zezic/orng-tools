@@ -100,6 +100,18 @@ objc2-quartz-core = { version = "0.3", features = ["CALayer", "CAMetalLayer", "o
 objc2-core-graphics = { version = "0.3", default-features = false, features = ["std", "CGColorSpace"] }
 raw-window-handle = "0.6"
 
+# The icon, derived from its one picture by `build.rs`. `image` is already in
+# the tree through eframe, which decodes window icons with it; PNG is the only
+# format read, and ICO the one written for the Windows executable.
+[build-dependencies]
+image = { version = "0.25", default-features = false, features = ["png"] }
+
+# Putting that icon into the executable: a Windows resource, compiled by the
+# SDK's `rc.exe`. Host-gated, which is right because Windows is built on Windows.
+[target.'cfg(windows)'.build-dependencies]
+image = { version = "0.25", default-features = false, features = ["png", "ico"] }
+winresource = "0.1"
+
 # Rendering the interface headlessly, so a change can be looked at rather than
 # reasoned about. egui places widgets in ways that are hard to predict from the
 # code alone - margins, baselines and available width especially - and a picture

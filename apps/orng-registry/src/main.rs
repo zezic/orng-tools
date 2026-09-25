@@ -33,6 +33,9 @@ pub mod work;
 #[cfg(test)]
 mod render;
 
+// The window icon's side, stated once, by `build.rs`, which scaled it.
+include!(concat!(env!("OUT_DIR"), "/icon.rs"));
+
 fn main() -> eframe::Result {
     // Before anything draws. This process may not be the window at all: an
     // installation the window may not write is prepared by a second copy of
@@ -54,7 +57,13 @@ fn main() -> eframe::Result {
         viewport: eframe::egui::ViewportBuilder::default()
             .with_inner_size(theme::metric::WINDOW)
             .with_min_inner_size([640.0, 440.0])
-            .with_title("ORNG Registry"),
+            .with_title("ORNG Registry")
+            // Without one eframe draws its own logo, in the Dock too.
+            .with_icon(eframe::egui::IconData {
+                rgba: include_bytes!(concat!(env!("OUT_DIR"), "/icon.rgba")).to_vec(),
+                width: WINDOW_ICON_SIDE,
+                height: WINDOW_ICON_SIDE,
+            }),
         ..Default::default()
     };
     eframe::run_native(

@@ -3005,6 +3005,7 @@ dependencies = [
  "egui-phosphor",
  "egui_kittest",
  "getrandom 0.4.3",
+ "image",
  "jiff",
  "objc2 0.6.4",
  "objc2-app-kit 0.3.2",
@@ -3022,6 +3023,7 @@ dependencies = [
  "ureq",
  "uuid",
  "windows-sys 0.61.2",
+ "winresource",
 ]
 
 [[package]]
@@ -5173,6 +5175,16 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "23b97319f7b8343df12cc98938e5c3eb436064524c8d2b4e30a1d3a36eecdf81"
 dependencies = [
  "memchr",
+]
+
+[[package]]
+name = "winresource"
+version = "0.1.31"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0986a8b1d586b7d3e4fe3d9ea39fb451ae22869dcea4aa109d287a374d866087"
+dependencies = [
+ "toml",
+ "version_check",
 ]
 
 [[package]]

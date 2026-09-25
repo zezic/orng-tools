@@ -952,11 +952,22 @@ identity, so replacing the file changes every project that already uses it, and 
 puts a question in front of that press: both versions, what an update does to saved
 projects, and a strip when Bitwig is open. Only the question's own press fetches. The row
 and the detail panel open the same question, and a retry of a failed update asks again. An
-install is never asked, and cannot reach a registered identity: it is offered only by
-`Available`. The write is an install's, taken by whether the identity is registered when
-the bytes land. It keeps the entry's description, keywords and file, and takes the new
-document, its name, and the version and review the index states. `design-review.md`
-round 4, A1, has the reasons.
+install cannot reach a registered identity: it is offered only by `Available`. The write is
+an install's, taken by whether the identity is registered when the bytes land. It keeps the
+entry's description, keywords and file, and takes the new document, its name, and the
+version and review the index states. `design-review.md` round 4, A1, has the reasons.
+
+**An install on an installation that is not prepared is a preparation, and asks as one.**
+Only a prepared installation reads the entry list, so an install there that only wrote the
+entry registered nothing Bitwig would load - and 0.1.0 did exactly that, then said to
+restart Bitwig. The row's `Install` now opens the plan, naming the item and saying why;
+its `Prepare installation` fetches the item and runs the preparation with it, and a running
+Bitwig refuses the press in the plan. What is staged in Local stays staged. On a prepared
+installation an install asks nothing, as before. Whether a press prepares is decided when
+it is made and carried with the fetch, so bytes that arrive later cannot turn into a
+preparation nobody confirmed. An update still writes only the entry, and on an
+installation that is not prepared its banner says the new version loads once it is.
+`design-review.md` round 5.
 
 **The catalog's own toolbar**, which is the Local one's shape with the box at its right
 end exchanged. `Add files...` and the design's factory toggle are about documents on this

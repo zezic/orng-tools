@@ -10,7 +10,8 @@ one that contradicts a safety property of the transaction, three that depend on 
 format currently carries, and one that was our bug rather than the design's and is now
 fixed. Round 3 collects what building the window against revision 7 turned up, and its
 last two items are open questions for the designer rather than findings. Round 4 is the
-designer's answer to all of them, revision 8, and what it leaves to build.
+designer's answer to all of them, revision 8, and what it leaves to build. Round 5 is
+what the first release, 0.1.0, showed on a real machine, and the user's decisions on it.
 
 ---
 
@@ -936,3 +937,86 @@ Dropped from `EmptyState.dc.html`.
   and Phosphor, so it comes back before 1.0.
 - No refresh on entering the Catalog view: yes. `ui-spec-catalog.md` section 7 now
   says launch and `Refresh` only.
+
+---
+
+## Round 5: installing from the catalog onto an installation nobody prepared
+
+Found by the user on 2026-09-25, installing VOLSHAPER from the catalog with 0.1.0 on a
+stock Bitwig 6.1.2. The bundle draws the Catalog view on a prepared installation only
+(`ORNG Registry.dc.html:424`, `mode: "update"`), and this state fell between its
+scenarios. Everything below is the user's decision of that day, over the bundle where
+the bundle had words; nothing here has been to the designer yet.
+
+### 1. The install registered an item nothing would load, and said to restart Bitwig
+
+An install was always *Update entries* work. On a stock installation that writes an
+entry list nothing reads, so after a restart Bitwig saw an ordinary file in the user
+library and not the identity. The banner said
+`VOLSHAPER is registered. Restart Bitwig Studio to load it.`, and its body said
+`Nothing in the installation was changed` - false as well, since the description bundles
+inside the installation are rewritten by every entry write (project-spec 4.4). The bar beside it
+offered `Prepare installation` in accent, with the note
+`Installing is Update entries work · no backup, Bitwig may stay open`, which is only
+true of a prepared installation.
+
+**Decided: an `Install` on an installation that is not prepared prepares it.** The row's
+press opens the plan - the same dialog the bar's press opens - naming the item and
+leading with why: `<name> can only load once this installation is prepared.` Its
+`Prepare installation` fetches the item and runs the preparation with it. A running
+Bitwig refuses the press inside the plan, with the bar's own words, because a row's
+control is too small to say so. What is staged in Local is not carried: an install has
+never taken the pending work with it. Recommended over two others the user was offered:
+installing now and saying it loads once prepared, and refusing `Install` until prepared.
+Local's `Apply` already prepares and registers in one press, and the two views should
+not differ in it. *Built, and the plan from a row is ours: the bundle draws it from the
+bar only.*
+
+### 2. The banners say when the item loads, and how to find it
+
+Ours, and replacing ours:
+
+| Case | Title | Body |
+| --- | --- | --- |
+| Installed, prepared first | `Start Bitwig Studio. <name> is in the browser.` | That the installation is prepared now, so the next install needs no backup and no closing Bitwig |
+| Installed | `<name> is installed. Bitwig Studio loads it the next time it starts.` | `Find it in the browser by its name or its keywords.` |
+| Updated | `<name> is updated to <v>. Bitwig Studio loads it the next time it starts.` | Projects that use it open with the new version; its words are the ones you had |
+| Updated, not prepared | `... Bitwig Studio loads it once this installation is prepared.` | The same |
+
+"Next time it starts" rather than "Restart": true whether Bitwig is open or not, which
+the window only knows as of the last time it looked. How it was stored - "an item is a
+file and a row in the entry list" - is gone from every banner. *Built.*
+
+### 3. The catalog bar's note says what it means, not the mode's name
+
+Over the bundle's `:424`/`:433`
+`Installing is Update entries work · no backup, Bitwig may stay open`: on a prepared
+installation `Installed items load the next time Bitwig Studio starts`, and on one that
+is not, `Not prepared yet · installing prepares it first` - which is also what explains
+the accent `Prepare installation` beside it. *Built.*
+
+### 4. `Not prepared`, beside `Needs re-apply`
+
+`Needs re-apply` says the installation was prepared once and a Bitwig update undid it.
+An installation nobody prepared, with entries on record, is not that. The archive cannot
+tell the two apart; a backup in `~/.orng/backups` can, because a preparation takes one
+before it writes and nothing else does. So the badge is `Needs re-apply` where any
+backup exists and `Not prepared` where none does, coloured the same, and the Local bar's
+`N entries to restore` is `N entries waiting for preparation` for the second. Any backup
+and not this build's, because an update is a new build: a second installation never
+prepared beside one that was reads as reset, and asks for the same press. *Built;
+`reapply.png` is the design's `reapply` scenario, `unprepared.png` the new state.*
+
+### 5. `Editable in Local once installed.` under an installed item
+
+The bundle's footnote, drawn whatever the item's state. Once installed it reads
+`Edit them in Local.` *Built.*
+
+### Still open
+
+- The bundle's `Needs re-apply` banner, `A Bitwig update reset this installation.` with
+  `What changed?`, is still not drawn; the badge and the bar carry the state alone.
+- The detail panel's `Remove` queues a removal that only Local's `Apply` carries out,
+  and the Catalog view says nothing about it while it waits. Read in the code, not yet
+  reproduced on screen.
+- `Located` still says to restart Bitwig on an installation that is not prepared.

@@ -422,17 +422,112 @@ fn an_unprepared_installation() {
     shot("unprepared", found(&root, Helper::Absent, GuardState::Armed), View::Local, true);
 }
 
-/// The same archive the morning after a Bitwig update: a backup in the home
-/// says it was prepared once, so the badge says it needs doing again and the
-/// entries are ones to restore - the design's `reapply` scenario.
+/// Keep a copy of `build` in the fixture's home, as a preparation would have:
+/// under a directory named for the build, with the archive inside.
+fn backed_up(root: &std::path::Path, build: &str) {
+    let dir = root.join("home/.orng/backups").join(build);
+    std::fs::create_dir_all(&dir).expect("a place to keep a backup");
+    std::fs::write(dir.join("bitwig.jar"), b"not an archive, and not read here")
+        .expect("could not write the copy");
+}
+
+/// Whether anything in the window carries these words among others: a
+/// paragraph, where a test pins one sentence of it.
+fn somewhere<S>(harness: &Harness<'_, S>, words: &str) -> bool {
+    harness.query_all_by_label_contains(words).next().is_some()
+}
+
+/// The same archive the morning after a Bitwig update: a backup of another
+/// build says it was prepared once, so the badge says it needs doing again,
+/// the entries are ones to restore, and the banner says so once, at full
+/// width - the design's `reapply` scenario. Its `What changed?` names both
+/// builds, and closing that answer leaves the condition stated.
 #[test]
 fn an_installation_a_bitwig_update_reset() {
     let root = fixture("reapply");
-    let backup = root.join("home/.orng/backups/6.0-a1d34f07");
-    std::fs::create_dir_all(&backup).expect("a place to keep a backup");
-    std::fs::write(backup.join("bitwig.jar"), b"not an archive, and not read here")
-        .expect("could not write the copy");
-    shot("reapply", found(&root, Helper::Absent, GuardState::Armed), View::Local, true);
+    backed_up(&root, "6.0-a1d34f07");
+    let mut harness = window(found(&root, Helper::Absent, GuardState::Armed), |app, ctx| {
+        app.set_appearance(appearance(true), ctx);
+        app.show_view(View::Local);
+    });
+    look(&mut harness, "reapply");
+    assert!(anywhere(&harness, "A Bitwig update reset this installation."), "no banner");
+    assert!(
+        somewhere(&harness, "Your 4 entries are kept, with the same UUIDs"),
+        "the banner does not say the entries are kept"
+    );
+
+    in_the_region(&harness, "What changed?").click();
+    harness.run();
+    assert!(harness.state().has_dialog(), "What changed? was not answered");
+    look(&mut harness, "what-changed");
+    assert!(
+        anywhere(&harness, "prepared 6.0 (a1d34f07)  \u{2192}  now 6.1 (94a90411)"),
+        "the answer does not name both builds"
+    );
+    for words in [
+        "Bitwig Studio was updated",
+        "Your entries in ~/.orng were not touched",
+        "Preparing again patches this build, and backs it up first.",
+    ] {
+        assert!(somewhere(&harness, words), "the answer does not say: {words}");
+    }
+
+    in_the_dialog(&harness, "Close").click();
+    harness.run();
+    assert!(!harness.state().has_dialog(), "Close left the answer up");
+    assert!(
+        anywhere(&harness, "A Bitwig update reset this installation."),
+        "closing the answer put the condition away"
+    );
+}
+
+/// A backup of this very build says no update put the archive back: a restore
+/// did, or Bitwig installed over itself. The banner does not blame an update
+/// for it, and the answer says which build it was.
+#[test]
+fn an_archive_put_back_is_not_called_an_update() {
+    let root = fixture("reapply-put-back");
+    backed_up(&root, "6.0-a1d34f07");
+    backed_up(&root, "6.1-94a90411");
+    let mut harness = window(found(&root, Helper::Absent, GuardState::Armed), |_, _| {});
+    assert!(anywhere(&harness, "This installation is as Bitwig shipped it again."), "no banner");
+    assert!(!anywhere(&harness, "A Bitwig update reset this installation."));
+
+    in_the_region(&harness, "What changed?").click();
+    harness.run();
+    assert!(
+        anywhere(&harness, "prepared 6.1 (94a90411)  \u{2192}  as shipped"),
+        "the answer does not name the build"
+    );
+    for words in [
+        "a backup was restored over it, or Bitwig Studio was installed over itself.",
+        "Preparing again patches it from the backup already taken.",
+    ] {
+        assert!(somewhere(&harness, words), "the answer does not say: {words}");
+    }
+}
+
+/// Entries that were never in effect were not reset by anything, and the bar
+/// already says they wait for a preparation.
+#[test]
+fn entries_nothing_prepared_are_not_said_to_have_been_reset() {
+    let root = fixture("unprepared-not-reset");
+    let harness = window(found(&root, Helper::Absent, GuardState::Armed), |_, _| {});
+    assert!(!anywhere(&harness, "What changed?"), "a banner for a reset that never happened");
+}
+
+/// One banner at a time, and what holds the press is the one said: a running
+/// Bitwig is what stands in the way of the preparation the reset asks for.
+#[test]
+fn a_running_bitwig_is_said_before_the_reset() {
+    let root = fixture("reapply-running");
+    backed_up(&root, "6.0-a1d34f07");
+    let running = RunState::Running(vec!["BitwigStudio".to_owned()]);
+    let session = running_found(&root, Helper::Absent, GuardState::Armed, entries(), running);
+    let harness = window(session, |_, _| {});
+    assert!(anywhere(&harness, "Quit Bitwig Studio before preparing the installation."));
+    assert!(!anywhere(&harness, "A Bitwig update reset this installation."));
 }
 
 #[test]
@@ -4740,12 +4835,8 @@ fn the_restore_screen_with_nothing_kept() {
 fn the_restore_screen_lists_what_is_kept() {
     let root = fixture("restore-listed");
     let session = found(&root, Helper::Present, GuardState::Disarmed);
-    let backups = root.join("home/.orng/backups");
     for build in ["6.1-94a90411", "6.0-a1d34f07"] {
-        let dir = backups.join(build);
-        std::fs::create_dir_all(&dir).expect("a place to keep a backup");
-        std::fs::write(dir.join("bitwig.jar"), b"not an archive, and not read here")
-            .expect("could not write the copy");
+        backed_up(&root, build);
     }
 
     let harness = window(session, |app, _| app.show_restore());
@@ -4872,11 +4963,8 @@ fn the_overflow_reaches_every_screen_and_each_one_goes_back() {
 fn choosing_a_backup_changes_which_one_would_be_put_back() {
     let root = fixture("restore-choosing");
     let session = found(&root, Helper::Present, GuardState::Disarmed);
-    let backups = root.join("home/.orng/backups");
     for build in ["6.1-94a90411", "6.0-a1d34f07"] {
-        let dir = backups.join(build);
-        std::fs::create_dir_all(&dir).expect("a place to keep a backup");
-        std::fs::write(dir.join("bitwig.jar"), b"not an archive").expect("could not write");
+        backed_up(&root, build);
     }
 
     let mut harness = window(session, |app, _| app.show_restore());

@@ -4385,7 +4385,8 @@ pub struct Confirmation<'a> {
 }
 
 /// What a catalog press asks before it runs: `UpdateModal.dc.html`, which is
-/// the update's, and the same shape for a removal from the detail panel.
+/// the update's, and the same shape for a removal from the detail panel - and
+/// for the answer to a question the user asked, `What changed?`.
 ///
 /// The other dialog that asks, and not a [`Confirmation`] with its plan left
 /// empty: it has no tag and no numbered list, and it says why in paragraphs and
@@ -4401,7 +4402,15 @@ pub struct Question<'a> {
     pub reasons: &'a [String],
     /// What is true of this machine that the press will meet, a strip each.
     pub caveats: &'a [Caveat],
-    pub answers: Answers<'a>,
+    pub answers: Replies<'a>,
+}
+
+/// What a dialog in the update's shape can be answered with.
+pub enum Replies<'a> {
+    /// The way out and the press: a question a press asks before it runs.
+    Choice(Answers<'a>),
+    /// The way out alone, named: an answer, which leaves nothing to decide.
+    Close(&'a str),
 }
 
 /// The pair of controls a question is answered with: the way out, and the
@@ -4921,7 +4930,10 @@ pub fn question_dialog(ui: &mut Ui, palette: Palette, question: &Question<'_>) -
                 }
             });
 
-        answer_foot(ui, palette, &question.answers)
+        match &question.answers {
+            Replies::Choice(answers) => answer_foot(ui, palette, answers),
+            Replies::Close(close) => close_foot(ui, palette, close),
+        }
     })
 }
 
@@ -4931,35 +4943,56 @@ pub fn question_dialog(ui: &mut Ui, palette: Palette, question: &Question<'_>) -
 /// the press is the action bar's own control, 32 tall, beside a 30-tall
 /// `Cancel` eight to its left.
 fn answer_foot(ui: &mut Ui, palette: Palette, answers: &Answers<'_>) -> Option<Answer> {
+    foot_row(ui, palette, |ui| {
+        let (label, icon) = (answers.primary, answers.icon);
+        let refused = answers.refused;
+        let pressed = primary(
+            ui,
+            palette,
+            answers.elevates,
+            label,
+            icon,
+            refused.is_none(),
+            refused.unwrap_or(""),
+        );
+        ui.add_space(ALONG_A_DIALOG_FOOT);
+        let way_out = cancel_button(ui, palette, answers.cancel, Foot::Dialog);
+        if pressed.clicked() {
+            Some(Answer::Proceed)
+        } else if way_out.clicked() {
+            Some(Answer::Cancel)
+        } else {
+            None
+        }
+    })
+}
+
+/// An answer's foot: the way out alone, where a question's `Cancel` sits.
+fn close_foot(ui: &mut Ui, palette: Palette, close: &str) -> Option<Answer> {
+    foot_row(ui, palette, |ui| {
+        cancel_button(ui, palette, close, Foot::Dialog).clicked().then_some(Answer::Cancel)
+    })
+}
+
+/// The band across a dialog's foot, and the row inside it its controls are laid
+/// out from the right in.
+///
+/// As tall as the press whether or not one is drawn, so the way out is centred
+/// on it rather than hung from the top of a row the theme sized, and a dialog
+/// with no press is as tall at the foot as one with.
+fn foot_row(
+    ui: &mut Ui,
+    palette: Palette,
+    controls: impl FnOnce(&mut Ui) -> Option<Answer>,
+) -> Option<Answer> {
     let foot = Margin::symmetric(DIALOG_PAD as i8, UNDER_A_HEADING as i8);
     dialog_band(ui, palette, Edge::Bottom, foot, |ui| {
-        // As tall as the press, so the way out beside it is centred on it
-        // rather than hung from the top of a row the theme sized.
         ui.allocate_ui_with_layout(
             vec2(ui.available_width(), metric::ACTION),
             Layout::right_to_left(Align::Center),
             |ui| {
                 ui.spacing_mut().item_spacing.x = 0.0;
-                let (label, icon) = (answers.primary, answers.icon);
-                let refused = answers.refused;
-                let pressed = primary(
-                    ui,
-                    palette,
-                    answers.elevates,
-                    label,
-                    icon,
-                    refused.is_none(),
-                    refused.unwrap_or(""),
-                );
-                ui.add_space(ALONG_A_DIALOG_FOOT);
-                let way_out = cancel_button(ui, palette, answers.cancel, Foot::Dialog);
-                if pressed.clicked() {
-                    Some(Answer::Proceed)
-                } else if way_out.clicked() {
-                    Some(Answer::Cancel)
-                } else {
-                    None
-                }
+                controls(ui)
             },
         )
         .inner

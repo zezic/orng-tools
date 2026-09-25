@@ -26,8 +26,9 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use orng_tools::{
-    Backup, Condition, Destination, GuardState, Helper, InstallError, Installation, Manifest,
-    Rights, RunState, Standing, UserLibrary, Uuid, prepare, running_state,
+    Backup, BuildId, Condition, Destination, GuardState, Helper, InstallError, Installation,
+    Manifest, OrngHome, Rights, RunState, Standing, TakenFrom, UserLibrary, Uuid, prepare,
+    running_state,
 };
 
 use crate::settings::Settings;
@@ -99,23 +100,40 @@ pub struct Found {
     /// registered ones, so a removal leaving one behind here is a word nobody
     /// draws.
     awaiting_restart: BTreeSet<Uuid>,
-    /// Whether any installation was ever prepared from this home. What tells
+    /// What was prepared from this home before, if anything was. What tells
     /// an installation a Bitwig update reset apart from one nobody prepared,
     /// which look the same from the archive.
-    history: History,
+    history: Option<Prepared>,
 }
 
-/// Whether this home has prepared an installation before, as its backups say:
-/// a preparation takes one before it writes anything, and nothing else does.
+/// What this home has prepared before, as its backups say: a preparation takes
+/// one before it writes anything, and nothing else does.
 ///
-/// Of any installation, not this one, because a backup is named for the build
-/// it came from and a Bitwig update is a new build. So a second installation
-/// never prepared, beside one that was, reads as reset. The badge it decides
+/// Of any installation, not only this one, because a backup is named for the
+/// build it came from and a Bitwig update is a new build. So a second
+/// installation never prepared, beside one that was, reads as reset. The badge
 /// asks for the same press either way.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum History {
-    Prepared,
-    Never,
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Prepared {
+    /// This build. A stock archive of it was put back without an update: a
+    /// backup restored over it, or Bitwig installed over itself.
+    ThisBuild,
+    /// Other builds and not this one, the newest of them named. A stock
+    /// archive of this build is what a Bitwig update leaves.
+    Another(TakenFrom),
+}
+
+impl Prepared {
+    /// Read off the backups in `home`, for an installation of `build`.
+    fn of(home: &OrngHome, build: Option<&BuildId>) -> Option<Prepared> {
+        // A home whose backups cannot be listed has none this can point to.
+        let backups = Backup::list(home).unwrap_or_default();
+        if build.is_some_and(|build| backups.iter().any(|b| b.taken_from().is_of(build))) {
+            return Some(Prepared::ThisBuild);
+        }
+        // The list is newest first.
+        backups.first().map(|newest| Prepared::Another(newest.taken_from().clone()))
+    }
 }
 
 impl Found {
@@ -137,11 +155,7 @@ impl Found {
             // it is derived from the installation and the disk, so a caller
             // who could supply one could supply the wrong one.
             rights: orng_tools::rights(&to.install),
-            // A home whose backups cannot be listed has none this can point to.
-            history: match Backup::list(&to.home) {
-                Ok(backups) if !backups.is_empty() => History::Prepared,
-                _ => History::Never,
-            },
+            history: Prepared::of(&to.home, condition.build.as_ref()),
             to,
             condition,
             running,
@@ -330,8 +344,8 @@ impl Found {
             // The entries are fine; the installation is what needs work. Said
             // once, here, rather than once per row.
             (GuardState::Armed, Helper::Absent) => match self.history {
-                History::Prepared => Badge::NeedsReapply,
-                History::Never => Badge::NotPrepared,
+                Some(_) => Badge::NeedsReapply,
+                None => Badge::NotPrepared,
             },
             // Neither remaining pair is a state this application produces and
             // stops at: a disarmed guard with no helper is somebody else's edit,
@@ -339,6 +353,12 @@ impl Found {
             // between patching and activating.
             _ => Badge::ModifiedElsewhere,
         }
+    }
+
+    /// What this installation was prepared as before something put its archive
+    /// back as Bitwig shipped it: only where the badge says `Needs re-apply`.
+    pub fn reset(&self) -> Option<&Prepared> {
+        self.history.as_ref().filter(|_| self.badge() == Badge::NeedsReapply)
     }
 
     /// Which Bitwig this is, for the install bar's title.
@@ -421,6 +441,26 @@ mod tests {
         let found = found_in("badge-reset", GuardState::Armed, Helper::Absent, ONE);
         assert_eq!(found.badge(), Badge::NeedsReapply);
         assert_eq!(found.badge().label(), "Needs re-apply");
+    }
+
+    /// What was prepared before is only said as a reset where the installation
+    /// needs re-applying: a prepared one keeps its backups and lost nothing.
+    #[test]
+    fn a_backup_says_nothing_was_reset_where_the_installation_is_prepared() {
+        let backup = std::path::Path::new("target/render-fixtures/reset-prepared/.orng/backups")
+            .join("6.0-a1d34f07");
+        std::fs::create_dir_all(&backup).expect("a place to keep a backup");
+        std::fs::write(backup.join("bitwig.jar"), b"not an archive, and not read here")
+            .expect("could not write the copy");
+        let prepared = found_in("reset-prepared", GuardState::Disarmed, Helper::Present, ONE);
+        assert_eq!(prepared.reset(), None);
+        // A build that does not state itself cannot be the one backed up.
+        let reset = found_in("reset-prepared", GuardState::Armed, Helper::Absent, ONE);
+        let named = |prepared: &Prepared| match prepared {
+            Prepared::Another(last) => last.to_string(),
+            Prepared::ThisBuild => "this build".to_owned(),
+        };
+        assert_eq!(reset.reset().map(named).as_deref(), Some("6.0 (a1d34f07)"));
     }
 
     /// Entries with no preparation behind them - installed before anything was

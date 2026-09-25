@@ -32,7 +32,7 @@ use crate::catalog::{self, Catalog, Freshness, Install};
 use crate::diagnostics::{self, Diagnostics};
 use crate::elevate::{self, Job};
 use crate::restore::Backups;
-use crate::session::{Badge, Found, Session};
+use crate::session::{Badge, Found, Prepared, Session};
 use crate::settings::{Appearance, Preferences, Settings};
 use crate::staging::{self, Reading, Staged};
 use crate::status::{
@@ -443,9 +443,10 @@ pub struct App {
     /// Set while work is in flight, and only while it is in flight: the moment
     /// it reports, what it did becomes an [`Outcome`] and the work is over.
     applying: Option<Applying>,
-    /// The question a press asks before it runs, while it is up: from the
-    /// press until the dialog's own press or its `Cancel`. One field for both,
-    /// because both hold the window still behind a scrim and only one can.
+    /// The dialog over the window, while it is up: a question a press asks
+    /// before it runs, from the press until the dialog's own press or its
+    /// `Cancel`, or an answer until its `Close`. One field for all of them,
+    /// because each holds the window still behind a scrim and only one can.
     dialog: Option<Dialog>,
     /// What the last press came to. Stated as a banner until the user puts it
     /// away, because nothing else will stop being true and take it off screen.
@@ -629,7 +630,7 @@ impl App {
         self.applying = Some(applying);
     }
 
-    /// Whether a question is up - the plan, or an update's. Tests only.
+    /// Whether a dialog is up - the plan, a question or an answer. Tests only.
     #[cfg(test)]
     pub fn has_dialog(&self) -> bool {
         self.dialog.is_some()
@@ -770,12 +771,12 @@ impl App {
             Screen::About(_) => self.about(ui),
         }
 
-        // A question, before the work: it can only be up while the list is
-        // showing, because the presses that open one are on the list's bar and
-        // the catalog's rows, and its scrim is what keeps every other press
-        // from being made.
+        // A dialog, before the work: it can only be up while the list is
+        // showing, because the presses that open one are on the list's bars,
+        // its banner and the catalog's rows, and its scrim is what keeps every
+        // other press from being made.
         if self.dialog.is_some() {
-            self.confirm(ui);
+            self.show_dialog(ui);
         }
 
         // Last, and over everything - including a screen. Work can only be
@@ -1788,19 +1789,21 @@ impl App {
         enum Regarding {
             /// Something that has happened and will not un-happen.
             Outcome,
-            /// Something that is true of the machine and may stop being.
-            Condition,
+            /// Something that is true of the machine and may stop being, and
+            /// what its banner offers to do about it.
+            Condition(Option<Remedy>),
         }
 
-        let (about, banner) = match (&self.outcome, self.blocking()) {
+        let (about, banner) = match (&self.outcome, self.noticed()) {
             (Some(outcome), _) => {
                 let (tone, title, body, action) = outcome.banner();
                 (Regarding::Outcome, (tone, title, body, action, true))
             }
-            (None, Some(blocked)) => (
-                Regarding::Condition,
-                (blocked.tone, blocked.title.to_owned(), blocked.body, blocked.action, false),
-            ),
+            (None, Some(notice)) => {
+                let action = notice.action.map(Remedy::label);
+                let banner = (notice.tone, notice.title.to_owned(), notice.body, action, false);
+                (Regarding::Condition(notice.action), banner)
+            }
             (None, None) => return,
         };
         let (tone, title, body, action, dismissible) = banner;
@@ -1833,9 +1836,14 @@ impl App {
                 }
                 _ => self.outcome = None,
             },
-            // The condition is about the machine, not about this window, so the
-            // only honest way to answer "has it changed" is to look again.
-            Regarding::Condition => self.reread(),
+            // A condition cannot be put away, so its button is the only thing
+            // on it that answers.
+            Regarding::Condition(remedy) => {
+                match remedy.expect("a condition's banner answered with no button on it") {
+                    Remedy::CheckAgain => self.reread(),
+                    Remedy::WhatChanged => self.dialog = Some(Dialog::Reset),
+                }
+            }
         }
     }
 }
@@ -2152,6 +2160,47 @@ impl App {
         (self.pending.changes(found.entries()) > 0).then_some(Work::Entries)
     }
 
+    /// The condition the banner states when no outcome is being stated: what
+    /// stands in the way first, since it is the one that holds a press, and
+    /// otherwise what put a prepared installation back as Bitwig shipped it.
+    fn noticed(&self) -> Option<Notice> {
+        self.blocking().or_else(|| self.reset())
+    }
+
+    /// The design's `Needs re-apply` banner, where the badge says it.
+    ///
+    /// Said once, at full width, rather than by marking every row as broken:
+    /// the entries are fine and the installation is what needs work. Nothing
+    /// is held up by it - the press it asks for is the bar's own - so it is
+    /// not one of [`App::blocking`]'s.
+    ///
+    /// The design's title is for a Bitwig update. A backup of this very build
+    /// says it was not one: a restore, or Bitwig installed over itself, put the
+    /// archive back. That title is ours.
+    fn reset(&self) -> Option<Notice> {
+        let Session::Found(found) = &self.session else { return None };
+        if self.applying.as_ref().is_some_and(Applying::is_running) {
+            return None;
+        }
+        let title = match found.reset()? {
+            Prepared::Another(_) => "A Bitwig update reset this installation.",
+            Prepared::ThisBuild => "This installation is as Bitwig shipped it again.",
+        };
+        let kept = match found.entries().entries().len() {
+            1 => "Your 1 entry is kept".to_owned(),
+            many => format!("Your {many} entries are kept"),
+        };
+        Some(Notice {
+            tone: Tone::Warn,
+            title,
+            body: format!(
+                "{kept}, with the same UUIDs, so projects still recall them. Prepare the \
+                 installation again to restore them. Bitwig Studio must be closed."
+            ),
+            action: Some(Remedy::WhatChanged),
+        })
+    }
+
     /// What stands between the user and the primary action, if anything does.
     ///
     /// Two of the three are about the archive, so only the preparing mode can
@@ -2165,7 +2214,7 @@ impl App {
     /// may not write refuses the cheap mode for the same reason as the
     /// expensive one. That is only a refusal where the platform has no way to
     /// ask for more; where it has, the press asks, and is not blocked at all.
-    fn blocking(&self) -> Option<Blocked> {
+    fn blocking(&self) -> Option<Notice> {
         let Session::Found(found) = &self.session else { return None };
         if self.applying.as_ref().is_some_and(Applying::is_running) {
             return None;
@@ -2179,7 +2228,7 @@ impl App {
         if let Rights::Withheld { directory, .. } = &found.rights
             && !elevate::can_ask()
         {
-            return Some(Blocked {
+            return Some(Notice {
                 tone: Tone::Err,
                 title: "This installation is not yours to change.",
                 body: format!(
@@ -2200,7 +2249,7 @@ impl App {
             return None;
         }
         match (&found.running, found.condition.guard) {
-            (RunState::Running(processes), _) => Some(Blocked {
+            (RunState::Running(processes), _) => Some(Notice {
                 tone: Tone::Warn,
                 title: "Quit Bitwig Studio before preparing the installation.",
                 body: format!(
@@ -2209,9 +2258,9 @@ impl App {
                 ),
                 // Whether Bitwig is still open is a question about the machine,
                 // and the user is the one who will have closed it.
-                action: Some("Check again"),
+                action: Some(Remedy::CheckAgain),
             }),
-            (_, orng_tools::GuardState::Unknown) => Some(Blocked {
+            (_, orng_tools::GuardState::Unknown) => Some(Notice {
                 tone: Tone::Err,
                 title: "This installation cannot be prepared.",
                 body: "The tamper guard is not in a shape this build recognises, so preparation \
@@ -2315,11 +2364,31 @@ impl Inspection {
 }
 
 /// A condition the window has to state, and what can be done about it.
-struct Blocked {
+struct Notice {
     tone: Tone,
     title: &'static str,
     body: String,
-    action: Option<&'static str>,
+    action: Option<Remedy>,
+}
+
+/// What a condition's banner offers to do about it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Remedy {
+    /// Look at the machine again, which is the only honest way to answer
+    /// whether a condition about it has changed.
+    CheckAgain,
+    /// Say what put the installation back as Bitwig shipped it.
+    WhatChanged,
+}
+
+impl Remedy {
+    /// The design's words for the press.
+    fn label(self) -> &'static str {
+        match self {
+            Remedy::CheckAgain => "Check again",
+            Remedy::WhatChanged => "What changed?",
+        }
+    }
 }
 
 /// What a press came to, once it is over.
@@ -4285,13 +4354,14 @@ impl App {
         }
     }
 
-    /// Whichever question is up, over the window, until it is answered.
-    fn confirm(&mut self, ui: &mut egui::Ui) {
+    /// Whichever dialog is up, over the window, until it is answered.
+    fn show_dialog(&mut self, ui: &mut egui::Ui) {
         match self.dialog {
             Some(Dialog::Preparation(..)) => self.confirm_preparation(ui),
             Some(Dialog::Update(uuid)) => self.confirm_update(ui, uuid),
             Some(Dialog::Removal(uuid)) => self.confirm_removal(ui, uuid),
             Some(Dialog::Rename(_)) => self.confirm_rename(ui),
+            Some(Dialog::Reset) => self.explain_reset(ui),
             None => {}
         }
     }
@@ -4569,13 +4639,13 @@ impl App {
                     ),
                 ],
                 caveats: &caveats,
-                answers: widget::Answers {
+                answers: widget::Replies::Choice(widget::Answers {
                     refused: None,
                     cancel: "Cancel",
                     primary: "Update",
                     icon: icon::PREPARE,
                     elevates: asks_for_rights(found),
-                },
+                }),
             },
         );
         match answer {
@@ -4648,13 +4718,13 @@ impl App {
                         + " Settings decides which.",
                 ],
                 caveats: &caveats,
-                answers: widget::Answers {
+                answers: widget::Replies::Choice(widget::Answers {
                     refused: None,
                     cancel: "Cancel",
                     primary: "Remove",
                     icon: icon::REMOVE,
                     elevates: asks_for_rights(found),
-                },
+                }),
             },
         );
         match answer {
@@ -4664,6 +4734,61 @@ impl App {
             }
             Some(widget::Answer::Cancel) => self.dialog = None,
             None => {}
+        }
+    }
+
+    /// The answer to the reset banner's `What changed?`, over the window, until
+    /// it is closed.
+    ///
+    /// Ours: the bundle draws the button and nothing behind it. It says what
+    /// the backups can - which build was prepared, and which this is - and what
+    /// the reset did not touch. Read as it is drawn, and put away rather than
+    /// answered if the installation stopped needing it under the scrim.
+    fn explain_reset(&mut self, ui: &mut egui::Ui) {
+        let Session::Found(found) = &self.session else {
+            self.dialog = None;
+            return;
+        };
+        let Some(prepared) = found.reset() else {
+            self.dialog = None;
+            return;
+        };
+        let this = match &found.condition.build {
+            Some(build) => build.to_string(),
+            None => "a build that is not stated".to_owned(),
+        };
+        let (lead, mono, again) = match prepared {
+            Prepared::Another(last) => (
+                "Bitwig Studio was updated, and an update puts back its own archive, which \
+                 does not read the entry list.",
+                format!("prepared {last}  \u{2192}  now {this}"),
+                "Preparing again patches this build, and backs it up first.",
+            ),
+            Prepared::ThisBuild => (
+                "This build was prepared, and its archive is Bitwig's own again: a backup was \
+                 restored over it, or Bitwig Studio was installed over itself.",
+                format!("prepared {this}  \u{2192}  as shipped"),
+                "Preparing again patches it from the backup already taken.",
+            ),
+        };
+        let home = diagnostics::under_home(found, &found.to.home.root());
+        let answer = widget::question_dialog(
+            ui,
+            self.palette,
+            &widget::Question {
+                title: "What changed?",
+                lead,
+                mono: &mono,
+                reasons: &[format!(
+                    "Your entries in {home} were not touched, and neither were their files. \
+                     {again}"
+                )],
+                caveats: &[],
+                answers: widget::Replies::Close("Close"),
+            },
+        );
+        if answer.is_some() {
+            self.dialog = None;
         }
     }
 
@@ -4861,7 +4986,8 @@ impl App {
     }
 }
 
-/// The questions the window asks over itself, before a press runs.
+/// The dialogs the window puts over itself: the questions a press asks before
+/// it runs, and one answer.
 enum Dialog {
     /// The plan, from `Prepare installation` on the bar: the one press that
     /// modifies Bitwig Studio itself - README, section 6.
@@ -4893,6 +5019,10 @@ enum Dialog {
     /// is taken, or for a registered entry from the inspector's `Rename...`:
     /// `RenameDialog.dc.html`.
     Rename(Renaming),
+    /// What put a prepared installation back as Bitwig shipped it, from the
+    /// `What changed?` on the banner that says so. Nothing is held: it is read
+    /// off the session as it is drawn, and put away if it stops being true.
+    Reset,
 }
 
 /// A rename being asked about.

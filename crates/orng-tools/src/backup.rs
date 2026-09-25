@@ -47,6 +47,12 @@ impl TakenFrom {
         }
     }
 
+    /// Whether this is the copy of `build`, as far as a name can say: the
+    /// version and the short revision, which is all the name holds.
+    pub fn is_of(&self, build: &BuildId) -> bool {
+        *self == TakenFrom::of(build)
+    }
+
     /// The directory this build's backup lives under.
     ///
     /// The inverse of [`TakenFrom::named`], and asserted to be: the name is the

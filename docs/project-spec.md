@@ -810,7 +810,9 @@ changes hands are ours, and are in `design-review.md` round 3.
 
 A condition that stands in the way of the press is a banner directly above the action bar,
 where the design puts it: the tone as a dot, the reason under the headline, and the one
-thing that can be done about it at the right end. A preparation in flight is the design's
+thing that can be done about it at the right end. One condition holds nothing up and is
+said there all the same where nothing that does is: entries on record over a stock archive
+that was prepared once, the design's `Needs re-apply`. A preparation in flight is the design's
 dialog over the window, holding it still - the scrim takes the pointer as well as the
 light - and what a press came to is a banner in the same place afterwards, dismissible,
 carrying `Copy details` when it failed.
@@ -1072,8 +1074,11 @@ from, when it was taken and how big it is - and the build comes back out of the 
 directory name, which is the only record of it there is, so a directory not named for a
 build is not offered as a backup at all. The press puts that copy back over the
 installation, which leaves the archive as Bitwig shipped it and the entry list untouched:
-the `Needs re-apply` state, said in the banner the window already has. It is refused while
-Bitwig is running, for the reason preparation is.
+the `Needs re-apply` state. Its banner is the design's, which blames a Bitwig update, except
+where `~/.orng/backups` holds a copy of this very build - no update happened then, and the
+title says only that the installation is as Bitwig shipped it again. Its `What changed?`
+names the build last prepared and this one. It is refused while Bitwig is running, for the
+reason preparation is.
 
 **Neither screen's dates are drawn from the picture.** A backup's moment is turned into
 words where the disk is read, in this machine's zone, because an instant has no day until

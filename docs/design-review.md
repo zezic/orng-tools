@@ -757,9 +757,9 @@ The rest:
   the inspector's `Save`, `Rename` for a registered entry, and `Restore this backup`,
   which drops its clock for it. *Drawn on `Install`, `Retry` and the Restore press,
   `0791a29`; on the row's `Update` and the modal's, `abe0fa6`*; `Save` came with A3's
-  footer and `Rename` with A4, `b5354c5`. **Open:** the
-  catalog detail panel's `Install` elevates the same way and is not in the list,
-  and `CatalogDetail.dc.html` takes no `elevate` - so it wears none yet.
+  footer and `Rename` with A4, `b5354c5`. The catalog detail panel's presses elevate
+  the same way and are not in the list, and `CatalogDetail.dc.html` takes no
+  `elevate`; the user chose the shield for them - round 5, item 8.
 - **Glyph-only controls do not wear it.** `Locate` keeps its glyph and its tooltip
   becomes `Locate file · asks Windows for administrator rights`. The staging controls
   write nothing until Apply, and Apply wears it. *Drawn, `0791a29`.*
@@ -1030,8 +1030,35 @@ own run: Local's staged rows and queued removals stay where they were. The banne
 `<name> is removed.` where nothing was prepared - with whether the file was kept.
 *Built.*
 
+### 7. The `Needs re-apply` banner, and what `What changed?` opens
+
+The bundle's banner (`ORNG Registry.dc.html:527-532`) is drawn: its title, its body with
+`Your N entries` for `Your 6 registered devices`, since the list holds modulators and
+Grid modules too, and `What changed?`. It holds up nothing, so it is said only where
+nothing that does is: a running Bitwig, an installation this account may not write,
+and an unrecognised guard are each said in its place (`reapply.png`).
+
+**`What changed?` opens nothing in the bundle** - no handler, no screen, no words. The
+user chose a dialog in the update question's shape with only `Close` at its foot:
+`What changed?`, why the archive is stock again, the build last prepared beside this
+one on a monospaced line, both read off the backups' directory names, and that the
+entry list and the files were not touched (`what-changed.png`). Ours, all of it.
+
+**Ours as well, over the bundle's title:** a restore leaves exactly this state - the
+spec says so - and so does Bitwig installed over itself, and neither is an update.
+Where `~/.orng/backups` holds a copy of this very build, the title is `This
+installation is as Bitwig shipped it again.` and the answer says a backup was restored
+or Bitwig installed over itself. *Built.*
+
+### 8. Shields in the catalog detail panel
+
+`Install`, `Update...` and `Remove` in the panel end in the consent dialog on Windows
+where this account may not write, and wore no shield: A3's list left the panel out. The
+user chose the shield. The primary wears it where what it offers writes, at the action
+bar's distance, being that size of press; `Remove` at the small presses' `6px`, though
+it opens the removal's question first, as `Prepare installation` does before its plan.
+*Built*; only the absence is checked on macOS, where nothing can ask.
+
 ### Still open
 
-- The bundle's `Needs re-apply` banner, `A Bitwig update reset this installation.` with
-  `What changed?`, is still not drawn; the badge and the bar carry the state alone.
 - `Located` still says to restart Bitwig on an installation that is not prepared.
